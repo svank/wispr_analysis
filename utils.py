@@ -54,7 +54,8 @@ def get_PSP_path_from_headers(headers):
 
 
 def collect_files(top_level_dir, separate_detectors=True, order=None,
-        include_sortkey=False, include_headers=False, between=(None, None)):
+        include_sortkey=False, include_headers=False, between=(None, None),
+        filters=[]):
     """Given a directory, returns a sorted list of all WISPR FITS files.
     
     Subdirectories are searched, so this lists all WISPR files for an
@@ -74,6 +75,10 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     i_files = []
     o_files = []
     subdirs = []
+    if filters is None:
+        filters = []
+    if len(filters) == 3 and isinstance(filters[0], str):
+        filters = [filters]
     # Find all valid subdirectories.
     for fname in os.listdir(top_level_dir):
         path = f"{top_level_dir}/{fname}"
@@ -90,7 +95,7 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
             with ignore_fits_warnings():
                 if order is None:
                     key = file.split('_')[3]
-                    if include_headers:
+                    if include_headers or len(filters):
                         header = fits.getheader(fname)
                 else:
                     header = fits.getheader(fname)
@@ -98,6 +103,22 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
             
             if ((between[0] is not None and key < between[0])
                     or (between[1] is not None and key > between[1])):
+                continue
+            
+            skip = False
+            for filter in filters:
+                value = header[filter[0]]
+                if filter[1] is not None:
+                    value = type(filter[1])(value)
+                elif filter[2] is not None:
+                    value = type(filter[2])(value)
+                else:
+                    continue
+                if ((filter[1] is not None and value < filter[1])
+                        or (filter[2] is not None and value > filter[2])):
+                    skip = True
+                    break
+            if skip:
                 continue
             
             if include_headers:

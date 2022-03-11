@@ -331,7 +331,8 @@ def clean_file(data):
         plt.close()
 
 def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
-        save_masks=False, save_plots=False, overwrite=False):
+        save_masks=False, save_plots=False, overwrite=False,
+        filters=None):
     if not input_dir.endswith(os.sep):
         input_dir = input_dir + os.sep
     if output_dir is not None:
@@ -345,7 +346,8 @@ def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
     else:
         plot_dir = output_dir
     
-    ifiles, ofiles = utils.collect_files(input_dir, separate_detectors=True)
+    ifiles, ofiles = utils.collect_files(input_dir, separate_detectors=True,
+            filters=filters)
     
     with tqdm(total=len(ifiles) - 2 + len(ofiles) - 2) as pbar:
         for fits_files in ifiles, ofiles:

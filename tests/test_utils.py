@@ -109,6 +109,58 @@ def test_collect_files_between():
     assert len(file_list) == 34
 
 
+def test_collect_files_filters():
+    dir_path = (os.path.dirname(__file__)
+                + '/test_data/WISPR_files_headers_only/')
+    file_list = utils.collect_files(dir_path, separate_detectors=False,
+            include_headers=True)
+    all_values = np.array([f[1]['dsun_obs'] for f in file_list])
+    
+    for lower in [32067077000, None]:
+        for upper in [34213000000, None]:
+            file_list = utils.collect_files(dir_path, separate_detectors=False,
+                    filters=[('dsun_obs', lower, upper)], include_headers=True)
+            
+            expected = np.ones_like(all_values)
+            if lower is not None:
+                expected *= all_values >= lower
+            if upper is not None:
+                expected *= all_values <= upper
+            
+            assert len(file_list) == np.sum(expected)
+            headers = [f[1] for f in file_list]
+            for h in headers:
+                if lower is not None:
+                    assert float(h['dsun_obs']) >= lower
+                if upper is not None:
+                    assert float(h['dsun_obs']) <= upper
+
+def test_collect_files_two_filters():
+    dir_path = (os.path.dirname(__file__)
+                + '/test_data/WISPR_files_headers_only/')
+    file_list = utils.collect_files(dir_path, separate_detectors=False,
+            include_headers=True)
+    all_values1 = np.array([f[1]['dsun_obs'] for f in file_list])
+    all_values2 = np.array([f[1]['xposure'] for f in file_list])
+    
+    file_list = utils.collect_files(dir_path, separate_detectors=False,
+            filters=[('dsun_obs', 32067077000, 34213000000),
+                     ('xposure', 3.3e10, None)],
+            include_headers=True)
+    
+    e = (all_values1 >= 32067077000) * (all_values1 <= 34213000000)
+    expected = e * (all_values2 >= 3.3e10)
+    # Ensure that the values chosen for the second filter actually have an effect
+    assert np.sum(e) != np.sum(expected)
+    
+    assert len(file_list) == np.sum(expected)
+    headers = [f[1] for f in file_list]
+    for h in headers:
+        assert float(h['dsun_obs']) >= 32067077000
+        assert float(h['dsun_obs']) <= 34213000000
+        assert float(h['xposure']) <= 3.3e10
+
+
 def test_ensure_data():
     data = np.arange(10)
     data_out, h = utils.ensure_data(data)
