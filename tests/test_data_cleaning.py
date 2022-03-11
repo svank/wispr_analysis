@@ -1,7 +1,10 @@
 from .. import data_cleaning
+from .. import utils
+
+import os
 
 import numpy as np
-from astropy.io.fits import Header
+from astropy.io import fits
 from astropy.wcs import WCS
 
 import pytest
@@ -18,6 +21,36 @@ def random_data():
     img2 = img1 + np.random.normal(.5, .1, (100, 100))
     img3 = img1 + np.random.normal(.5, .2, (100, 100))
     return img1, img2, img3
+
+
+@pytest.fixture
+def headers():
+    h1 = fits.Header()
+    h2 = fits.Header()
+    h3 = fits.Header()
+    
+    h1['date-avg'] = '20210101T000001'
+    h1['filename'] = 'img1.fits'
+    h2['date-avg'] = '20210101T000002'
+    h2['filename'] = 'img2.fits'
+    h3['date-avg'] = '20210101T000003'
+    h3['filename'] = 'img3.fits'
+    return h1, h2, h3
+
+
+@pytest.fixture
+def real_headers():
+    with utils.ignore_fits_warnings():
+        path = os.path.dirname(__file__) + os.sep
+        h1 = fits.getheader(path+'test_data/WISPR_files_headers_only/20181101/'
+                                 'psp_L3_wispr_20181101T004548_V3_1221.fits')
+        h2 = fits.getheader(path+'test_data/WISPR_files_headers_only/20181101/'
+                                 'psp_L3_wispr_20181101T013048_V3_1221.fits')
+        h3 = fits.getheader(path+'test_data/WISPR_files_headers_only/20181101/'
+                                 'psp_L3_wispr_20181101T021548_V3_1221.fits')
+    for h in (h1, h2, h3):
+        h['naxis'] = 2
+    return h1, h2, h3
 
 
 def assert_no_streak(mask, filtered_image, orig_image):
@@ -41,22 +74,24 @@ def assert_streak(mask, streak, filtered_image, orig_image):
     np.testing.assert_equal(filtered_image, orig_image)
 
 
-def test_dust_streak_filter_single_streak(random_data):
+def test_dust_streak_filter_single_streak(random_data, headers):
     img1, img2, img3 = random_data
+    h1, h2, h3 = headers
     
     # Insert a streak
     streak = (slice(50, 52), slice(30, 60))
     img2[streak] = streak_val
     
     filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, None), (img2, None), (img3, None), radec=False,
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
             return_mask='also', greatest_allowed_gap=False)
     
     assert_streak(mask, streak, filtered, img2)
 
 
-def test_dust_streak_filter_too_small_streak(random_data):
+def test_dust_streak_filter_too_small_streak(random_data, headers):
     img1, img2, img3 = random_data
+    h1, h2, h3 = headers
     
     # Insert a small streak
     min_size = 40
@@ -64,15 +99,16 @@ def test_dust_streak_filter_too_small_streak(random_data):
     img2[streak] = streak_val
     
     filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, None), (img2, None), (img3, None), radec=False,
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
             return_mask='also', greatest_allowed_gap=False)
     
     assert_no_streak(mask, filtered, img2)
     
 
 @pytest.mark.parametrize('delta_sig', [-.1, .1])
-def test_dust_streak_filter_marginal_significance(random_data, delta_sig):
+def test_dust_streak_filter_marginal_significance(random_data, headers, delta_sig):
     img1, img2, img3 = random_data
+    h1, h2, h3 = headers
     
     sliding_window_stride = 1
     window_width = 9
@@ -86,7 +122,7 @@ def test_dust_streak_filter_marginal_significance(random_data, delta_sig):
     img2[streak] = larger[streak] + mean[streak] + (5 + delta_sig) * std[streak]
     
     filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, None), (img2, None), (img3, None), radec=False,
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
             return_mask='also', greatest_allowed_gap=False,
             sliding_window_stride=sliding_window_stride,
             window_width=window_width)
@@ -97,8 +133,9 @@ def test_dust_streak_filter_marginal_significance(random_data, delta_sig):
         assert_streak(mask, streak, filtered, img2)
     
 
-def test_dust_streak_filter_significance_peak(random_data):
+def test_dust_streak_filter_significance_peak(random_data, headers):
     img1, img2, img3 = random_data
+    h1, h2, h3 = headers
     
     sliding_window_stride = 1
     window_width = 9
@@ -114,7 +151,7 @@ def test_dust_streak_filter_significance_peak(random_data):
     img2[50, 50] = larger[50, 50] + mean[50, 50] + 5 * std[50, 50]
     
     filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, None), (img2, None), (img3, None), radec=False,
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
             return_mask='also', greatest_allowed_gap=False,
             sliding_window_stride=sliding_window_stride,
             window_width=window_width)
@@ -122,8 +159,9 @@ def test_dust_streak_filter_significance_peak(random_data):
     assert_streak(mask, streak, filtered, img2)
 
 
-def test_dust_streak_filter_separated_segments(random_data):
+def test_dust_streak_filter_separated_segments(random_data, headers):
     img1, img2, img3 = random_data
+    h1, h2, h3 = headers
     
     # Insert a streak
     streak = (slice(50, 52), slice(30, 50))
@@ -133,14 +171,15 @@ def test_dust_streak_filter_separated_segments(random_data):
     img2[split] = (img1 + 2*img3)[split]
     
     filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, None), (img2, None), (img3, None), radec=False,
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
             return_mask='also', greatest_allowed_gap=False)
     
     assert_streak(mask, streak, filtered, img2)
 
 
-def test_dust_streak_filter_too_separated_segments(random_data):
+def test_dust_streak_filter_too_separated_segments(random_data, headers):
     img1, img2, img3 = random_data
+    h1, h2, h3 = headers
     
     # Insert a streak
     streak = (slice(50, 52), slice(30, 50))
@@ -150,40 +189,87 @@ def test_dust_streak_filter_too_separated_segments(random_data):
     img2[split] = (img1 + 2*img3)[split]
     
     filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, None), (img2, None), (img3, None), radec=False,
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
             return_mask='also', greatest_allowed_gap=False)
     
     assert_no_streak(mask, filtered, img2)
 
 
-def test_dust_streak_filter_greatest_allowable_gap(random_data):
+def test_dust_streak_filter_greatest_allowable_gap_1(random_data, headers):
     img1, img2, img3 = random_data
+    h1, h2, h3 = headers
     
     # Insert a streak
     streak = (slice(50, 52), slice(30, 60))
     img2[streak] = streak_val
     
     # Create headers with a 1-day difference in timestamps
-    h1 = Header()
     h1['date-avg'] = '20210101T000000'
-    h3 = Header()
+    h2['date-avg'] = '20210101T120000'
     h3['date-avg'] = '20210102T000000'
     
     # Set the 'greatest gap' threshold to 1 day _plus_ 1 second
-    filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, h1), (img2, None), (img3, h3), radec=False,
-            return_mask='also', greatest_allowed_gap=24*60*60+1)
+    filtered, mask, header = data_cleaning.dust_streak_filter(
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
+            return_mask='also', greatest_allowed_gap=24*60*60+1,
+            return_header=True)
     
     # Streak should be filtered like normal
     assert_streak(mask, streak, filtered, img2)
     
+    assert 'Dust streak removal skipped; gap of' not in str(header['history'])
+    assert 'exceeded greatest allowable gap of' not in str(header['history'])
+    
+def test_dust_streak_filter_greatest_allowable_gap_2(random_data, headers):
+    img1, img2, img3 = random_data
+    h1, h2, h3 = headers
+    
+    # Insert a streak
+    streak = (slice(50, 52), slice(30, 60))
+    img2[streak] = streak_val
+    
+    # Create headers with a 1-day difference in timestamps
+    h1['date-avg'] = '20210101T000000'
+    h2['date-avg'] = '20210101T120000'
+    h3['date-avg'] = '20210102T000000'
+    
     # Set the 'greatest gap' threshold to 1 day _minus_ 1 second
-    filtered, mask = data_cleaning.dust_streak_filter(
-            (img1, h1), (img2, None), (img3, h3), radec=False,
-            return_mask='also', greatest_allowed_gap=24*60*60-1)
+    filtered, mask, header = data_cleaning.dust_streak_filter(
+            (img1, h1), (img2, h2), (img3, h3), radec=False,
+            return_mask='also', greatest_allowed_gap=24*60*60-1,
+            return_header=True)
     
     # Streak should not be filtered
     assert_no_streak(mask, filtered, img2)
+    
+    assert 'Dust streak removal skipped; gap of' in str(header['history'])
+    assert 'exceeded greatest allowable gap of' in str(header['history'])
+
+
+@pytest.mark.parametrize('radec', [True, False])
+@pytest.mark.parametrize('window_width', [5, 7])
+@pytest.mark.parametrize('sliding_window_stride', [1, 2])
+def test_dust_streak_removal_header_history(random_data, real_headers,
+        radec, window_width, sliding_window_stride):
+    img1, img2, img3 = random_data
+    h1, h2, h3 = real_headers
+    for h in (h1, h2, h3):
+        h['naxis1'] = img1.shape[1]
+        h['naxis2'] = img1.shape[0]
+    
+    filtered, header = data_cleaning.dust_streak_filter(
+            (img1, h1), (img2, h2), (img3, h3), return_header=True,
+            radec=radec, window_width=window_width,
+            sliding_window_stride=sliding_window_stride)
+    
+    history = str(header['history'])
+    
+    assert f"file1: {h1['filename']}" in history
+    assert f"file3: {h3['filename']}" in history
+    assert f"ra-dec alignment: {radec}" in history
+    assert f"window_width: {window_width}" in history
+    assert f"sliding_window_stride: {sliding_window_stride}" in history
+    
     
 
 @pytest.mark.parametrize('window_width', [3, 5])

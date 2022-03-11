@@ -1,4 +1,6 @@
 from math import ceil
+import os
+import subprocess
 import warnings
 
 from astropy.io import fits
@@ -11,15 +13,12 @@ from . import utils
 
 
 def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60*60,
-        window_width=9, return_mask=False, sliding_window_stride=1):
+        window_width=9, return_mask=False, return_header=False,
+        sliding_window_stride=1):
     if window_width % 2 != 1:
         raise ValueError("`window_width` should be odd")
     
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-                action='ignore', message=".*'BLANK' keyword.*")
-        warnings.filterwarnings(
-                action='ignore', message=".*datfix.*")
+    with utils.ignore_fits_warnings():
         if isinstance(img1, tuple):
             img1, hdr1 = img1
         else:
@@ -33,18 +32,45 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
         else:
             img3, hdr3 = fits.getdata(img3, header=True)
     
-    if (greatest_allowed_gap and 
-            utils.to_timestamp(hdr3['date-avg'])
-            - utils.to_timestamp(hdr1['date-avg']) > greatest_allowed_gap):
+    if return_header:
+        try:
+            commit = subprocess.run(
+                    ["git", '-C', os.path.dirname(__file__),
+                        "show", "-s", "--format=%H"],
+                    check=True, capture_output=True,
+                    ).stdout.decode()
+        except subprocess.CalledProcessError:
+            commit = "<commit hash couldn't be found>"
+        hdr2.add_history(f"Processed by dust_streak_filter")
+        hdr2.add_history(f" at commit {commit.strip()}")
+        hdr2.add_history(f"  file1: {hdr1['filename']}")
+        hdr2.add_history(f"  file3: {hdr3['filename']}")
+        hdr2.add_history(f"  ra-dec alignment: {radec};"
+                         f" window_width: {window_width}")
+        hdr2.add_history(f"  sliding_window_stride: {sliding_window_stride}")
+    
+    gap = (utils.to_timestamp(hdr3['date-avg'])
+            - utils.to_timestamp(hdr1['date-avg']))
+    if (greatest_allowed_gap and gap > greatest_allowed_gap):
+        ret = [img2]
         if return_mask:
+            mask = np.zeros_like(img2, dtype=bool)
             if return_mask == 'also':
-                return img2, np.zeros_like(img2, dtype=bool)
+                ret.append(mask)
             else:
-                return np.zeros_like(img2, dtype=bool)
-        return img2
+                ret[0] = mask
+        if return_header:
+            hdr2.add_history(f"Dust streak removal skipped; gap of {gap:.0f}")
+            hdr2.add_history(
+                    f" exceeded greatest allowable gap of {greatest_allowed_gap}")
+            ret.append(hdr2)
+        return ret
     
     if radec:
-        wcs2 = WCS(hdr2, key='A')
+        with utils.ignore_fits_warnings():
+            wcs1 = WCS(hdr1, key='A')
+            wcs2 = WCS(hdr2, key='A')
+            wcs3 = WCS(hdr3, key='A')
         hdr1_out = wcs2
         hdr2_out = wcs2
         hdr3_out = wcs2
@@ -80,13 +106,21 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
             np.sum(cols_filter[:bad_px.shape[1]//2] > .9 * bad_px.shape[1]),
             np.sum(cols_filter[bad_px.shape[1]//2:] > .9 * bad_px.shape[1]))
     if np.any(np.array(trim) > 100):
-        warnings.warn(f"File {hdr2['filename']} appears to be very bad. Skipping...")
+        warnings.warn(f"File {hdr2['filename']} appears to have very large"
+                      f" margins. Skipping...")
+        ret = [img2]
         if return_mask:
+            mask = np.zeros_like(img2, dtype=bool)
             if return_mask == 'also':
-                return img2, np.zeros_like(img2, dtype=bool)
+                ret.append(mask)
             else:
-                return np.zeros_like(img2, dtype=bool)
-        return img2
+                ret[0] = mask
+        if return_header:
+            hdr2.add_history(
+                    "Dust streak removal skipped; image appears to have very"
+                    " large margins.")
+            ret.append(hdr2)
+        return ret
 
     mean_diffs, std_diffs = gen_diffs_distribution(
             img1_r, img3_r, trim, sliding_window_stride, window_width)
@@ -152,14 +186,17 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
                 np.arange(1, n_labels+1), remove_small_features, float, 0,
                 pass_positions=True);
     
-    if return_mask and return_mask != 'also':
-        return filter
-
     filtered = np.where(filter, img_fill, img2)
     
-    if return_mask == 'also':
-        return filtered, filter
-    return filtered
+    ret = [filtered]
+    if return_mask:
+        if return_mask == 'also':
+            ret.append(filter)
+        else:
+            ret[0] = filter
+    if return_header:
+        ret.append(hdr2)
+    return ret
 
 
 def gen_diffs_distribution(img1_r, img3_r, trim, sliding_window_stride, window_width):
