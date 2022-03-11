@@ -283,10 +283,11 @@ def median_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60*60):
 def clean_file(data):
     """Utility function for clean_fits_files"""
     (fnames, input_dir, output_dir, plot_dir, save_masks,
-            save_plots, overwrite) = data
+            save_plots, overwrite, dust_streak_filter_kwargs) = data
     file_name = fnames[1]
     cleaned, mask, hdr = dust_streak_filter(
-            *fnames, return_header=True, return_mask='also')
+            *fnames, return_header=True, return_mask='also',
+            **dust_streak_filter_kwargs)
     
     if output_dir is not None:
         fname = file_name.replace(input_dir, output_dir)
@@ -314,13 +315,15 @@ def clean_file(data):
         else:
             fname = file_name[:-5] + '_dust_streak_removal.jpg'
         
+        with utils.ignore_fits_warnings():
+            data, header = fits.getdata(file_name, header=True)
         fig, axs = plt.subplots(1, 3, figsize=(20, 9), dpi=200)
         plt.suptitle(os.path.basename(file_name))
         plt.subplot(131)
-        plot_utils.plot_WISPR(file_name)
+        plot_utils.plot_WISPR((data, header), ax=plt.gca())
         plt.axis('off')
         plt.subplot(132)
-        plot_utils.plot_WISPR(cleaned)
+        plot_utils.plot_WISPR((cleaned, header), ax=plt.gca())
         plt.axis('off')
         plt.subplot(133)
         plt.imshow(mask, origin='lower')
@@ -332,7 +335,7 @@ def clean_file(data):
 
 def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
         save_masks=False, save_plots=False, overwrite=False,
-        filters=None):
+        filters=None, dust_streak_filter_kwargs={}):
     if not input_dir.endswith(os.sep):
         input_dir = input_dir + os.sep
     if output_dir is not None:
@@ -354,7 +357,7 @@ def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
             triplets = zip(fits_files[:-2], fits_files[1:-1], fits_files[2:])
             iterable = zip(triplets, repeat(input_dir), repeat(output_dir),
                     repeat(plot_dir), repeat(save_masks), repeat(save_plots),
-                    repeat(overwrite))
+                    repeat(overwrite), repeat(dust_streak_filter_kwargs))
             with multiprocessing.Pool() as p:
                 for x in p.imap_unordered(clean_file, iterable):
                     pbar.update(1)
