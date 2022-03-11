@@ -1,14 +1,24 @@
+from itertools import repeat
 from math import ceil
 import os
 import subprocess
 import warnings
 
+import multiprocessing
+try:
+    multiprocessing.set_start_method('fork')
+except RuntimeError:
+    pass
+
 from astropy.io import fits
 from astropy.wcs import WCS
+import matplotlib.pyplot as plt
 import numpy as np
 import reproject
 import scipy.ndimage
+from tqdm.auto import tqdm
 
+from . import plot_utils
 from . import utils
 
 
@@ -268,3 +278,82 @@ def median_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60*60):
             img1r, img2r, img3r = img1, img2, img3
             hdr_out = hdr2
         return np.nanmedian((img1r, img2r, img3r), axis=0), hdr_out
+
+
+def clean_file(data):
+    """Utility function for clean_fits_files"""
+    (fnames, input_dir, output_dir, plot_dir, save_masks,
+            save_plots, overwrite) = data
+    file_name = fnames[1]
+    cleaned, mask, hdr = dust_streak_filter(
+            *fnames, return_header=True, return_mask='also')
+    
+    if output_dir is not None:
+        fname = file_name.replace(input_dir, output_dir)
+        os.makedirs(os.path.dirname(fname), exist_ok=True)
+    else:
+        if save_masks:
+            fname = file_name[:-5] + '_dust_streak_mask.fits'
+            hdr['bitpix'] = '8'
+            del hdr['bunit']
+            del hdr['blank']
+        else:
+            fname = file_name[:-5] + '_dust_streak_filtered.fits'
+    with utils.ignore_fits_warnings():
+        if save_masks:
+            output = mask.astype(np.int8)
+        else:
+            output = cleaned.astype(np.float32)
+        fits.writeto(fname, output, hdr, overwrite=overwrite)
+    
+    if save_plots:
+        if plot_dir is not None:
+            fname = file_name.replace(input_dir, plot_dir)
+            fname = fname[:-5] + '.jpg'
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
+        else:
+            fname = file_name[:-5] + '_dust_streak_removal.jpg'
+        
+        fig, axs = plt.subplots(1, 3, figsize=(20, 9), dpi=200)
+        plt.suptitle(os.path.basename(file_name))
+        plt.subplot(131)
+        plot_utils.plot_WISPR(file_name)
+        plt.axis('off')
+        plt.subplot(132)
+        plot_utils.plot_WISPR(cleaned)
+        plt.axis('off')
+        plt.subplot(133)
+        plt.imshow(mask, origin='lower')
+        plt.axis('off')
+        plt.subplots_adjust(wspace=.01, top=.98)
+        plt.tight_layout()
+        plt.savefig(fname)
+        plt.close()
+
+def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
+        save_masks=False, save_plots=False, overwrite=False):
+    if not input_dir.endswith(os.sep):
+        input_dir = input_dir + os.sep
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
+        if not output_dir.endswith(os.sep):
+            output_dir = output_dir + os.sep
+    if plot_dir is not None:
+        os.makedirs(plot_dir, exist_ok=True)
+        if not plot_dir.endswith(os.sep):
+            plot_dir = plot_dir + os.sep
+    else:
+        plot_dir = output_dir
+    
+    ifiles, ofiles = utils.collect_files(input_dir, separate_detectors=True)
+    
+    with tqdm(total=len(ifiles) - 2 + len(ofiles) - 2) as pbar:
+        for fits_files in ifiles, ofiles:
+            triplets = zip(fits_files[:-2], fits_files[1:-1], fits_files[2:])
+            iterable = zip(triplets, repeat(input_dir), repeat(output_dir),
+                    repeat(plot_dir), repeat(save_masks), repeat(save_plots),
+                    repeat(overwrite))
+            with multiprocessing.Pool() as p:
+                for x in p.imap_unordered(clean_file, iterable):
+                    pbar.update(1)
+
