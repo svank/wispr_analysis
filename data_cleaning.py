@@ -135,6 +135,12 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
     mean_diffs, std_diffs = gen_diffs_distribution(
             img1_r, img3_r, trim, sliding_window_stride, window_width)
     
+    # TODO: How can we better treat sigma values of zero (which occur when a
+    # strip of constant values appears at the edge of the image, but with some
+    # variations so the trimming steps above aren't activated, e.g.
+    # psp_L3_wispr_20210809T023707_V1_1211
+    std_diffs = np.where(std_diffs == 0, 1e-14, std_diffs)
+    
     larger = np.max((img1_r, img3_r), axis=0)
     sig_excess = ((img2_r - larger) - mean_diffs) / std_diffs
 
