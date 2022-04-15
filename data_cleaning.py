@@ -301,11 +301,14 @@ def clean_file(data):
     else:
         if save_masks:
             fname = file_name[:-5] + '_dust_streak_mask.fits'
-            hdr['bitpix'] = '8'
-            del hdr['bunit']
-            del hdr['blank']
         else:
             fname = file_name[:-5] + '_dust_streak_filtered.fits'
+    
+    if save_masks:
+        hdr['bitpix'] = '8'
+        del hdr['bunit']
+        del hdr['blank']
+    
     with utils.ignore_fits_warnings():
         if save_masks:
             output = mask.astype(np.int8)
@@ -338,6 +341,7 @@ def clean_file(data):
         plt.tight_layout()
         plt.savefig(fname)
         plt.close()
+
 
 def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
         save_masks=False, save_plots=False, overwrite=False,
