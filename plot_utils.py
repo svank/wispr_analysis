@@ -7,6 +7,7 @@ import warnings
 import astropy.units as u
 from astropy.wcs import WCS
 from matplotlib.animation import FuncAnimation
+import matplotlib.dates as mdates
 import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
@@ -343,4 +344,85 @@ def plot_orbit(data_dir):
     
     plt.axis('off')
     plt.gca().set_aspect('equal')
+
+
+def x_axis_dates(dates, ax=None, fig=None):
+    """
+    Helper to format the x axis as dates and convert dates to matplotlib's format.
+    
+    Matplotlib expects dates to be given as the number of days since 0001-01-01
+    UTC, plus 1, and can be configured to display those timestamps as
+    YYYY-MM-DD dates. This function converts a list of timestamps to
+    matplotlib's format while also configuring the x axis to display as dates.
+    
+    Arguments
+    ---------
+    dates
+        A list of dates to be converted to a matplotlib-friendly format. Should
+        be either a format understood by utils.to_timestamp, or POSIX timestamps.
+    ax
+        An Axes instance or an iterable of Axes instances. Optional, defaults
+        to plt.gca()
+    fig
+        The Figure instance containing the Axes or list of Axes. Optional, defaults
+        to plt.gcf()
+    
+    Returns
+    -------
+    dates
+        A list of dates that have been converted to matplotlib's date format,
+        ready for use as the x-axis quantity when plotting.
+    """
+    if isinstance(dates[0], str):
+        dates = [utils.to_timestamp(d) for d in dates]
+    dates = [datetime.fromtimestamp(d, tz=timezone.utc) if np.isfinite(d) else None
+                 for d in dates]
+    dates = [mdates.date2num(d) if d is not None else np.nan for d in dates]
+    
+    if ax is None:
+        ax = [plt.gca()]
+    else:
+        try:
+            len(ax)
+        except TypeError:
+            ax = [ax]
+    
+    if fig is None:
+        fig = plt.gcf()
+    
+    for a in ax:
+        # Fresh locators/formatters are needed for each instance
+        loc = mdates.AutoDateLocator()
+        fmt = mdates.AutoDateFormatter(loc)
+        a.xaxis.set_major_locator(loc)
+        a.xaxis.set_major_formatter(fmt)
+        
+        for label in a.get_xticklabels(which='major'):
+            label.set_ha('right')
+            label.set_rotation(30)
+    
+    fig.subplots_adjust(bottom=.2)
+    
+    return dates
+
+
+def date_to_mdate(date):
+    """
+    Converts a single date to matplotlib's format. See `x_axis_dates` for details.
+    
+    Arguments
+    ---------
+    date
+        A date to be converted to a matplotlib-friendly format. Should be
+        either a format understood by utils.to_timestamp, or a POSIX timestamp.
+    Returns
+    -------
+    date
+        A date that have been converted to matplotlib's date format, ready for
+        use as the x-axis quantity when plotting.
+    """
+    if isinstance(date, str):
+        date = utils.to_timestamp(date)
+    date = datetime.fromtimestamp(date, tz=timezone.utc)
+    return mdates.date2num(date)
 
