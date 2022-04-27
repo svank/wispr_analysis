@@ -212,6 +212,8 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
             ret[0] = filter
     if return_header:
         ret.append(hdr2)
+    if len(ret) == 1:
+        ret = ret[0]
     return ret
 
 
