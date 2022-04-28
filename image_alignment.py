@@ -20,12 +20,32 @@ from tqdm.contrib.concurrent import process_map
 from . import utils
 
 
-def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
-        ret_more=False, binning=2):
+def make_cutout(x, y, data, cutout_size, binning=2):
     cutout_size = int(round(cutout_size * 2 / binning))
     
     cutout_start_x = int(x) - cutout_size//2 + 1
     cutout_start_y = int(y) - cutout_size//2 + 1
+    
+    cutout = data[
+            cutout_start_y:cutout_start_y + cutout_size,
+            cutout_start_x:cutout_start_x + cutout_size]
+    
+    cutout = cutout - np.min(cutout)
+    with np.errstate(invalid='raise'):
+        cutout /= np.max(cutout)
+    
+    return cutout, cutout_start_x, cutout_start_y
+
+
+def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
+        ret_more=False, binning=2, start_at_max=True):
+    try:
+        cutout, cutout_start_x, cutout_start_y = make_cutout(
+                x, y, data, cutout_size, binning=binning)
+    except:
+        err = ["Invalid values encountered"]
+        if not ret_more:
+            return np.nan, np.nan, err
     
     if all_stars_x is None:
         all_stars_x = np.array([x])
@@ -44,30 +64,19 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
         if not ret_more:
             return np.nan, np.nan, err
     
-    cutout = data[
-            cutout_start_y:cutout_start_y + cutout_size,
-            cutout_start_x:cutout_start_x + cutout_size]
-    
-    cutout = cutout - np.min(cutout)
-    with np.errstate(invalid='raise'):
-        try:
-            cutout /= np.max(cutout)
-        except:
-            err.append("Invalid values encountered")
-            if not ret_more:
-                return np.nan, np.nan, err
-    
     fitter = fitting.LevMarLSQFitter()
     
-    i_max = np.argmax(cutout)
-    y_max, x_max = np.unravel_index(i_max, cutout.shape)
+    if start_at_max:
+        i_max = np.argmax(cutout)
+        y_start, x_start = np.unravel_index(i_max, cutout.shape)
+    else:
+        x_start = x - cutout_start_x
+        y_start = y - cutout_start_y
     
     model = (models.Gaussian2D(
                 amplitude=cutout.max(),
-                # x_mean=x-cutout_start_x,
-                # y_mean=y-cutout_start_y,
-                x_mean=x_max,
-                y_mean=y_max,
+                x_mean=x_start,
+                y_mean=y_start,
                 x_stddev=2 / binning,
                 y_stddev=2 / binning)
              + models.Planar2D(
@@ -83,7 +92,9 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
             fitted = fitter(model, xx, yy, cutout, maxiter=500)
         except AstropyUserWarning:
             err.append("No solution found")
-            if not ret_more:
+            if ret_more:
+                return None, cutout, err, cutout_start_x, cutout_start_y
+            else:
                 return np.nan, np.nan, err
     
     max_std = 2 / binning
@@ -265,7 +276,7 @@ for line in star_dat[43:-1]:
     stars.add_star(RA, dec, (RA, dec, Vmag))
 
 
-def find_stars_in_Frame(fname):
+def find_stars_in_frame(fname):
     t = utils.to_timestamp(fname)
     try:
         (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
@@ -300,8 +311,8 @@ def find_stars_in_Frame(fname):
 
 
 def find_all_stars(ifiles, ret_all=False):
-    # res = map(find_stars_in_Frame, tqdm(ifiles))
-    res = process_map(find_stars_in_Frame, ifiles)
+    # res = map(find_stars_in_frame, tqdm(ifiles))
+    res = process_map(find_stars_in_frame, ifiles)
 
     good = []
     crowded_out = []
