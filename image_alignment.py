@@ -78,7 +78,12 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
                 x_mean=x_start,
                 y_mean=y_start,
                 x_stddev=2 / binning,
-                y_stddev=2 / binning)
+                y_stddev=2 / binning,
+                bounds=dict(
+                    amplitude=(0, np.inf),
+                    x_mean=(-1, cutout_size),
+                    y_mean=(-1, cutout_size),
+                    ))
              + models.Planar2D(
                  intercept=np.median(cutout),
                  slope_x=0,
@@ -106,6 +111,9 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
         err.append("Fit too wide")
     if fitted.x_stddev_0 < min_std or fitted.y_stddev_0 < min_std:
         err.append("Fit too narrow")
+    if (not (0 < fitted.x_mean_0.value < cutout_size - 1)
+            or not (0 < fitted.y_mean_0.value < cutout_size - 1)):
+        err.append("Fitted peak too close to edge")
     
     if ret_more:
         return fitted, cutout, err, cutout_start_x, cutout_start_y
