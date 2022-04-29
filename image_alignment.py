@@ -89,7 +89,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
                  slope_x=0,
                  slope_y=0))
     
-    yy, xx = np.mgrid[:cutout_size, :cutout_size]
+    yy, xx = np.mgrid[:cutout.shape[0], :cutout.shape[1]]
     
     with warnings.catch_warnings():
         warnings.filterwarnings(action='error')
