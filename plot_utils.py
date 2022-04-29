@@ -291,8 +291,8 @@ def plot_orbit(data_dir):
     xs = []
     ys = []
     strings = []
+    date += one_day
     while date < end_date:
-        date += one_day
         t = date.timestamp()
         
         x = np.interp(t, times, positions[:, 0])
@@ -302,6 +302,7 @@ def plot_orbit(data_dir):
         ys.append(y)
         datestring = date.date().isoformat()
         strings.append(datestring)
+        date += one_day
     
     xs = np.array(xs)
     ys = np.array(ys)
