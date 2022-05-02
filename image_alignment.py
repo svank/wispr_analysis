@@ -1,6 +1,7 @@
 from collections import defaultdict
-from math import ceil, floor
 from itertools import chain, repeat
+from math import ceil, floor
+import os
 import warnings
 
 import multiprocessing
@@ -15,6 +16,7 @@ from astropy.utils.exceptions import AstropyUserWarning
 from astropy.wcs import WCS
 import numpy as np
 import scipy.ndimage
+import scipy.optimize
 from tqdm.contrib.concurrent import process_map
 
 from . import utils
@@ -364,3 +366,133 @@ def find_all_stars(ifiles, ret_all=False, start_at_max=True):
                 crowded_out_y, bad_x, bad_y, codes)
     # Change the defaultdict to just a dict
     return {k:v for k, v in mapping}, mapping_by_frame
+
+
+def do_iteration_with_crpix(pts1, pts2, w1, w2, angle_start, dra_start,
+        ddec_start, dx_start, dy_start):
+    def f(args):
+        angle, dra, ddec, dx, dy = args
+        rot = np.array([[np.cos(angle), -np.sin(angle)],
+                        [np.sin(angle), np.cos(angle)]])
+        w22 = w2.deepcopy()
+        w22.wcs.crval = w22.wcs.crval + np.array([dra, ddec])
+        w22.wcs.crpix = w22.wcs.crpix + np.array([dx, dy])
+        w22.wcs.pc = rot @ w22.wcs.pc
+        pts22 = np.array(w1.world_to_pixel(w22.pixel_to_world(
+            pts2[:, 0], pts2[:, 1]))).T
+        ex = pts22[:, 0] - pts1[:, 0]
+        ey = pts22[:, 1] - pts1[:, 1]
+        err = np.sqrt(ex**2 + ey**2)
+        return err
+    res = scipy.optimize.least_squares(
+            f,
+            [angle_start, dra_start, ddec_start, dx_start, dy_start],
+            bounds=[[-np.pi, -np.inf, -np.inf, -np.inf, -np.inf],
+                    [np.pi, np.inf, np.inf, np.inf, np.inf]])
+    return res, res.x
+
+
+def do_iteration_no_crpix(ras, decs, xs_true, ys_true, w):
+    def f(args):
+        angle, dra, ddec = args
+        rot = np.array([[np.cos(angle), -np.sin(angle)],
+                        [np.sin(angle), np.cos(angle)]])
+        w2 = w.deepcopy()
+        w2.wcs.crval = w2.wcs.crval + np.array([dra, ddec])
+        w2.wcs.pc = rot @ w2.wcs.pc
+        xs, ys = np.array(w2.all_world2pix(ras, decs, 0))
+        ex = xs_true - xs
+        ey = ys_true - ys
+        err = np.sqrt(ex**2 + ey**2)
+        # err[err > 1] = 1
+        return err
+    res = scipy.optimize.least_squares(
+            f,
+            [0, 0, 0],
+            bounds=[[-np.pi, -np.inf, -np.inf],
+                    [np.pi, np.inf, np.inf]],
+                                      # loss='cauchy'
+                                      )
+    return res, *res.x, 0, 0
+
+
+do_iteration = do_iteration_no_crpix
+
+
+def iteratively_align_one_file(data):
+    fname, series_data, out_dir = data
+    with utils.ignore_fits_warnings():
+        d, h = fits.getdata(fname, header=True)
+        w = WCS(h, key='A')
+    t = utils.to_timestamp(fname)
+    
+    # Check up here, especially in case the frame has *zero* identified stars
+    # (i.e. a very bad frame)
+    if len(series_data) < 50:
+        print(f"Only {len(series_data)} stars found in {fname}---skipping")
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+    
+    ras, decs, xs, ys = zip(*series_data)
+    xs = np.array(xs)
+    ys = np.array(ys)
+    ras = np.array(ras)
+    decs = np.array(decs)
+    
+    xs_comp, ys_comp = np.array(w.all_world2pix(ras, decs, 0))
+    dx = xs_comp - xs
+    dy = ys_comp - ys
+    dr = np.sqrt(dx**2 + dy**2)
+    outlier_cutoff = dr.mean() + 2 * dr.std()
+    inliers = dr < outlier_cutoff
+    
+    xs = xs[inliers]
+    ys = ys[inliers]
+    ras = ras[inliers]
+    decs = decs[inliers]
+    
+    # Check down here after outlier removal
+    if len(series_data) < 50:
+        print(f"Only {len(series_data)} stars found in {fname}"
+               "after outlier removal---skipping")
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
+    res, angle, dra, ddec, dx, dy = do_iteration(ras, decs, xs, ys, w)
+
+    header_matrix = np.array([[np.cos(angle), -np.sin(angle)],
+                              [np.sin(angle), np.cos(angle)]]) @ w.wcs.pc
+    h['PC1_1A'] = header_matrix[0, 0]
+    h['PC1_2A'] = header_matrix[0, 1]
+    h['PC2_1A'] = header_matrix[1, 0]
+    h['PC2_2A'] = header_matrix[1, 1]
+    h['CRVAL1A'] = h['CRVAL1A'] + dra
+    h['CRVAL2A'] = h['CRVAL2A'] + ddec
+    h['CRPIX1A'] = h['CRPIX1A'] + dx
+    h['CRPIX2A'] = h['CRPIX2A'] + dy
+
+    with utils.ignore_fits_warnings():
+        fits.writeto(
+                os.path.join(out_dir, os.path.basename(fname)),
+                d, header=h, overwrite=True)
+    
+    rmse = np.sqrt(np.mean(np.sqrt(res.fun)))
+    return angle, dx, dy, dra, ddec, t, rmse
+
+
+def iteratively_align_files(file_list, out_dir, series_by_frame):
+    os.makedirs(out_dir, exist_ok=True)
+    
+    data = process_map(iteratively_align_one_file, zip(
+                           file_list,
+                           (series_by_frame[utils.to_timestamp(fname)]
+                               for fname in file_list),
+                           repeat(out_dir)),
+                       total=len(file_list))
+    
+    data = np.array(data)
+    angle_ts = data[:, 0]
+    rpix_ts = data[:, 1:3]
+    rval_ts = data[:, 3:5]
+    t_vals = data[:, 5]
+    rmses = data[:, 6]
+    
+    return angle_ts, rval_ts, rpix_ts, t_vals, rmses
