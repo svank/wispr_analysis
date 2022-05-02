@@ -1,6 +1,6 @@
 from collections import defaultdict
 from math import ceil, floor
-from itertools import chain
+from itertools import chain, repeat
 import warnings
 
 import multiprocessing
@@ -20,8 +20,8 @@ from tqdm.contrib.concurrent import process_map
 from . import utils
 
 
-def make_cutout(x, y, data, cutout_size, binning=2):
-    cutout_size = int(round(cutout_size * 2 / binning))
+def make_cutout(x, y, data, cutout_size):
+    cutout_size = int(round(cutout_size))
     
     cutout_start_x = int(x) - cutout_size//2 + 1
     cutout_start_y = int(y) - cutout_size//2 + 1
@@ -39,13 +39,17 @@ def make_cutout(x, y, data, cutout_size, binning=2):
 
 def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
         ret_more=False, binning=2, start_at_max=True):
+    bin_factor = 2 / binning
+    cutout_size *= bin_factor
     try:
         cutout, cutout_start_x, cutout_start_y = make_cutout(
-                x, y, data, cutout_size, binning=binning)
+                x, y, data, cutout_size)
     except:
         err = ["Invalid values encountered"]
         if not ret_more:
             return np.nan, np.nan, err
+    
+    cutout_size = cutout.shape[0]
     
     if all_stars_x is None:
         all_stars_x = np.array([x])
@@ -77,8 +81,8 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
                 amplitude=cutout.max(),
                 x_mean=x_start,
                 y_mean=y_start,
-                x_stddev=2 / binning,
-                y_stddev=2 / binning,
+                x_stddev=bin_factor,
+                y_stddev=bin_factor,
                 bounds=dict(
                     amplitude=(0, np.inf),
                     x_mean=(-1, cutout_size),
@@ -102,8 +106,8 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
             else:
                 return np.nan, np.nan, err
     
-    max_std = 2 / binning
-    min_std = .1 / binning
+    max_std = bin_factor
+    min_std = .05 * bin_factor
     
     if fitted.amplitude_0 < 0.5 * (np.max(cutout) - fitted.intercept_1):
         err.append("No peak found")
@@ -139,9 +143,10 @@ def prep_frame_for_star_finding(fname):
     if hdr['nbin1'] != hdr['nbin2']:
         raise ValueError(f"There's some weird binning going on in {fname}")
     binning = hdr['nbin1']
+    bin_factor = 2 / binning
 
     trim = (40, 20, 20, 20)
-    trim = [int(round(t * 2 / binning)) for t in trim]
+    trim = [int(round(t * bin_factor)) for t in trim]
     
     left = 0 + trim[0]
     right = hdr['naxis1'] - trim[1]
@@ -190,8 +195,8 @@ def prep_frame_for_star_finding(fname):
     
     filter = (stars_vmag < DIM_CUTOFF) * (stars_vmag > BRIGHT_CUTOFF)
     if hdr['detector'] == 1:
-        filter *= good_pixel_map[np.round(stars_y * binning / 2).astype(int),
-                                 np.round(stars_x * binning / 2).astype(int)]
+        filter *= good_pixel_map[np.round(stars_y / bin_factor).astype(int),
+                                 np.round(stars_x / bin_factor).astype(int)]
     stars_x = stars_x[filter]
     stars_y = stars_y[filter]
     stars_vmag = stars_vmag[filter]
