@@ -289,7 +289,8 @@ for line in star_dat[43:-1]:
     stars.add_star(RA, dec, (RA, dec, Vmag))
 
 
-def find_stars_in_frame(fname):
+def find_stars_in_frame(data):
+    fname, start_at_max = data
     t = utils.to_timestamp(fname)
     try:
         (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
@@ -309,7 +310,8 @@ def find_stars_in_frame(fname):
     for x, y, ra, dec in zip(stars_x, stars_y, stars_ra, stars_dec):
         fx, fy, err = fit_star(
                 x, y, data, all_stars_x, all_stars_y,
-                ret_more=False, binning=binning)
+                ret_more=False, binning=binning,
+                start_at_max=start_at_max)
 
         if len(err) == 0:
             good.append((fx, fy))
@@ -323,9 +325,12 @@ def find_stars_in_frame(fname):
     return good, bad, crowded_out, codes, mapping
 
 
-def find_all_stars(ifiles, ret_all=False):
+def find_all_stars(ifiles, ret_all=False, start_at_max=True):
     # res = map(find_stars_in_frame, tqdm(ifiles))
-    res = process_map(find_stars_in_frame, ifiles)
+    res = process_map(
+            find_stars_in_frame,
+            zip(ifiles, repeat(start_at_max)),
+            total=len(ifiles))
 
     good = []
     crowded_out = []
