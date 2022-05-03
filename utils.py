@@ -6,6 +6,7 @@ import os
 import warnings
 
 from astropy.io import fits
+from astropy.wcs import WCS
 import numpy as np
 import scipy.signal
 
@@ -148,19 +149,35 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     return [cleaner(v) for v in files]
 
 
-def ensure_data(input, header=True):
+def ensure_data(input, header=True, wcs=False, wcs_key=' '):
     if isinstance(input, str):
-        with ignore_fits_warnings():
-            data, hdr = fits.getdata(input, header=True)
+        with ignore_fits_warnings(), fits.open(input) as hdul:
+            data = hdul[0].data
+            hdr = hdul[0].header
+            w = WCS(hdr, hdul, key=wcs_key)
     elif isinstance(input, list) or isinstance(input, tuple):
-        data, hdr = input
+        data = input[0]
+        hdr = input[1]
+        try:
+            w = input[2]
+        except IndexError:
+            if isinstance(hdr, fits.Header):
+                w = WCS(hdr, key=wcs_key)
+            else:
+                w = None
     else:
         data = input
         hdr = None
+        w = None
     
+    ret_val = [data]
     if header:
-        return data, hdr
-    return data
+        ret_val.append(hdr)
+    if wcs:
+        ret_val.append(w)
+    if len(ret_val) == 1:
+        ret_val = ret_val[0]
+    return ret_val
 
 
 def get_hann_rolloff(shape, rolloff):

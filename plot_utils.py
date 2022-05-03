@@ -79,7 +79,9 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     kwargs
         Extra arguments passed to ``imshow``.
     """
-    data, header = utils.ensure_data(data, header=True)
+    data, header, w = utils.ensure_data(data, header=True, wcs=True, wcs_key=wcs_key)
+    if wcs is None:
+        wcs = w
     
     if level_preset is None:
         if (header is not None
@@ -126,12 +128,6 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
                 vmax = 1.545e-11
             else:
                 vmax = 3e-10
-    
-    if wcs is None and header is not None:
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                    action='ignore', message=".*datfix.*")
-            wcs = WCS(header, key=wcs_key)
     
     if ax is None:
         if wcs is None or wcs is False:
