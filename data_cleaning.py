@@ -74,6 +74,8 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
             hdr2.add_history(
                     f" exceeded greatest allowable gap of {greatest_allowed_gap}")
             ret.append(hdr2)
+        if len(ret) == 1:
+            ret = ret[0]
         return ret
     
     if radec:
@@ -130,6 +132,8 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
                     "Dust streak removal skipped; image appears to have very"
                     " large margins.")
             ret.append(hdr2)
+        if len(ret) == 1:
+            ret = ret[0]
         return ret
 
     mean_diffs, std_diffs = gen_diffs_distribution(
