@@ -19,6 +19,39 @@ from . import utils
 wispr_cmap = copy.copy(plt.cm.Greys_r)
 wispr_cmap.set_bad('black')
 
+PRESET_L3_I_MIN = 0
+PRESET_L3_O_MIN = 0
+PRESET_L2_I_MIN = 2e-12
+PRESET_L2_O_MIN = 0
+
+COLORBAR_PRESETS = {
+        '2': {
+            'i': (2e-12, 3e-10),
+            'o': (0, 1e-10),
+            },
+        '3': {
+            'i': (0, 1.545e-11),
+            'o': (0, .5e-11),
+            }
+        }
+
+
+def parse_level_preset(level_preset, header=None):
+    if level_preset is None:
+        if (header is not None
+                and header.get('level', 'L3') in ('L1', 'L2', 'L3')):
+            level_preset = header.get('level', 'L3')[1]
+        else:
+            level_preset = '3'
+    else:
+        if isinstance(level_preset, str) and level_preset[0] == 'L':
+            level_preset = level_preset[1]
+    
+    if level_preset not in ('1', '2', '3'):
+        raise ValueError("Level preset not recognized")
+    
+    return level_preset
+
 
 def full_size_plot(img, **kwargs):
     """
@@ -83,21 +116,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     if wcs is None:
         wcs = w
     
-    if level_preset is None:
-        if (header is not None
-                and header.get('level', 'L3') in ('L1', 'L2', 'L3')):
-            level_preset = int(header.get('level', 'L3')[1])
-        else:
-            level_preset = 3
-    else:
-        if isinstance(level_preset, str) and level_preset[0] == 'L':
-            level_preset = level_preset[1]
-        try:
-            level_preset = int(level_preset)
-        except ValueError:
-            raise ValueError("Level preset not recognized")
-        if level_preset not in (1, 2, 3):
-            raise ValueError("Level preset not recognized")
+    level_preset = parse_level_preset(level_preset, header)
     
     if detector_preset is None:
         if header is not None and header.get('detector', 1) == 2:
@@ -110,24 +129,9 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             raise ValueError("Detector preset not recognized")
     
     if vmin == 'auto':
-        if level_preset == 3:
-            vmin = 0
-        else:
-            if detector_preset == 'o':
-                vmin = 0
-            else:
-                vmin = 2e-12
+        vmin = COLORBAR_PRESETS[level_preset][detector_preset][0]
     if vmax == 'auto':
-        if detector_preset == 'o':
-            if level_preset == 3:
-                vmax = .5e-11
-            else:
-                vmax = 1e-10
-        else:
-            if level_preset == 3:
-                vmax = 1.545e-11
-            else:
-                vmax = 3e-10
+        vmax = COLORBAR_PRESETS[level_preset][detector_preset][1]
     
     if ax is None:
         if wcs is None or wcs is False:
