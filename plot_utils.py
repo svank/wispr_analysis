@@ -47,6 +47,7 @@ def parse_level_preset(level_preset, header=None):
         if isinstance(level_preset, str) and level_preset[0] == 'L':
             level_preset = level_preset[1]
     
+    level_preset = str(level_preset)
     if level_preset not in ('1', '2', '3'):
         raise ValueError("Level preset not recognized")
     
