@@ -49,15 +49,15 @@ def test_collect_files():
     
     for file_list in (files, files_avg):
         assert len(file_list) == 2
-        assert len(file_list[0]) == 60
-        assert len(file_list[1]) == 58
+        assert len(file_list[0]) == 100
+        assert len(file_list[1]) == 80
         for file in file_list[0]:
             assert 'V3_1' in file
         for file in file_list[1]:
             assert 'V3_2' in file
     
     for file_list in (files_together, files_together_avg):
-        assert len(file_list) == 118
+        assert len(file_list) == 180
     
     for file_list, key in (
             (files[0], 'DATE-BEG'),
@@ -99,7 +99,7 @@ def test_collect_files_between():
                 + '/test_data/WISPR_files_headers_only/')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181102T000000', None))
-    assert len(file_list) == 60
+    assert len(file_list) == 122
     
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=(None, '20181102T000000'))
@@ -334,4 +334,4 @@ def test_get_hann_rolloff_errors():
     # Non-integer rolloff
     with pytest.raises(ValueError):
         utils.get_hann_rolloff(10, 2.2)
-    
+
