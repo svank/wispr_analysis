@@ -238,22 +238,8 @@ def draw_WISPR_video_frame(data):
             ax.coords.grid(color='white', alpha=0.2)
             
             ax_orbit = fig.add_axes((.13, .13, .12, .12))
-            ax_orbit.margins(.1, .1)
-            ax_orbit.set_aspect('equal')
-            ax_orbit.scatter(
-                    path_positions[:, 0],
-                    path_positions[:, 1],
-                    s=1, color='.4', marker='.')
-            sc_x = np.interp(t, path_times, path_positions[:, 0])
-            sc_y = np.interp(t, path_times, path_positions[:, 1])
-            ax_orbit.scatter(sc_x, sc_y, s=6, color='1')
-            ax_orbit.scatter(0, 0, color='yellow')
-            ax_orbit.xaxis.set_visible(False)
-            ax_orbit.yaxis.set_visible(False)
-            ax_orbit.set_title("S/C position", fontdict={'fontsize': 9})
-            for spine in ax_orbit.spines.values():
-                spine.set_color('.4')
-
+            draw_overhead_map(ax_orbit, t, path_positions, path_times)
+            
             fig.savefig(f"{tmpdir}/{t:035.20f}.png")
             plt.close(fig)
 
@@ -266,6 +252,14 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
     At each time step, the current FOV for the two imagers are shown, and
     previous FOVs are shown with an opacity decreasing with time. The Sun's
     location is also shown.
+    
+    As currently implemented, FITS files are loaded and reprojected in parallel
+    across all cores, and frames are rendered in sequence on a single core
+    while the reprojection occurs on the other cores. This is because each
+    video frame draws on at least the last few exposures, to avoid flickering.
+    It's possible that the reprojection will proceed faster than the plotting,
+    causing reprojected images to queue up in RAM and cause significant RAM
+    usage.
     
     Arguments
     ---------
@@ -284,6 +278,9 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
         Number of frames per second in the video
     file_load_inverval : int
         Only the first out of every `file_load_interval` files is considered.
+        This option is mostly intended to speed up rendering during
+        development, and no care is taken to ensure this cooperates well with
+        the interleaving of images from the two cameras.
     plot_inverval : int
         Only the first out of every `plot_interval` considered files is
         rendered in the video.
@@ -410,22 +407,8 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
                 ax.coords.grid(color='white', alpha=0.2)
                 
                 with plt.style.context('dark_background'):
-                    ax_orbit = fig.add_axes((.83, .83, .12, .12))
-                    ax_orbit.margins(.1, .1)
-                    ax_orbit.set_aspect('equal')
-                    ax_orbit.scatter(
-                            path_positions[:, 0],
-                            path_positions[:, 1],
-                            s=1, color='.4', marker='.')
-                    sc_x = np.interp(ts, path_times, path_positions[:, 0])
-                    sc_y = np.interp(ts, path_times, path_positions[:, 1])
-                    ax_orbit.scatter(sc_x, sc_y, s=6, color='1')
-                    ax_orbit.scatter(0, 0, color='yellow')
-                    ax_orbit.xaxis.set_visible(False)
-                    ax_orbit.yaxis.set_visible(False)
-                    ax_orbit.set_title("S/C position", fontdict={'fontsize': 9})
-                    for spine in ax_orbit.spines.values():
-                        spine.set_color('.4')
+                    ax_orbit = fig.add_axes((.85, .73, .12, .12))
+                    draw_overhead_map(ax_orbit, ts, path_positions, path_times)
 
                 fig.savefig(f"{tmpdir}/{ts:035.20f}.png")
                 plt.close(fig)
@@ -455,3 +438,23 @@ def process_one_file_for_pointing(inputs):
                 shape, return_footprint=False, roundtrip_coords=False)),
             wcs, wcs_celest)
 
+
+def draw_overhead_map(ax_orbit, t, path_positions, path_times):
+    """
+    Draws a small plot with an overhead view of PSP's position and trajactory
+    """
+    ax_orbit.margins(.1, .1)
+    ax_orbit.set_aspect('equal')
+    ax_orbit.scatter(
+            path_positions[:, 0],
+            path_positions[:, 1],
+            s=1, color='.4', marker='.')
+    sc_x = np.interp(t, path_times, path_positions[:, 0])
+    sc_y = np.interp(t, path_times, path_positions[:, 1])
+    ax_orbit.scatter(sc_x, sc_y, s=6, color='1')
+    ax_orbit.scatter(0, 0, color='yellow')
+    ax_orbit.xaxis.set_visible(False)
+    ax_orbit.yaxis.set_visible(False)
+    ax_orbit.set_title("S/C position", fontdict={'fontsize': 9})
+    for spine in ax_orbit.spines.values():
+        spine.set_color('.4')
