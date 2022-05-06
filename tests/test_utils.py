@@ -5,6 +5,7 @@ import os
 import tempfile
 
 from astropy.io import fits
+from astropy.wcs import WCS
 import numpy as np
 import pytest
 import warnings
@@ -118,22 +119,31 @@ def test_collect_files_filters():
     
     for lower in [32067077000, None]:
         for upper in [34213000000, None]:
-            file_list = utils.collect_files(dir_path, separate_detectors=False,
-                    filters=[('dsun_obs', lower, upper)], include_headers=True)
-            
-            expected = np.ones_like(all_values)
-            if lower is not None:
-                expected *= all_values >= lower
-            if upper is not None:
-                expected *= all_values <= upper
-            
-            assert len(file_list) == np.sum(expected)
-            headers = [f[1] for f in file_list]
-            for h in headers:
+            for as_list in [True, False]:
+                filters = [('dsun_obs', lower, upper)]
+                if not as_list:
+                    # A single filter can be passed as one tuple or as a list
+                    # of one tuple
+                    filters = filters[0]
+                file_list = utils.collect_files(dir_path,
+                        separate_detectors=False,
+                        filters=filters,
+                        include_headers=True)
+                
+                expected = np.ones_like(all_values)
                 if lower is not None:
-                    assert float(h['dsun_obs']) >= lower
+                    expected *= all_values >= lower
                 if upper is not None:
-                    assert float(h['dsun_obs']) <= upper
+                    expected *= all_values <= upper
+                
+                assert len(file_list) == np.sum(expected)
+                headers = [f[1] for f in file_list]
+                for h in headers:
+                    if lower is not None:
+                        assert float(h['dsun_obs']) >= lower
+                    if upper is not None:
+                        assert float(h['dsun_obs']) <= upper
+
 
 def test_collect_files_two_filters():
     dir_path = (os.path.dirname(__file__)
@@ -162,24 +172,63 @@ def test_collect_files_two_filters():
 
 
 def test_ensure_data():
-    data = np.arange(10)
+    data = np.arange(100).reshape((10, 10))
+    wcs = WCS(naxis=2)
+    wcs.array_shape = data.shape
+    header = wcs.to_header()
+    
     data_out, h = utils.ensure_data(data)
     assert data is data_out
+    assert h is None
     
-    data_out, h = utils.ensure_data((data, 0))
+    data_out, h = utils.ensure_data((data, header))
     assert data is data_out
-    assert h == 0
+    assert h is header
     
-    data_out = utils.ensure_data(data, header=False)
+    data_out = utils.ensure_data((data, header), header=False)
+    assert data is data_out
+    
+    data_out, h, w = utils.ensure_data((data, header), wcs=True)
+    assert data is data_out
+    assert h is header
+    assert str(w) == str(WCS(h))
+    
+    data_out, h, w = utils.ensure_data((data, header, wcs),
+            header=True, wcs=True)
+    assert data is data_out
+    assert h is header
+    assert w is wcs
+    
+    data_out, h = utils.ensure_data((data, header, wcs),
+            header=True, wcs=False)
+    assert data is data_out
+    assert h is header
+    
+    data_out, w = utils.ensure_data((data, header, wcs),
+            header=False, wcs=True)
+    assert data is data_out
+    assert w is wcs
+    
+    data_out = utils.ensure_data((data, header, wcs),
+            header=False, wcs=False)
     assert data is data_out
     
     with tempfile.TemporaryDirectory() as td:
         file = os.path.join(td, 'file.fits')
-        fits.writeto(file, data)
+        fits.writeto(file, data, header=header)
+        # Update after io.fits modifies the header
+        header = fits.getheader(file)
         
         data_out, h = utils.ensure_data(file)
         assert np.all(data_out == data)
         assert isinstance(h, fits.Header)
+        
+        data_out, h, w = utils.ensure_data(file, wcs=True)
+        assert np.all(data_out == data)
+        assert isinstance(h, fits.Header)
+        assert str(h) == str(header)
+        assert isinstance(w, WCS)
+        assert str(w) == str(wcs)
 
 
 def test_get_hann_rolloff_1d():
