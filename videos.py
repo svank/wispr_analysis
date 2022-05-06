@@ -2,15 +2,21 @@ import copy
 from datetime import datetime
 from itertools import repeat
 import itertools
+from math import floor
 import multiprocessing
 import os
 import tempfile
+import warnings
 
+from astropy.io import fits
 import astropy.units as u
+from astropy.wcs import WCS
 from IPython.display import display, Video
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import reproject
+from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from . import composites
@@ -250,3 +256,202 @@ def draw_WISPR_video_frame(data):
 
             fig.savefig(f"{tmpdir}/{t:035.20f}.png")
             plt.close(fig)
+
+
+def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
+        file_load_interval=1, plot_interval=3):
+    """
+    Renders a full-sky map showing the WISPR FOV over an encounter as a video.
+    
+    At each time step, the current FOV for the two imagers are shown, and
+    previous FOVs are shown with an opacity decreasing with time. The Sun's
+    location is also shown.
+    
+    Arguments
+    ---------
+    data_dir : str
+        Directory containing WISPR fits files. Will be scanned by
+        `utils.collect_files`
+    between : tuple
+        A beginning and end timestamp of the format 'YYYYMMDDTHHMMSS'. Only the
+        files between these timestamps will be included in the video. Either or
+        both timestamp can be `None`, to place no limit on the beginning or end
+        of the video.
+    show : boolean
+        When `True`, the rendered video is shown in the Jupyter environment.
+        Otherwise, an IPython `Video` object is returned.
+    fps : float
+        Number of frames per second in the video
+    file_load_inverval : int
+        Only the first out of every `file_load_interval` files is considered.
+    plot_inverval : int
+        Only the first out of every `plot_interval` considered files is
+        rendered in the video.
+    """
+    files = utils.collect_files(
+            data_dir, separate_detectors=False, include_sortkey=True,
+            order='DATE-AVG', include_headers=True, between=between)
+    path_times, path_positions, _ = utils.get_PSP_path_from_headers(
+        [v[-1] for v in files])
+    tstamps = [f[0] for f in files]
+    files = [f[1] for f in files]
+    
+    cdelt = 0.15
+    shape = [int(floor(180/cdelt)), int(floor(360/cdelt))]
+    starfield_wcs = WCS(naxis=2)
+    crpix = [shape[1]/2+1, shape[0]/2+1]
+    starfield_wcs.wcs.crpix = crpix
+    starfield_wcs.wcs.crval = 180, 0
+    starfield_wcs.wcs.cdelt = cdelt, cdelt
+    starfield_wcs.wcs.ctype = 'RA---MOL', 'DEC--MOL'
+    starfield_wcs.wcs.cunit = 'deg', 'deg'
+    
+    min_val = 0.0
+    imap = np.full(shape, 0.0)
+    omap = np.full(shape, 0.0)
+    emap = np.full(shape, min_val)
+    last_few_i = []
+    last_few_o = []
+    zeros = np.zeros_like(imap, dtype=bool)
+    
+    last_t_i = np.nan
+    last_t_o = np.nan
+    cadence_i = np.nan
+    cadence_o = np.nan
+    last_suns = [np.array((np.nan, np.nan))] * 2
+    last_sun_ts = [np.nan] * 2
+    
+    files = files[::file_load_interval]
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with (warnings.catch_warnings(), multiprocessing.Pool() as p,
+                tqdm(total=len(files)) as pbar):
+            warnings.filterwarnings(action='ignore',
+                    message='.*has more axes.*')
+            for i, (t, fname, output) in enumerate(
+                    zip(tstamps,
+                        files,
+                        p.imap(process_one_file_for_pointing,
+                            zip(files,
+                                repeat(starfield_wcs),
+                                repeat(imap.shape))))):
+                output, wcs, wcs_celest = output
+                pbar.update(1)
+                
+                t = utils.to_timestamp(t, as_datetime=True)
+                ts = t.timestamp()
+                # Decay the currently-lit pixels in the FOV maps
+                imap -= .04
+                omap -= .04
+                imap[imap < min_val] = min_val
+                omap[omap < min_val] = min_val
+                if fname.split('_')[-1][0] == '1':
+                    ioutput = output
+                    ooutput = zeros
+                    cadence_i = ts - last_t_i
+                    last_t_i = ts
+                else:
+                    ioutput = zeros
+                    ooutput = output
+                    cadence_o = ts - last_t_o
+                    last_t_o = ts
+                
+                last_few_i.append(ioutput)
+                if len(last_few_i) > 8:
+                    last_few_i.pop(0)
+                last_few_o.append(ooutput)
+                if len(last_few_o) > 8:
+                    last_few_o.pop(0)
+                
+                imap[np.sum(last_few_i, axis=0, dtype=bool)] = 1
+                omap[np.sum(last_few_o, axis=0, dtype=bool)] = 1
+                
+                sun_coords = wcs.world_to_pixel(0*u.deg, 0*u.deg)
+                sun_coords = wcs_celest.pixel_to_world(*sun_coords)
+                sun_coords = starfield_wcs.world_to_pixel(sun_coords)
+                if np.any(np.isnan(sun_coords)):
+                    # Interpolate a Sun location from the last two locations
+                    # and the current time.
+                    sun_coords = (last_suns[1] +
+                            (last_suns[1] - last_suns[0])
+                            * (ts - last_sun_ts[1])
+                            / (last_sun_ts[1] - last_sun_ts[0]))
+                else:
+                    last_suns.pop(0)
+                    last_sun_ts.pop(0)
+                    last_suns.append(np.array(sun_coords))
+                    last_sun_ts.append(ts)
+                
+                if i % plot_interval:
+                    continue
+                
+                fig = plt.figure(figsize=(10, 6), dpi=140)
+                ax = fig.add_subplot(111, projection=starfield_wcs)
+                
+                rcolor = np.array((.88, .08, .08))[None, None, :]
+                bcolor = np.array((0.001, .48, 1))[None, None, :]
+                map = rcolor * imap[:, :, None] + bcolor * omap[:, :, None]
+                map = np.where(map > 1, 1, map)
+                map = np.where(map == 0, .05, map)
+                im = ax.imshow(map, origin='lower')
+                text = t.strftime("%Y-%m-%d, %H:%M")
+                text += f", Cadence: {cadence_i:.0f} / {cadence_o:.0f} s"
+                ax.text(20, 20, text, color='white')
+                
+                ax.text(1200, 20, os.path.basename(fname), color='white')
+                
+                plt.scatter(*sun_coords, s=50, color='yellow')
+                
+                fig.subplots_adjust(top=0.96, bottom=0.10,
+                        left=0.09, right=0.98)
+                lon, lat = ax.coords
+                ax.set_xlabel("Right Ascension")
+                ax.set_ylabel("Declication")
+                ax.coords.grid(color='white', alpha=0.2)
+                
+                with plt.style.context('dark_background'):
+                    ax_orbit = fig.add_axes((.83, .83, .12, .12))
+                    ax_orbit.margins(.1, .1)
+                    ax_orbit.set_aspect('equal')
+                    ax_orbit.scatter(
+                            path_positions[:, 0],
+                            path_positions[:, 1],
+                            s=1, color='.4', marker='.')
+                    sc_x = np.interp(ts, path_times, path_positions[:, 0])
+                    sc_y = np.interp(ts, path_times, path_positions[:, 1])
+                    ax_orbit.scatter(sc_x, sc_y, s=6, color='1')
+                    ax_orbit.scatter(0, 0, color='yellow')
+                    ax_orbit.xaxis.set_visible(False)
+                    ax_orbit.yaxis.set_visible(False)
+                    ax_orbit.set_title("S/C position", fontdict={'fontsize': 9})
+                    for spine in ax_orbit.spines.values():
+                        spine.set_color('.4')
+
+                fig.savefig(f"{tmpdir}/{ts:035.20f}.png")
+                plt.close(fig)
+                
+        os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
+                  f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
+                  f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {tmpdir}/out.mp4")
+        video = Video(f"{tmpdir}/out.mp4",
+                embed=True, html_attributes="controls loop")
+        if show:
+            display(video)
+        else:
+            return video
+
+
+def process_one_file_for_pointing(inputs):
+    fname, starfield_wcs, shape = inputs
+    with utils.ignore_fits_warnings(), fits.open(fname) as hdul:
+        data = hdul[0].data
+        wcs = WCS(hdul[0].header, hdul)
+        wcs_celest = WCS(hdul[0].header, hdul, key='A')
+    
+    data = np.ones_like(data)
+    
+    return (np.isfinite(
+            reproject.reproject_adaptive((data, wcs_celest), starfield_wcs,
+                shape, return_footprint=False, roundtrip_coords=False)),
+            wcs, wcs_celest)
+
