@@ -253,13 +253,12 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
     previous FOVs are shown with an opacity decreasing with time. The Sun's
     location is also shown.
     
-    As currently implemented, FITS files are loaded and reprojected in parallel
-    across all cores, and frames are rendered in sequence on a single core
-    while the reprojection occurs on the other cores. This is because each
-    video frame draws on at least the last few exposures, to avoid flickering.
-    It's possible that the reprojection will proceed faster than the plotting,
-    causing reprojected images to queue up in RAM and cause significant RAM
-    usage.
+    This function attempts to use all CPU cores, and splits them between
+    separate queues for reprojecting images into the all-sky frame and
+    rendering video frames. This is because each video frame draws on at least
+    the last few exposures, to avoid flickering. These separate queues are not
+    carefully balanced, so it's possible to see incomplete usage of all cores
+    or increasing RAM usage if the second queue can't keep up.
     
     Arguments
     ---------
@@ -321,14 +320,17 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
     files = files[::file_load_interval]
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        with (warnings.catch_warnings(), multiprocessing.Pool() as p,
+        n_cpus = os.cpu_count()
+        with (warnings.catch_warnings(),
+                multiprocessing.Pool(n_cpus // 2) as p_reproject,
+                multiprocessing.Pool(n_cpus // 2) as p_plot,
                 tqdm(total=len(files)) as pbar):
             warnings.filterwarnings(action='ignore',
                     message='.*has more axes.*')
             for i, (t, fname, output) in enumerate(
                     zip(tstamps,
                         files,
-                        p.imap(process_one_file_for_pointing,
+                        p_reproject.imap(process_one_file_for_pointing,
                             zip(files,
                                 repeat(starfield_wcs),
                                 repeat(imap.shape))))):
@@ -381,37 +383,12 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
                 
                 if i % plot_interval:
                     continue
-                
-                fig = plt.figure(figsize=(10, 6), dpi=140)
-                ax = fig.add_subplot(111, projection=starfield_wcs)
-                
-                rcolor = np.array((.88, .08, .08))[None, None, :]
-                bcolor = np.array((0.001, .48, 1))[None, None, :]
-                map = rcolor * imap[:, :, None] + bcolor * omap[:, :, None]
-                map = np.where(map > 1, 1, map)
-                map = np.where(map == 0, .05, map)
-                im = ax.imshow(map, origin='lower')
-                text = t.strftime("%Y-%m-%d, %H:%M")
-                text += f", Cadence: {cadence_i:.0f} / {cadence_o:.0f} s"
-                ax.text(20, 20, text, color='white')
-                
-                ax.text(1200, 20, os.path.basename(fname), color='white')
-                
-                plt.scatter(*sun_coords, s=50, color='yellow')
-                
-                fig.subplots_adjust(top=0.96, bottom=0.10,
-                        left=0.09, right=0.98)
-                lon, lat = ax.coords
-                ax.set_xlabel("Right Ascension")
-                ax.set_ylabel("Declication")
-                ax.coords.grid(color='white', alpha=0.2)
-                
-                with plt.style.context('dark_background'):
-                    ax_orbit = fig.add_axes((.85, .73, .12, .12))
-                    draw_overhead_map(ax_orbit, ts, path_positions, path_times)
-
-                fig.savefig(f"{tmpdir}/{ts:035.20f}.png")
-                plt.close(fig)
+                p_plot.apply_async(plot_one_frame_for_pointing,
+                        args=(imap.copy(), omap.copy(), starfield_wcs, t, ts,
+                            fname, sun_coords, path_positions, path_times,
+                            tmpdir, cadence_i, cadence_o))
+            p_plot.close()
+            p_plot.join()
                 
         os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
                   f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
@@ -437,6 +414,40 @@ def process_one_file_for_pointing(inputs):
             reproject.reproject_adaptive((data, wcs_celest), starfield_wcs,
                 shape, return_footprint=False, roundtrip_coords=False)),
             wcs, wcs_celest)
+
+
+def plot_one_frame_for_pointing(imap, omap, starfield_wcs, t, ts, fname,
+        sun_coords, path_positions, path_times, tmpdir, cadence_i, cadence_o):
+    fig = plt.figure(figsize=(10, 6), dpi=140)
+    ax = fig.add_subplot(111, projection=starfield_wcs)
+    
+    rcolor = np.array((.88, .08, .08))[None, None, :]
+    bcolor = np.array((0.001, .48, 1))[None, None, :]
+    map = rcolor * imap[:, :, None] + bcolor * omap[:, :, None]
+    map = np.where(map > 1, 1, map)
+    map = np.where(map == 0, .05, map)
+    im = ax.imshow(map, origin='lower')
+    text = t.strftime("%Y-%m-%d, %H:%M")
+    text += f", Cadence: I {cadence_i:.0f} s / O {cadence_o:.0f} s"
+    ax.text(20, 20, text, color='white')
+    
+    ax.text(1200, 20, os.path.basename(fname), color='white')
+    
+    plt.scatter(*sun_coords, s=50, color='yellow')
+    
+    fig.subplots_adjust(top=0.96, bottom=0.10,
+            left=0.09, right=0.98)
+    lon, lat = ax.coords
+    ax.set_xlabel("Right Ascension")
+    ax.set_ylabel("Declication")
+    ax.coords.grid(color='white', alpha=0.2)
+    
+    with plt.style.context('dark_background'):
+        ax_orbit = fig.add_axes((.85, .73, .12, .12))
+        draw_overhead_map(ax_orbit, ts, path_positions, path_times)
+
+    fig.savefig(f"{tmpdir}/{ts:035.20f}.png")
+    plt.close('all')
 
 
 def draw_overhead_map(ax_orbit, t, path_positions, path_times):
