@@ -108,8 +108,9 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         auto-detected from the FITS file, but can be overridden here with
         values of 1, 2, or 3. When only a data array is provided, the '3'
         preset is chosen.
-    grid
-        Whether to plot a coordinate grid over the image.
+    grid : boolean or float
+        Whether to plot a coordinate grid over the image. If a ``float``,
+        specifies the opacity of the grid lines.
     kwargs
         Extra arguments passed to ``imshow``.
     """
@@ -145,7 +146,9 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             lat.set_major_formatter('dd')
             lon.set_major_formatter('dd')
             if grid:
-                ax.coords.grid(color='white', alpha=0.2)
+                if isinstance(grid, bool):
+                    grid = 0.2
+                ax.coords.grid(color='white', alpha=grid)
     if cmap is None:
         cmap = wispr_cmap
     
