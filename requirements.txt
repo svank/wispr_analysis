@@ -6,7 +6,6 @@ ipython>=8.3
 matplotlib==3.5.*
 numpy>=1.21
 pytest>=7.1
-pytest-mpl>=0.15
 # reproject>=0.8
 git+https://github.com/svank/reproject@boundaries#egg=reproject
 scipy>=1.8

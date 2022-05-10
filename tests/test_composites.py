@@ -6,6 +6,8 @@ import os
 from astropy.io import fits
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
+from matplotlib.testing.conftest import mpl_test_settings
+from matplotlib.testing.decorators import image_comparison
 import numpy as np
 import pytest
 import warnings
@@ -153,7 +155,7 @@ def setup_gen_composite_test():
     return ifiles[0], ofiles[0], hdr_i, hdr_o
 
 
-@pytest.mark.mpl_image_compare()
+@image_comparison(baseline_images=['test_gen_composite'], extensions=['pdf'])
 def test_gen_composite():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
@@ -169,7 +171,8 @@ def test_gen_composite():
     return fig
 
 
-@pytest.mark.mpl_image_compare()
+@image_comparison(baseline_images=['test_gen_composite_with_auto_trim_crop'],
+        extensions=['pdf'])
 def test_gen_composite_with_auto_trim_crop():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
@@ -180,7 +183,7 @@ def test_gen_composite_with_auto_trim_crop():
     return fig
 
 
-@pytest.mark.mpl_image_compare()
+@image_comparison(baseline_images=['test_gen_composite_blank_i'], extensions=['pdf'])
 def test_gen_composite_blank_i():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
@@ -191,7 +194,7 @@ def test_gen_composite_blank_i():
     return fig
 
 
-@pytest.mark.mpl_image_compare()
+@image_comparison(baseline_images=['test_gen_composite_blank_o'], extensions=['pdf'])
 def test_gen_composite_blank_o():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
@@ -202,7 +205,7 @@ def test_gen_composite_blank_o():
     return fig
 
 
-@pytest.mark.mpl_image_compare()
+@image_comparison(baseline_images=['test_gen_composite_ra_dec'], extensions=['pdf'])
 def test_gen_composite_ra_dec():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
@@ -213,7 +216,7 @@ def test_gen_composite_ra_dec():
     return fig
 
 
-@pytest.mark.mpl_image_compare()
+@image_comparison(baseline_images=['test_gen_composite_custom_trim('], extensions=['pdf'])
 def test_gen_composite_custom_trim():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
