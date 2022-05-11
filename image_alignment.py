@@ -68,7 +68,7 @@ def make_cutout(x, y, data, cutout_size, normalize=True):
     return cutout, cutout_start_x, cutout_start_y
 
 
-def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=8,
+def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         ret_more=False, binning=2, start_at_max=True):
     bin_factor = 2 / binning
     cutout_size *= bin_factor
