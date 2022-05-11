@@ -68,10 +68,15 @@ def make_cutout(x, y, data, cutout_size, normalize=True):
     return cutout, cutout_start_x, cutout_start_y
 
 
+MIN_SIGMA = 0.05
+MAX_SIGMA = 1
 def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         ret_more=False, binning=2, start_at_max=True):
     bin_factor = 2 / binning
-    cutout_size *= bin_factor
+    cutout_size = int(round(cutout_size * bin_factor))
+    if cutout_size % 2 != 1:
+        cutout_size += 1
+    
     try:
         cutout, cutout_start_x, cutout_start_y = make_cutout(
                 x, y, data, cutout_size)
@@ -84,8 +89,12 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     
     if all_stars_x is None:
         all_stars_x = np.array([x])
+    else:
+        all_stars_x = np.asarray(all_stars_x)
     if all_stars_y is None:
         all_stars_y = np.array([y])
+    else:
+        all_stars_y = np.asarray(all_stars_y)
     
     n_in_cutout = np.sum(
         (all_stars_x > cutout_start_x - .5)
@@ -97,7 +106,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     if n_in_cutout > 1:
         err.append("Crowded frame")
         if not ret_more:
-            return np.nan, np.nan, err
+            return x, y, err
     
     fitter = fitting.LevMarLSQFitter()
     
@@ -137,8 +146,8 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
             else:
                 return np.nan, np.nan, err
     
-    max_std = bin_factor
-    min_std = .05 * bin_factor
+    max_std = MAX_SIGMA * bin_factor
+    min_std = MIN_SIGMA * bin_factor
     
     if fitted.amplitude_0 < 0.5 * (np.max(cutout) - fitted.intercept_1):
         err.append("No peak found")
@@ -155,8 +164,14 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     return fitted.x_mean_0.value + cutout_start_x, fitted.y_mean_0.value + cutout_start_y, err
 
 
-bad_pixel_map = np.load(
-        '/Users/svankooten/Nextcloud/Parker Solar Probe/WISPR Perihelion Data/bad_pixel_mask.npz')['map']
+try:
+    bad_pixel_map = np.load(
+            '/Users/svankooten/Nextcloud/Parker Solar Probe/WISPR Perihelion Data/bad_pixel_mask.npz')['map']
+except:
+    bad_pixel_map = np.zeros((1024, 960), dtype=bool)
+    import warnings
+    warnings.warn('Did not find bad pixel map')
+
 good_pixel_map = ~scipy.ndimage.binary_dilation(bad_pixel_map, iterations=3)
 
 DIM_CUTOFF = 8
@@ -325,7 +340,7 @@ def find_stars_in_frame(data):
     fname, start_at_max = data
     t = utils.to_timestamp(fname)
     try:
-        (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
+        (stars_x, stars_y, _, stars_ra, stars_dec,
                 all_stars_x, all_stars_y, data,
                 binning) = prep_frame_for_star_finding(fname)
     except ValueError as e:
@@ -586,17 +601,17 @@ def smooth_curve(x, y, sig=3600*2.5, n_sig=3, outlier_sig=2):
         checked for outliers. Any point deviating from the window's mean by at
         least `outlier_sig` times the window standard deviation is ignored.
     """
-    output_array = np.zeros_like(y)
+    output_array = np.zeros_like(y, dtype=float)
     not_nan = np.isfinite(y)
     for i in range(len(y)):
-        f = np.abs(x - x[i]) < n_sig * sig
+        f = np.abs(x - x[i]) <= n_sig * sig
         f *= not_nan
         xs = x[f]
         ys = y[f]
         window_std = np.std(ys)
         # Skip outlier rejection if there's no variation within the window
         if window_std > 0:
-            f = np.abs(ys - np.mean(ys)) < outlier_sig * window_std
+            f = np.abs(ys - np.mean(ys)) <= outlier_sig * window_std
             xs = xs[f]
             ys = ys[f]
         weight = np.exp(-(x[i] - xs)**2 / sig**2)
