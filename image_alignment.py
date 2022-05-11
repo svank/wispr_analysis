@@ -17,12 +17,16 @@ from astropy.wcs import WCS
 import numpy as np
 import scipy.ndimage
 import scipy.optimize
+from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from . import utils
 
 
-def make_cutout(x, y, data, cutout_size):
+def make_cutout(x, y, data, cutout_size, normalize=True):
+    """
+    Cuts a section out of a data array and normalizes it
+    """
     cutout_size = int(round(cutout_size))
     
     cutout_start_x = int(x) - cutout_size//2 + 1
@@ -32,9 +36,10 @@ def make_cutout(x, y, data, cutout_size):
             cutout_start_y:cutout_start_y + cutout_size,
             cutout_start_x:cutout_start_x + cutout_size]
     
-    cutout = cutout - np.min(cutout)
-    with np.errstate(invalid='raise'):
-        cutout /= np.max(cutout)
+    if normalize:
+        cutout = cutout - np.min(cutout)
+        with np.errstate(invalid='raise'):
+            cutout /= np.max(cutout)
     
     return cutout, cutout_start_x, cutout_start_y
 
@@ -266,7 +271,8 @@ class StarBins:
 stars = StarBins(3, 3)
 
 
-star_dat = open("hipparchos_catalog.tsv").readlines()
+catalog_path = os.path.join(os.path.dirname(__file__), "hipparchos_catalog.tsv")
+star_dat = open(catalog_path).readlines()
 for line in star_dat[43:-1]:
     try:
         id, RA, dec, Vmag = line.split(";")
@@ -420,7 +426,7 @@ do_iteration = do_iteration_no_crpix
 
 
 def iteratively_align_one_file(data):
-    fname, series_data, out_dir = data
+    fname, series_data, out_dir, write_file = data
     with utils.ignore_fits_warnings():
         d, h = fits.getdata(fname, header=True)
         w = WCS(h, key='A')
@@ -457,35 +463,48 @@ def iteratively_align_one_file(data):
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
     res, angle, dra, ddec, dx, dy = do_iteration(ras, decs, xs, ys, w)
-
-    header_matrix = np.array([[np.cos(angle), -np.sin(angle)],
-                              [np.sin(angle), np.cos(angle)]]) @ w.wcs.pc
-    h['PC1_1A'] = header_matrix[0, 0]
-    h['PC1_2A'] = header_matrix[0, 1]
-    h['PC2_1A'] = header_matrix[1, 0]
-    h['PC2_2A'] = header_matrix[1, 1]
-    h['CRVAL1A'] = h['CRVAL1A'] + dra
-    h['CRVAL2A'] = h['CRVAL2A'] + ddec
-    h['CRPIX1A'] = h['CRPIX1A'] + dx
-    h['CRPIX2A'] = h['CRPIX2A'] + dy
-
-    with utils.ignore_fits_warnings():
-        fits.writeto(
-                os.path.join(out_dir, os.path.basename(fname)),
-                d, header=h, overwrite=True)
     
+    if write_file:
+        update_file_with_offset(angle, dra, ddec, dx, dy,
+                os.path.join(out_dir, os.path.basename(fname)),
+                h, d, w)
+                
     rmse = np.sqrt(np.mean(np.sqrt(res.fun)))
     return angle, dx, dy, dra, ddec, t, rmse
 
 
-def iteratively_align_files(file_list, out_dir, series_by_frame):
+def update_file_with_offset(angle, dra, ddec, dx, dy, outfile,
+        header=None, data=None, wcs=None, infile=None):
+    if infile is not None:
+        with utils.ignore_fits_warnings():
+            data, header = fits.getdata(infile, header=True)
+            wcs = WCS(header, key='A')
+    
+    header_matrix = np.array([[np.cos(angle), -np.sin(angle)],
+                              [np.sin(angle), np.cos(angle)]]) @ wcs.wcs.pc
+    header['PC1_1A'] = header_matrix[0, 0]
+    header['PC1_2A'] = header_matrix[0, 1]
+    header['PC2_1A'] = header_matrix[1, 0]
+    header['PC2_2A'] = header_matrix[1, 1]
+    header['CRVAL1A'] = header['CRVAL1A'] + dra
+    header['CRVAL2A'] = header['CRVAL2A'] + ddec
+    header['CRPIX1A'] = header['CRPIX1A'] + dx
+    header['CRPIX2A'] = header['CRPIX2A'] + dy
+    
+    with utils.ignore_fits_warnings():
+        fits.writeto(outfile, data, header=header, overwrite=True)
+
+
+def iteratively_align_files(file_list, out_dir, series_by_frame,
+        smooth_offsets=True):
     os.makedirs(out_dir, exist_ok=True)
     
     data = process_map(iteratively_align_one_file, zip(
                            file_list,
                            (series_by_frame[utils.to_timestamp(fname)]
                                for fname in file_list),
-                           repeat(out_dir)),
+                           repeat(out_dir),
+                           repeat(not smooth_offsets)),
                        total=len(file_list))
     
     data = np.array(data)
@@ -495,4 +514,67 @@ def iteratively_align_files(file_list, out_dir, series_by_frame):
     t_vals = data[:, 5]
     rmses = data[:, 6]
     
+    if smooth_offsets:
+        angle_ts = smooth_curve(t_vals, angle_ts,
+                sig=3600*0.5, n_sig=3, outlier_sig=2)
+        rpix_ts[:, 0] = smooth_curve(t_vals, rpix_ts[:, 0],
+                sig=3600*0.5, n_sig=3, outlier_sig=2)
+        rpix_ts[:, 1] = smooth_curve(t_vals, rpix_ts[:, 1],
+                sig=3600*0.5, n_sig=3, outlier_sig=2)
+        rval_ts[:, 0] = smooth_curve(t_vals, rval_ts[:, 0],
+                sig=3600*0.5, n_sig=3, outlier_sig=2)
+        rval_ts[:, 1] = smooth_curve(t_vals, rval_ts[:, 1],
+                sig=3600*0.5, n_sig=3, outlier_sig=2)
+        
+        print("Writing out files...")
+        for fname, angle, rpix, rval in zip(
+                tqdm(file_list), angle_ts, rpix_ts, rval_ts):
+            if np.isnan(angle):
+                continue
+            update_file_with_offset(angle, rval[0], rval[1], rpix[0], rpix[1],
+                    os.path.join(out_dir, os.path.basename(fname)),
+                    infile=fname)
+    
     return angle_ts, rval_ts, rpix_ts, t_vals, rmses
+
+
+def smooth_curve(x, y, sig=3600*2.5, n_sig=3, outlier_sig=2):
+    """
+    Applies a Gaussian filter to an unevenly-spaced 1D signal.
+    
+    The Gaussian is evaluated with resepct to x-axis values, rather than
+    array coordinates (or pixel indicies, etc.)
+    
+    NaN values are ignored in the kernel integration, and NaNs in the input
+    will be replaced with a smoothed value.
+    
+    Arguments
+    ---------
+    x, y : numpy arrays
+        x and y values of the signal
+    sig
+        Width of the standard deviation of the Gaussian, in the same units as
+        `x`
+    n_sig
+        The Gaussian kernel is integrated out to this many standard deviations
+    outlier_sig
+        Before integrating the kernel, the window from -n_sig to +n_sig is
+        checked for outliers. Any point deviating from the window's mean by at
+        least `outlier_sig` times the window standard deviation is ignored.
+    """
+    output_array = np.zeros_like(y)
+    not_nan = np.isfinite(y)
+    for i in range(len(y)):
+        f = np.abs(x - x[i]) < n_sig * sig
+        f *= not_nan
+        xs = x[f]
+        ys = y[f]
+        window_std = np.std(ys)
+        # Skip outlier rejection if there's no variation within the window
+        if window_std > 0:
+            f = np.abs(ys - np.mean(ys)) < outlier_sig * window_std
+            xs = xs[f]
+            ys = ys[f]
+        weight = np.exp(-(x[i] - xs)**2 / sig**2)
+        output_array[i] = np.sum(weight * ys) / weight.sum()
+    return output_array
