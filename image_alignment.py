@@ -25,12 +25,36 @@ from . import utils
 
 def make_cutout(x, y, data, cutout_size, normalize=True):
     """
-    Cuts a section out of a data array and normalizes it
+    Cuts a section from a data array centered on a coordinate and normalizes it.
+    
+    Raises an error if the cutout extends beyond the data bounds.
+    
+    Arguments
+    ---------
+    x, y : float
+        Floating-point array indices around which to center the cutout
+    data : array
+        The data out of which to take the cutout
+    cutout_size : int
+        The size of the square cutout, in pixels
+    normalize : boolean
+        Whether to normalize the data in the cutout
+    
+    Returns
+    -------
+    cutout : array
+        The cutout
+    cutout_start_x, cutout_start_y : int
+        The array indices in the full array of the first row/column in the
+        cutout
     """
     cutout_size = int(round(cutout_size))
     
-    cutout_start_x = int(x) - cutout_size//2 + 1
-    cutout_start_y = int(y) - cutout_size//2 + 1
+    cutout_start_x = int(round(x)) - cutout_size//2
+    cutout_start_y = int(round(y)) - cutout_size//2
+    
+    assert 0 < cutout_start_y < data.shape[0] - cutout_size + 1
+    assert 0 < cutout_start_x < data.shape[1] - cutout_size + 1
     
     cutout = data[
             cutout_start_y:cutout_start_y + cutout_size,
@@ -39,7 +63,7 @@ def make_cutout(x, y, data, cutout_size, normalize=True):
     if normalize:
         cutout = cutout - np.min(cutout)
         with np.errstate(invalid='raise'):
-            cutout /= np.max(cutout)
+            cutout = cutout / np.max(cutout)
     
     return cutout, cutout_start_x, cutout_start_y
 
