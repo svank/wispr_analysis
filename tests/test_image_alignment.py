@@ -4,6 +4,7 @@ from .. import image_alignment, utils
 from itertools import product
 
 
+from astropy.wcs import WCS
 import numpy as np
 import pytest
 
@@ -363,6 +364,87 @@ def test_find_stars_in_frame(mocker, binning):
     for x, y in good:
         assert mapping[(2*round(x), 0.5*round(y))] == (x, y, t)
     assert len(mapping) == len(good)
+
+
+def test_load_stars(mocker):
+    star_data = [''] * 43
+    star_data.append('1;2 30 00;+10 30 00;2')
+    star_data.append('2;2 30 30;+10 30 30;5')
+    star_data.append('3;12 30 30;-10 30 30;10')
+    star_data.append('4;8 00 00;-01 00 00;10')
+    star_data.append('')
+    
+    class MockFile():
+        def readlines(self):
+            return star_data
+    
+    mocker.patch(image_alignment.__name__+'.open',
+            return_value=MockFile())
+    
+    stars = image_alignment.load_stars()
+    
+    data = stars.get_stars(2.5/24*360, 10.5)
+    assert len(data) == 2
+    assert data[0] == (2.5/24*360, 10.5, 2)
+    assert data[1] == ((2.5 + .5/60)/24*360, 10.5 + .5/60, 5)
+    
+    data = stars.get_stars(12.4/24*360, -10.6)
+    assert len(data) == 1
+    assert data[0] == ((12.5 + .5/60)/24*360, -10.5 - .5/60, 10)
+    
+    data = stars.get_stars(0, 0)
+    assert len(data) == 0
+    
+    data = list(stars.stars_between([(2/24*360, 3/24*360)], 10, 11))
+    assert len(data) == 2
+    assert data[0] == (2.5/24*360, 10.5, 2)
+    assert data[1] == ((2.5 + .5/60)/24*360, 10.5 + .5/60, 5)
+    
+    data = list(stars.stars_between(
+        [(2/24*360, 3/24*360), (11/24*360, 13/24*360)], -11, 11))
+    assert len(data) == 3
+    assert data[0] == (2.5/24*360, 10.5, 2)
+    assert data[1] == ((2.5 + .5/60)/24*360, 10.5 + .5/60, 5)
+    assert data[2] == ((12.5 + .5/60)/24*360, -10.5 - .5/60, 10)
+    
+    data = list(stars.stars_between(
+        [(2/24*360, 13/24*360)], -11, 11))
+    assert len(data) == 4
+    assert data[0] == (2.5/24*360, 10.5, 2)
+    assert data[1] == ((2.5 + .5/60)/24*360, 10.5 + .5/60, 5)
+    assert data[2] == (8/24*360, -1, 10)
+    assert data[3] == ((12.5 + .5/60)/24*360, -10.5 - .5/60, 10)
+
+
+def test_do_iteration_no_crpix():
+    w = WCS(naxis=2)
+    w.wcs.crpix = 50, 50
+    w.wcs.crval = 0, 0
+    w.wcs.cdelt = 1, 1
+    
+    xs = np.arange(-100, 100)
+    ys = np.arange(-100, 100)
+    np.random.seed(1)
+    np.random.shuffle(xs)
+    np.random.shuffle(ys)
+    
+    ras, decs = w.all_pix2world(xs, ys, 0)
+    
+    w.wcs.crval = 1.2, -0.8
+    angle = 0.1
+    w.wcs.pc = np.array(
+            [[np.cos(angle), -np.sin(angle)],
+            [np.sin(angle), np.cos(angle)]])
+    
+    _, fitted_angle, fitted_dra, fitted_ddec, fitted_dx, fitted_dy = \
+            image_alignment.do_iteration_no_crpix(
+            ras, decs, xs, ys, w)
+    
+    assert fitted_dra == pytest.approx(-w.wcs.crval[0])
+    assert fitted_ddec == pytest.approx(-w.wcs.crval[1])
+    assert fitted_angle == pytest.approx(-angle)
+    assert fitted_dx == 0
+    assert fitted_dy == 0
 
 
 def test_smooth_curve_constant():

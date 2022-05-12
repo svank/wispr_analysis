@@ -4,11 +4,6 @@ from math import ceil, floor
 import os
 import warnings
 
-import multiprocessing
-try:
-    multiprocessing.set_start_method('fork')
-except RuntimeError:
-    pass
 
 from astropy.io import fits
 from astropy.modeling import models, fitting
@@ -307,33 +302,36 @@ class StarBins:
                 yield from self.bins[ra_bin][dec_bin]
 
 
-stars = StarBins(3, 3)
+def load_stars():
+    stars = StarBins(3, 3)
 
-
-catalog_path = os.path.join(os.path.dirname(__file__), "hipparchos_catalog.tsv")
-star_dat = open(catalog_path).readlines()
-for line in star_dat[43:-1]:
-    try:
-        id, RA, dec, Vmag = line.split(";")
-    except ValueError:
-        continue
-    try:
-        Vmag = float(Vmag)
-    except ValueError:
-        continue
-    
-    # Convert RA to floating-point degrees
-    h, m, s = RA.split(" ")
-    h = int(h) + int(m) / 60 + float(s) / 60 / 60
-    RA = h / 24 * 360
-    
-    # Convert declination to floating-point degrees
-    d, m, s = dec.split(" ")
-    sign = 1 if d.startswith("+") else -1
-    d = abs(int(d)) + int(m) / 60 + float(s) / 60 / 60
-    dec = d * sign
-    
-    stars.add_star(RA, dec, (RA, dec, Vmag))
+    catalog_path = os.path.join(
+            os.path.dirname(__file__), "hipparchos_catalog.tsv")
+    star_dat = open(catalog_path).readlines()
+    for line in star_dat[43:-1]:
+        try:
+            id, RA, dec, Vmag = line.split(";")
+        except ValueError:
+            continue
+        try:
+            Vmag = float(Vmag)
+        except ValueError:
+            continue
+        
+        # Convert RA to floating-point degrees
+        h, m, s = RA.split(" ")
+        h = int(h) + int(m) / 60 + float(s) / 60 / 60
+        RA = h / 24 * 360
+        
+        # Convert declination to floating-point degrees
+        d, m, s = dec.split(" ")
+        sign = 1 if d.startswith("+") else -1
+        d = abs(int(d)) + int(m) / 60 + float(s) / 60 / 60
+        dec = d * sign
+        
+        stars.add_star(RA, dec, (RA, dec, Vmag))
+    return stars
+stars = load_stars()
 
 
 def find_stars_in_frame(data):
