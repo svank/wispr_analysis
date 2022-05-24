@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from astropy.wcs import WCS
 import numba
 import numpy as np
+import reproject
+
 
 @dataclass
 class Thing:
@@ -163,6 +165,10 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         parcel_angular_width = 2 * np.arctan(parcel_width / 2 / (sc - parcel).r)
         parcel_angular_width *= 180 / np.pi # degrees
         cdelt = parcel_angular_width / parcel_res
+        try:
+            cdelt = cdelt[0]
+        except TypeError:
+            pass
         parcel_wcs.wcs.cdelt = cdelt, cdelt
         # For each blob, calculate a position, update the WCS, and then project
         # the blob image onto the output image.
@@ -175,7 +181,7 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
                 boundary_mode='grid-constant', boundary_fill_value=0,
                 roundtrip_coords=False, return_footprint=False,
                 conserve_flux=True)
-        output_image += subimage / (sc - parcel).r**2
+        output_image += subimage / (sc - parcel).r**2 / parcel.r**2
     
     return output_image, image_wcs
 
