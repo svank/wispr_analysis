@@ -1,6 +1,9 @@
 from .. import synthetic_data as sd
 
 
+import matplotlib.pyplot as plt
+from matplotlib.testing.conftest import mpl_test_settings
+from matplotlib.testing.decorators import image_comparison
 import numpy as np
 import pytest
 from pytest import approx
@@ -206,3 +209,31 @@ def test_FOV_pos():
     np.testing.assert_allclose(
             sd.calc_FOV_pos(sc, p, t=[0, 1]),
             [np.pi/4, -np.pi/4])
+
+
+@image_comparison(baseline_images=['test_synthesize_image'],
+        extensions=['pdf'])
+def test_synthesize_image():
+    sc = sd.Thing(x=-10, y=-10, vx=1, vy=0.2)
+    p = sd.Thing(x=-5, y=-12, vx=-.5, vy=-.5)
+    p2 = sd.Thing(x=5, y=-8, vx=.5, vy=.5)
+    p3 = sd.Thing(x=-20, y=-20, vx=.5, vy=.5)
+    
+    image, wcs = sd.synthesize_image(sc, [p, p2], 1, fov=140)
+    
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1, projection=wcs)
+    ax.imshow(np.sqrt(image), origin='lower', cmap='Greys_r')
+    
+    lon, lat = ax.coords
+    lat.set_major_formatter('dd')
+    lon.set_major_formatter('dd')
+    ax.set_xlabel("HP Longitude")
+    ax.set_ylabel("HP Latitude")
+    ax.coords.grid(color='white', alpha=0.7, ls='-')
+    
+    # Check that the range of values is right
+    assert image.max() == approx(0.000456832948092)
+    assert image.min() == approx(0)
+    
+    return fig

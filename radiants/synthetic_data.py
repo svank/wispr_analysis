@@ -136,7 +136,7 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
     if image_wcs is None:
         image_wcs = WCS(naxis=2)
         forward_elongation = angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
-        image_wcs.wcs.crval = forward_elongation * 180 / np.pi, 0
+        image_wcs.wcs.crval = forward_elongation[0] * 180 / np.pi, 0
         image_wcs.wcs.crpix = output_size_x/2 + .5, output_size_y/2 + .5
         cdelt = fov / max(output_size_x, output_size_y)
         image_wcs.wcs.cdelt = cdelt, cdelt
@@ -175,7 +175,7 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         # Is this overkill? Maybe?
         horiz_pos = calc_epsilon(sc, parcel) * 180 / np.pi
         vert_pos = 0
-        parcel_wcs.wcs.crval = horiz_pos, vert_pos
+        parcel_wcs.wcs.crval = horiz_pos[0], vert_pos
         subimage = reproject.reproject_adaptive(
                 (parcel_image, parcel_wcs), image_wcs, output_image.shape,
                 boundary_mode='grid-constant', boundary_fill_value=0,
