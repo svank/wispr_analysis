@@ -19,6 +19,7 @@ class Thing:
         That object's position is updated according to ``t`` and the object's
         velocity.
         """
+        t = np.atleast_1d(t)
         return Thing(x=self.x + self.vx * t, y=self.y + self.vy * t, vx=self.vx, vy=self.vy)
     
     def in_front_of(self, other, t=0):
@@ -96,12 +97,16 @@ def angle_between_vectors(x1, y1, x2, y2):
 
 def calc_epsilon(sc, p, t=0):
     """
-    Calculates elongation angle epsilon given spacecraft and parcel positions
+    Calculates (unsigned) elongation angle epsilon for spacecraft and parcel positions
     """
+    t = np.atleast_1d(t)
+    if len(t) > 1 or t != 0:
+        sc = sc.at(t)
+        p = p.at(t)
     # First find distances between objects
-    d_sc_sun = np.sqrt(sc.at(t).x**2 + sc.at(t).y**2)
-    d_p_sun = np.sqrt(p.at(t).x**2 + p.at(t).y**2)
-    d_sc_p = np.sqrt((sc.at(t).x - p.at(t).x)**2 + (sc.at(t).y - p.at(t).y)**2)
+    d_sc_sun = np.sqrt(sc.x**2 + sc.y**2)
+    d_p_sun = np.sqrt(p.x**2 + p.y**2)
+    d_sc_p = np.sqrt((sc.x - p.x)**2 + (sc.y - p.y)**2)
     with np.errstate(invalid='ignore', divide='ignore'):
         # Law of cosines:
         # d_p_sun^2 = d_sc_sun^2 + d_sc_p^2 - 2*d_sc_sun*d_sc_p*cos(epsilon)
@@ -110,10 +115,14 @@ def calc_epsilon(sc, p, t=0):
 
 
 def calc_FOV_pos(sc, p, t=0):
-    """Calculates FOV position given spacecraft and parcel positions"""
-    # Find the angle between the spacecraft's nominal to-Sun direction (that is, exactly 90 degrees from its travel direction) and the sc-p line
+    """
+    Calculates FOV position given spacecraft and parcel positions
+    
+    FOV angle is measured relative to the spacecraft's forward direction and
+    increases to the right
+    """
     offset = (p - sc).at(t)
-    return angle_between_vectors(-sc.vy, sc.vx, offset.x, offset.y)
+    return -signed_angle_between_vectors(sc.vx, sc.vy, offset.x, offset.y)
 
 
 def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',

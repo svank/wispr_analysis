@@ -163,4 +163,46 @@ def test_calculate_radiant(sc_vx_sign):
     # check.
     radiants = sd.elongation_to_FOV(sc.at(ts), radiants)
     np.testing.assert_allclose(radiants, -1 * sc_vx_sign * np.pi/4, atol=0.006)
+    
+    np.testing.assert_array_equal(
+            sd.calculate_radiant(sc.at(1e10), p),
+            np.nan)
 
+
+def test_calc_epsilon():
+    sc = sd.Thing(x=-10, y=-10, vx=0, vy=0)
+    p = sd.Thing(x=-5, y=-5, vx=0, vy=-5)
+    
+    assert sd.calc_epsilon(sc, p) == approx(0)
+    assert sd.calc_epsilon(sc, p, t=1) == approx(np.pi/4)
+    
+    p.vy = 0
+    sc.vy = 5
+    sc.vx = 10
+    
+    assert sd.calc_epsilon(sc, p, t=1) == approx(np.pi/2)
+    
+    np.testing.assert_allclose(
+            sd.calc_epsilon(sc, p, t=[0, 1]),
+            [0, np.pi/2])
+
+
+def test_FOV_pos():
+    sc = sd.Thing(x=-10, y=-10, vx=0.000001, vy=0)
+    p = sd.Thing(x=0, y=-10, vx=0, vy=0)
+    
+    assert sd.calc_FOV_pos(sc, p) == approx(0)
+    
+    p.y = 0
+    p.vy = -20
+    
+    np.testing.assert_allclose(
+            sd.calc_FOV_pos(sc, p, t=[0, 1]),
+            [-np.pi/4, np.pi/4])
+    
+    sc.vx *= -1
+    sc.x *= -1
+    
+    np.testing.assert_allclose(
+            sd.calc_FOV_pos(sc, p, t=[0, 1]),
+            [np.pi/4, -np.pi/4])
