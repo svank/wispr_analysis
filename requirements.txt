@@ -3,10 +3,13 @@
 # platform: osx-arm64
 astropy>=5.0
 ipython>=8.3
+# Set version more strictly to avoid test failures
 matplotlib==3.5.*
 numba>=0.55
 numpy>=1.21
 pytest>=7.1
+# pytest-arraydiff>=0.5
+git+https://github.com/svank/pytest-arraydiff@fix-atol#egg=pytest-arraydiff
 pytest-mock>=3.7
 # reproject>=0.8
 git+https://github.com/svank/reproject@everything#egg=reproject
