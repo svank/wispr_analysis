@@ -167,6 +167,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         process_map(draw_WISPR_video_frame, arguments, total=len(images))
         os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
                   f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
+                  " -x264-params keyint=30"
                   f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {tmpdir}/out.mp4")
         display(Video(
             f"{tmpdir}/out.mp4",
