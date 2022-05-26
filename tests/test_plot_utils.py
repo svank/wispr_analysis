@@ -65,6 +65,17 @@ def test_x_axis_dates():
     return plt.gcf()
 
 
+@image_comparison(baseline_images=['test_y_axis_dates'], extensions=['pdf'])
+def test_y_axis_dates():
+    dates = ['20200101T000000', '20200105T120000', '20200110T010000']
+    y = [1, 0, 2]
+    
+    x = plot_utils.y_axis_dates(dates)
+    plt.plot(y, x)
+    
+    return plt.gcf()
+
+
 @image_comparison(baseline_images=['test_x_axis_dates_setting_fig_ax'],
         extensions=['pdf'])
 def test_x_axis_dates_setting_fig_ax():

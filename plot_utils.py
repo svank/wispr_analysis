@@ -351,7 +351,7 @@ def plot_orbit(data_dir):
     plt.gca().set_aspect('equal')
 
 
-def x_axis_dates(dates, ax=None, fig=None):
+def x_axis_dates(*args, **kwargs):
     """
     Helper to format the x axis as dates and convert dates to matplotlib's format.
     
@@ -378,10 +378,25 @@ def x_axis_dates(dates, ax=None, fig=None):
         A list of dates that have been converted to matplotlib's date format,
         ready for use as the x-axis quantity when plotting.
     """
+    return axis_dates(*args, **kwargs, axis='x')
+
+
+def y_axis_dates(*args, **kwargs):
+    """
+    Helper to format the y axis as dates and convert dates to matplotlib's format.
+    
+    Same as `x_axis_dates`, but applies to the y axis instead.
+    """
+    
+    return axis_dates(*args, **kwargs, axis='y')
+
+
+def axis_dates(dates, axis='x', ax=None, fig=None):
     if isinstance(dates[0], str):
         dates = [utils.to_timestamp(d) for d in dates]
-    dates = [datetime.fromtimestamp(d, tz=timezone.utc) if np.isfinite(d) else None
-                 for d in dates]
+    dates = [datetime.fromtimestamp(d, tz=timezone.utc)
+             if np.isfinite(d) else None
+             for d in dates]
     dates = [mdates.date2num(d) if d is not None else np.nan for d in dates]
     
     if ax is None:
@@ -399,14 +414,23 @@ def x_axis_dates(dates, ax=None, fig=None):
         # Fresh locators/formatters are needed for each instance
         loc = mdates.AutoDateLocator()
         fmt = mdates.AutoDateFormatter(loc)
-        a.xaxis.set_major_locator(loc)
-        a.xaxis.set_major_formatter(fmt)
+        if axis == 'x':
+            axis_obj = a.xaxis
+        else:
+            axis_obj = a.yaxis
         
-        for label in a.get_xticklabels(which='major'):
-            label.set_ha('right')
-            label.set_rotation(30)
+        axis_obj.set_major_locator(loc)
+        axis_obj.set_major_formatter(fmt)
+        
+        if axis == 'x':
+            for label in a.get_xticklabels(which='major'):
+                label.set_ha('right')
+                label.set_rotation(30)
     
-    fig.subplots_adjust(bottom=.2)
+    if axis == 'x':
+        fig.subplots_adjust(bottom=.2)
+    else:
+        fig.subplots_adjust(left=.2)
     
     return dates
 
