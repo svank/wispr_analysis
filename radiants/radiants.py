@@ -44,3 +44,49 @@ def select_speed_range(vmin, vmax, strips, spatial_axis=None,
     fstrips *= mask
     return np.abs(np.fft.ifft2(fstrips))
 
+
+def find_radiant(strips, t, fov_angles, window_size=41, v_halfwindow=1,
+        ret_extra=False):
+    if window_size % 2 != 1:
+        raise ValueError("window_size should be odd")
+    
+    windows = np.lib.stride_tricks.sliding_window_view(
+            strips, (window_size, window_size))
+
+    best_vs = []
+    best_fts = []
+    best_fractions = []
+    computed_radiants = []
+    computed_radiants_ts = []
+    all_fractions = np.zeros(windows.shape[:2])
+    all_stat_energy = np.zeros(windows.shape[:2])
+    for j in range(windows.shape[0]):
+        best_fraction = -np.inf
+        for i in range(windows.shape[1]):
+            v, ft = get_speeds(
+                    windows[j, i], dt=t[1] - t[0], spatial_axis=fov_angles,
+                    apodize_rolloff=5)
+            ft = np.abs(ft)
+            good = np.isfinite(v) * (v > -v_halfwindow) * (v < v_halfwindow)
+            stationary_energy = np.sum(np.abs(v*ft)[good])
+            fraction = stationary_energy / np.sum(ft)
+            all_fractions[j, i] = fraction
+            all_stat_energy[j, i] = stationary_energy
+            if fraction > best_fraction:
+                best_fraction = fraction
+                best_v, best_ft = v, ft
+                best_idx = i + window_size // 2
+        best_vs.append(best_v)
+        best_fts.append(best_ft)
+        best_fractions.append(best_fraction)
+        computed_radiants.append(fov_angles[best_idx])
+        computed_radiants_ts.append(t[j + window_size//2])
+    if ret_extra:
+        extras = dict(
+                best_vs=best_vs,
+                best_fts=best_fts,
+                best_fractions=best_fractions,
+                all_fractions=all_fractions,
+                all_stat_energy=all_stat_energy)
+        return computed_radiants, computed_radiants_ts, extras
+    return computed_radiants, computed_radiants_ts
