@@ -553,15 +553,15 @@ def iteratively_align_files(file_list, out_dir, series_by_frame,
     
     if smooth_offsets:
         angle_ts = smooth_curve(t_vals, angle_ts,
-                sig=3600*0.5, n_sig=3, outlier_sig=2)
+                sig=smooth_offsets, n_sig=3, outlier_sig=2)
         rpix_ts[:, 0] = smooth_curve(t_vals, rpix_ts[:, 0],
-                sig=3600*0.5, n_sig=3, outlier_sig=2)
+                sig=smooth_offsets, n_sig=3, outlier_sig=2)
         rpix_ts[:, 1] = smooth_curve(t_vals, rpix_ts[:, 1],
-                sig=3600*0.5, n_sig=3, outlier_sig=2)
+                sig=smooth_offsets, n_sig=3, outlier_sig=2)
         rval_ts[:, 0] = smooth_curve(t_vals, rval_ts[:, 0],
-                sig=3600*0.5, n_sig=3, outlier_sig=2)
+                sig=smooth_offsets, n_sig=3, outlier_sig=2)
         rval_ts[:, 1] = smooth_curve(t_vals, rval_ts[:, 1],
-                sig=3600*0.5, n_sig=3, outlier_sig=2)
+                sig=smooth_offsets, n_sig=3, outlier_sig=2)
         
         print("Writing out files...")
         for fname, angle, rpix, rval in zip(
@@ -575,7 +575,7 @@ def iteratively_align_files(file_list, out_dir, series_by_frame,
     return angle_ts, rval_ts, rpix_ts, t_vals, rmses
 
 
-def smooth_curve(x, y, sig=3600*2.5, n_sig=3, outlier_sig=2):
+def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
     """
     Applies a Gaussian filter to an unevenly-spaced 1D signal.
     
