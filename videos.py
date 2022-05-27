@@ -5,6 +5,7 @@ import itertools
 from math import floor
 import multiprocessing
 import os
+import shutil
 import tempfile
 import warnings
 
@@ -31,7 +32,7 @@ cmap.set_bad('black')
     
 def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
-        destreak=True):
+        destreak=True, save_location=None):
     """
     Renders a video of a WISPR data sequence, in a composite field of view.
     
@@ -165,14 +166,16 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         # anyway.
         arguments = zip(images, repeat(locals()))
         process_map(draw_WISPR_video_frame, arguments, total=len(images))
+        video_file = os.path.join(tmpdir, 'out.mp4')
         os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
                   f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
                   " -x264-params keyint=30"
-                  f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {tmpdir}/out.mp4")
-        display(Video(
-            f"{tmpdir}/out.mp4",
-            embed=True,
-            html_attributes="controls loop"))
+                  f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {video_file}")
+        if save_location is not None:
+            shutil.move(video_file, save_location)
+        else:
+            display(Video( video_file, embed=True,
+                html_attributes="controls loop"))
 
 
 def draw_WISPR_video_frame(data):
@@ -217,7 +220,7 @@ def draw_WISPR_video_frame(data):
     
     with plt.style.context('dark_background'):
         for t in timesteps:
-            fig = plt.figure(figsize=(10, 7.5), dpi=140)
+            fig = plt.figure(figsize=(10, 7.5), dpi=250)
             ax = fig.add_subplot(111, projection=wcs_plot)
 
             im = ax.imshow(c, cmap=cmap, origin='lower',
