@@ -444,12 +444,16 @@ def date_to_mdate(date):
     date
         A date to be converted to a matplotlib-friendly format. Should be
         either a format understood by utils.to_timestamp, or a POSIX timestamp.
+        Can also be a list of such values.
     Returns
     -------
     date
         A date that have been converted to matplotlib's date format, ready for
         use as the x-axis quantity when plotting.
     """
+    if isinstance(date, Iterable) and not isinstance(date, str):
+        return [date_to_mdate(x) for x in date]
+    
     if isinstance(date, str):
         date = utils.to_timestamp(date)
     date = datetime.fromtimestamp(date, tz=timezone.utc)

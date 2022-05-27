@@ -27,6 +27,23 @@ def test_to_timestamp():
             datetime)
 
 
+def test_to_timestamp_list():
+    timestamps = ['2021-02-03T12:13:14.5',
+                  '2022-02-12T12:14:14.5',
+                  '2023-02-01T12:15:14.5',
+                  '2023-04-02T12:16:14.5']
+    
+    assert (utils.to_timestamp(timestamps)
+            == [utils.to_timestamp(x) for x in timestamps])
+    
+    timestamps = ['path/psp_L3_wispr_20210111T083017_V1_1221.fits',
+                  'path/psp_L3_wispr_20210211T083017_V1_1221.fits',
+                  'path/psp_L3_wispr_20210311T083017_V1_1221.fits']
+    
+    assert (utils.to_timestamp(timestamps)
+            == [utils.to_timestamp(x) for x in timestamps])
+
+
 def test_get_PSP_path():
     dir_path = (os.path.dirname(__file__)
                 + '/test_data/WISPR_files_headers_only/')

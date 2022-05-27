@@ -96,3 +96,11 @@ def test_x_axis_dates_setting_fig_ax():
 def test_date_to_mdate():
     assert plot_utils.date_to_mdate('19700101T000000') == 0
     assert plot_utils.date_to_mdate('19700101T060000') == .25
+    
+    timestamps = ['2021-02-03T12:13:14.5',
+                  '2022-02-12T12:14:14.5',
+                  '2023-02-01T12:15:14.5',
+                  '2023-04-02T12:16:14.5']
+    
+    assert (plot_utils.date_to_mdate(timestamps)
+            == [plot_utils.date_to_mdate(t) for t in timestamps])
