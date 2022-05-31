@@ -219,7 +219,8 @@ def test_dust_streak_filter_greatest_allowable_gap_1(random_data, headers):
     
     assert 'Dust streak removal skipped; gap of' not in str(header['history'])
     assert 'exceeded greatest allowable gap of' not in str(header['history'])
-    
+
+
 def test_dust_streak_filter_greatest_allowable_gap_2(random_data, headers):
     img1, img2, img3 = random_data
     h1, h2, h3 = headers
@@ -269,8 +270,7 @@ def test_dust_streak_removal_header_history(random_data, real_headers,
     assert f"ra-dec alignment: {radec}" in history
     assert f"window_width: {window_width}" in history
     assert f"sliding_window_stride: {sliding_window_stride}" in history
-    
-    
+
 
 @pytest.mark.parametrize('window_width', [3, 5])
 def test_gen_diffs_distribution(window_width):
@@ -333,3 +333,17 @@ def test_gen_diffs_distribution_stride_2():
     # Outside the padded edges, alternating columns should be equal
     np.testing.assert_equal(mean[:, 2::2], mean[:, 1:-1:2])
 
+
+def test_find_mask():
+    path = os.path.dirname(__file__)
+    path = os.path.join(path, 'test_data', 'WISPR_files_headers_only')
+    
+    files = utils.collect_files(path, separate_detectors=False)
+    
+    # For testing purposes, we'll pass the data directory as the mask
+    # directory---it's all just filenames anyway.
+    f = files[1]
+    assert data_cleaning.find_mask(path, f) == f
+    
+    f = files[1:4]
+    assert data_cleaning.find_mask(path, f) == f

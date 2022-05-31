@@ -374,3 +374,38 @@ def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
                 for x in p.imap_unordered(clean_file, iterable):
                     pbar.update(1)
 
+
+def find_mask(masks_dir, fnames):
+    """
+    Finds a mask file for a given data file(s) by matching timestamps
+    
+    Arguments
+    ---------
+    masks_dir : str
+        A directory containing mask files, with a directory structure parseable
+        by `utils.collect_files`.
+    fnames : str or list
+        One or more data files.
+    
+    Returns
+    -------
+    found_masks : str or list
+        The paths of the mask files for each data file, or ``None`` if a mask
+        file was not found.
+    """
+    orig_fnames = fnames
+    if isinstance(fnames, str):
+        fnames = [fnames]
+    masks = utils.collect_files(masks_dir, separate_detectors=False)
+    masks = {utils.to_timestamp(f): f for f in masks}
+    found_masks = []
+    for f in fnames:
+        try:
+            found_masks.append(masks[utils.to_timestamp(f)])
+        except KeyError:
+            found_masks.append(None)
+    
+    if isinstance(orig_fnames, str):
+        return found_masks[0]
+    return found_masks
+
