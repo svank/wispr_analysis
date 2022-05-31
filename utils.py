@@ -199,7 +199,8 @@ def ensure_data(input, header=True, wcs=False, wcs_key=' '):
             w = input[2]
         except IndexError:
             if isinstance(hdr, fits.Header):
-                w = WCS(hdr, key=wcs_key)
+                with ignore_fits_warnings():
+                    w = WCS(hdr, key=wcs_key)
             else:
                 w = None
     else:
