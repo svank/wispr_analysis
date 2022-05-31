@@ -263,17 +263,50 @@ def ignore_fits_warnings():
 
 def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         trim=(0, 0, 0, 0), sliding_window_stride=1):
+    """
+    Computes stats in a sliding window.
+    
+    The output is an array that matches the shape of the input array, where
+    each pixel is the statistic for a window centered on that pixel. Values are
+    duplicated at the edges, where the window does not fit in the input array.
+    
+    Arguments
+    ---------
+    data : ``ndarray``
+        The input array. Can have any dimensionality.
+    window_width : int
+        The size of the sliding window. Currently restricted to having the same
+        size in all dimensions.
+    stats : str or list of str
+        The statistics to compute. Multiple stats can be specified. Supported
+        options are 'mean', 'std', and 'median'. For each, `NaN` values within
+        the window are ignored.
+    trim : list
+        A list of 2*N values, where N is the number of dimensions of the input
+        array. Specifies a number of pixels to remove from the beginning and
+        end of each dimension before computing stats. The outermost output
+        pixels will be replicated that many additional times so the output and
+        input arrays have the same shape. The order is
+        ``(begin1, end1, begin2, end2, ...)``.
+    sliding_window_stride : int
+        Set this to a value N > 1 to compute the sliding window only for every
+        N pixels along each dimension. The computed values will then be
+        replicated into the skipped pixels.
+    
+    """
     stats_orig = stats
     if isinstance(stats, str):
         stats = [stats]
     
-    data_trimmed = data[trim[0]:data.shape[0] - trim[1],
-                        trim[2]:data.shape[1] - trim[3]]
+    cut = []
+    for i in range(len(data.shape)):
+        cut.append(slice(trim[2*i], data.shape[i] - trim[2*i + 1]))
+    data_trimmed = data[tuple(cut)]
     
     sliding_window = np.lib.stride_tricks.sliding_window_view(
-            data_trimmed, (window_width, window_width))
-    sliding_window = sliding_window[::sliding_window_stride,
-            ::sliding_window_stride]
+            data_trimmed, [window_width] * len(data.shape))
+    cut = [slice(None, None, sliding_window_stride)] * len(data.shape)
+    sliding_window = sliding_window[tuple(cut)]
     
     outputs = []
     name_to_fcn = {
@@ -289,16 +322,26 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
                 message=".*degrees of freedom <= 0.*")
         
         for stat in stats:
-            outputs.append(name_to_fcn[stat](sliding_window, axis=(2, 3)))
+            # In the sliding window, the first N dimensions are the dimensions
+            # of the input array, and the second N dimensions are the
+            # dimensions of the window. E.g. for a 5x5 window over a 25x25
+            # array, the sliding window ix 23x23x5x5.
+            window_axes = np.arange(len(data.shape), 2*len(data.shape))
+            outputs.append(name_to_fcn[stat](sliding_window,
+                axis=tuple(window_axes)))
     
     if sliding_window_stride > 1:
+        # Duplicate rows/columns to account for the stride
         for i in range(len(outputs)):
-            outputs[i] = np.repeat(outputs[i], sliding_window_stride, axis=0)
-            outputs[i] = np.repeat(outputs[i], sliding_window_stride, axis=1)
-    vpad = data.shape[0] - outputs[0].shape[0] - trim[0] - trim[1]
-    hpad = data.shape[1] - outputs[0].shape[1] - trim[2] - trim[3]
-    padding = ((vpad//2 + trim[0], ceil(vpad/2) + trim[1]),
-            (hpad//2 + trim[2], ceil(hpad/2) + trim[3]))
+            for j in range(len(data.shape)):
+                outputs[i] = np.repeat(outputs[i], sliding_window_stride,
+                        axis=j)
+    # Pad the edges, since the sliding window can't go all the way to the edge.
+    padding = []
+    for i in range(len(data.shape)):
+        pad = data.shape[i] - outputs[0].shape[i] - trim[2*i] - trim[2*i + 1]
+        padding.append((pad//2 + trim[2*i], ceil(pad/2) + trim[2*i + 1]))
+    
     for i in range(len(outputs)):
         outputs[i] = np.pad(outputs[i], padding, mode='edge')
     

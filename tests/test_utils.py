@@ -365,7 +365,7 @@ def test_sliding_window_stats():
 
 def test_sliding_window_stride():
     data1 = np.ones((15, 30))
-    data2 = data1 + 9
+    data2 = np.full((15, 30), 10)
     data = np.vstack((data1, data2))
     
     std, mean = utils.sliding_window_stats(data, 5, ['std', 'mean'])
@@ -397,3 +397,17 @@ def test_sliding_window_trim():
     data = np.random.random(900).reshape((30, 30))
     med = utils.sliding_window_stats(data, 6, ['median'], trim=(7, 4, 9, 5))
     return med[0]
+
+
+@pytest.mark.array_compare
+def test_sliding_window_1D():
+    np.random.seed(40)
+    data = np.random.random(40)
+    
+    mean = utils.sliding_window_stats(data, 5, 'mean')
+    mean_strided = utils.sliding_window_stats(data, 5, 'mean',
+            sliding_window_stride=2)
+    mean_trimmed = utils.sliding_window_stats(data, 5, 'mean', trim=(3, 4))
+    
+    return np.vstack((mean, mean_strided, mean_trimmed))
+    
