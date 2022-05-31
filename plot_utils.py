@@ -397,7 +397,8 @@ def axis_dates(dates, axis='x', ax=None, fig=None):
     dates = [datetime.fromtimestamp(d, tz=timezone.utc)
              if np.isfinite(d) else None
              for d in dates]
-    dates = [mdates.date2num(d) if d is not None else np.nan for d in dates]
+    dates = np.array(
+            [mdates.date2num(d) if d is not None else np.nan for d in dates])
     
     if ax is None:
         ax = [plt.gca()]
