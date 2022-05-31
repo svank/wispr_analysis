@@ -219,31 +219,8 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
 
 def gen_diffs_distribution(img1_r, img3_r, trim, sliding_window_stride, window_width):
     diffs = np.abs(img3_r - img1_r)
-    diffs = diffs[trim[0]:diffs.shape[0] - trim[1], trim[2]:diffs.shape[1] - trim[3]]
-    sliding_window = np.lib.stride_tricks.sliding_window_view(
-            diffs, (window_width, window_width))
-    sliding_window = sliding_window[::sliding_window_stride,
-            ::sliding_window_stride]
-    with warnings.catch_warnings():
-        warnings.filterwarnings(action='ignore',
-                message=".*empty slice.*")
-        warnings.filterwarnings(action='ignore',
-                message=".*degrees of freedom <= 0.*")
-        mean_diffs = np.nanmean(sliding_window, axis=(2, 3))
-        std_diffs = np.nanstd(sliding_window, axis=(2, 3))
-    if sliding_window_stride > 1:
-        mean_diffs = np.repeat(mean_diffs, sliding_window_stride, axis=0)
-        mean_diffs = np.repeat(mean_diffs, sliding_window_stride, axis=1)
-        std_diffs = np.repeat(std_diffs, sliding_window_stride, axis=0)
-        std_diffs = np.repeat(std_diffs, sliding_window_stride, axis=1)
-    vpad = img1_r.shape[0] - mean_diffs.shape[0] - trim[0] - trim[1]
-    hpad = img1_r.shape[1] - mean_diffs.shape[1] - trim[2] - trim[3]
-    padding = ((vpad//2 + trim[0], ceil(vpad/2) + trim[1]),
-            (hpad//2 + trim[2], ceil(hpad/2) + trim[3]))
-    mean_diffs = np.pad(mean_diffs, padding, mode='edge')
-    std_diffs = np.pad(std_diffs, padding, mode='edge')
-    
-    return mean_diffs, std_diffs
+    return utils.sliding_window_stats(diffs, window_width, ['mean', 'std'],
+            trim=trim, sliding_window_stride=sliding_window_stride)
 
 
 def median_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60*60):

@@ -259,3 +259,50 @@ def ignore_fits_warnings():
         warnings.filterwarnings(
                 action='ignore', message=".*datfix.*")
         yield
+
+
+def sliding_window_stats(data, window_width, stats=['mean', 'std'],
+        trim=(0, 0, 0, 0), sliding_window_stride=1):
+    stats_orig = stats
+    if isinstance(stats, str):
+        stats = [stats]
+    
+    data_trimmed = data[trim[0]:data.shape[0] - trim[1],
+                        trim[2]:data.shape[1] - trim[3]]
+    
+    sliding_window = np.lib.stride_tricks.sliding_window_view(
+            data_trimmed, (window_width, window_width))
+    sliding_window = sliding_window[::sliding_window_stride,
+            ::sliding_window_stride]
+    
+    outputs = []
+    name_to_fcn = {
+            'mean': np.nanmean,
+            'std': np.nanstd,
+            'median': np.nanmedian,
+        }
+    
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action='ignore',
+                message=".*empty slice.*")
+        warnings.filterwarnings(action='ignore',
+                message=".*degrees of freedom <= 0.*")
+        
+        for stat in stats:
+            outputs.append(name_to_fcn[stat](sliding_window, axis=(2, 3)))
+    
+    if sliding_window_stride > 1:
+        for i in range(len(outputs)):
+            outputs[i] = np.repeat(outputs[i], sliding_window_stride, axis=0)
+            outputs[i] = np.repeat(outputs[i], sliding_window_stride, axis=1)
+    vpad = data.shape[0] - outputs[0].shape[0] - trim[0] - trim[1]
+    hpad = data.shape[1] - outputs[0].shape[1] - trim[2] - trim[3]
+    padding = ((vpad//2 + trim[0], ceil(vpad/2) + trim[1]),
+            (hpad//2 + trim[2], ceil(hpad/2) + trim[3]))
+    for i in range(len(outputs)):
+        outputs[i] = np.pad(outputs[i], padding, mode='edge')
+    
+    if isinstance(stats_orig, str):
+        return outputs[0]
+    return outputs
+

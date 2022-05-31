@@ -352,3 +352,48 @@ def test_get_hann_rolloff_errors():
     with pytest.raises(ValueError):
         utils.get_hann_rolloff(10, 2.2)
 
+
+@pytest.mark.array_compare
+def test_sliding_window_stats():
+    data1 = np.ones((15, 30))
+    data2 = data1 + 9
+    data = np.vstack((data1, data2))
+    
+    mean = utils.sliding_window_stats(data, 5, 'mean')
+    return mean
+
+
+def test_sliding_window_stride():
+    data1 = np.ones((15, 30))
+    data2 = data1 + 9
+    data = np.vstack((data1, data2))
+    
+    std, mean = utils.sliding_window_stats(data, 5, ['std', 'mean'])
+    std1, mean1 = utils.sliding_window_stats(data, 5, ['std', 'mean'])
+    np.testing.assert_array_equal(std, std1)
+    np.testing.assert_array_equal(mean, mean1)
+    
+    std2, mean2 = utils.sliding_window_stats(data, 5, ['std', 'mean'],
+            sliding_window_stride=2)
+    
+    for arr, arr2 in zip((std, mean), (std2, mean2)):
+        np.testing.assert_array_equal(arr2[::2], arr2[1::2])
+        np.testing.assert_array_equal(arr2[:, ::2], arr2[:, 1::2])
+        np.testing.assert_array_equal(arr[::2, ::2], arr2[::2, ::2])
+    return mean
+
+
+@pytest.mark.array_compare
+def test_sliding_window_edges():
+    np.random.seed(20)
+    data = np.random.random(900).reshape((30, 30))
+    med = utils.sliding_window_stats(data, 6, ['median'])
+    return med[0]
+
+
+@pytest.mark.array_compare
+def test_sliding_window_trim():
+    np.random.seed(20)
+    data = np.random.random(900).reshape((30, 30))
+    med = utils.sliding_window_stats(data, 6, ['median'], trim=(7, 4, 9, 5))
+    return med[0]
