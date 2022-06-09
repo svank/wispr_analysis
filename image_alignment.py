@@ -134,7 +134,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         warnings.filterwarnings(action='error')
         try:
             fitted = fitter(model, xx, yy, cutout, maxiter=500)
-        except AstropyUserWarning:
+        except (AstropyUserWarning, RuntimeWarning):
             err.append("No solution found")
             if ret_more:
                 return None, cutout, err, cutout_start_x, cutout_start_y
