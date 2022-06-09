@@ -140,15 +140,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             ax = plt.gca()
         else:
             ax = plt.subplot(111, projection=wcs)
-            lon, lat = ax.coords
-            lat.set_ticks(np.arange(-90, 90, 10) * u.degree)
-            lon.set_ticks(np.arange(-180, 180, 15) * u.degree)
-            lat.set_major_formatter('dd')
-            lon.set_major_formatter('dd')
-            if grid:
-                if isinstance(grid, bool):
-                    grid = 0.2
-                ax.coords.grid(color='white', alpha=grid)
+            setup_WCS_axes(ax, grid=grid)
     if cmap is None:
         cmap = wispr_cmap
     
@@ -158,6 +150,19 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             norm=matplotlib.colors.PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax),
             **kwargs)
     return im
+
+
+def setup_WCS_axes(ax, grid=True):
+    lon, lat = ax.coords
+    lat.set_ticks(np.arange(-90, 90, 10) * u.degree)
+    lon.set_ticks(np.arange(-180, 180, 15) * u.degree)
+    lat.set_major_formatter('dd')
+    lon.set_major_formatter('dd')
+    if grid:
+        if isinstance(grid, bool):
+            grid = 0.2
+        ax.coords.grid(color='white', alpha=grid)
+    
 
 
 def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
