@@ -262,7 +262,7 @@ def ignore_fits_warnings():
 
 
 def sliding_window_stats(data, window_width, stats=['mean', 'std'],
-        trim=(0, 0, 0, 0), sliding_window_stride=1):
+        trim=None, sliding_window_stride=1):
     """
     Computes stats in a sliding window.
     
@@ -297,6 +297,8 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     stats_orig = stats
     if isinstance(stats, str):
         stats = [stats]
+    if trim is None:
+        trim = [0, 0] * len(data.shape)
     
     cut = []
     for i in range(len(data.shape)):
