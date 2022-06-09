@@ -26,6 +26,34 @@ def get_speeds(strips, spatial_axis=None, temporal_axis=None, dx=None,
     return v, fstrips
 
 
+def get_speeds_2D(cube, x_axis=None, y_axis=None, temporal_axis=None, dx=None,
+        dy=None, dt=None, apodize_rolloff=False):
+    if apodize_rolloff:
+        try:
+            len(apodize_rolloff)
+        except:
+            apodize_rolloff = [apodize_rolloff] * len(cube.shape)
+        rolloff = utils.get_hann_rolloff(cube.shape, apodize_rolloff)
+        cube = cube * rolloff
+    fcube = np.fft.fftn(cube)
+    if dx is None:
+        dx = x_axis[1] - x_axis[0]
+    if dy is None:
+        dy = y_axis[1] - y_axis[0]
+    if dt is None:
+        dt = temporal_axis[1] - temporal_axis[0]
+    omega = np.fft.fftfreq(cube.shape[0], dt)
+    kx = np.fft.fftfreq(cube.shape[2], dx)
+    ky = np.fft.fftfreq(cube.shape[1], dy)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        vx = -omega[:, None, None] / kx[None, None, :]
+        vy = -omega[:, None, None] / ky[None, :, None]
+        
+        vx = np.repeat(vx, vy.shape[1], 1)
+        vy = np.repeat(vy, vx.shape[2], 2)
+    return vx, vy, fcube
+
+
 def select_speed_range(vmin, vmax, strips, spatial_axis=None,
         temporal_axis=None, dx=None, dt=None, apodize_rolloff=0,
         filter_rolloff=0):
@@ -33,16 +61,24 @@ def select_speed_range(vmin, vmax, strips, spatial_axis=None,
             strips, spatial_axis, temporal_axis, dx, dt,
             apodize_rolloff=apodize_rolloff)
     mask = (v < vmax) * (v > vmin) * np.isfinite(v)
+    return apply_velocity_mask(mask, fstrips, filter_rolloff=filter_rolloff)
+
+
+def apply_velocity_mask(mask, data, filter_rolloff=0):
     if filter_rolloff > 1:
-        window = scipy.signal.windows.hann(filter_rolloff*2)
-        window = window[:, None] * window[None, :]
+        window_1d = scipy.signal.windows.hann(filter_rolloff*2 + 3)
+        window_1d = window_1d[1:-1]
+        window = np.ones([window_1d.size] * len(data.shape))
+        for i in range(len(data.shape)):
+            sel = [None] * len(data.shape)
+            sel[i] = slice(None)
+            window *= window_1d[tuple(sel)]
         window /= np.sum(window)
         mask = np.fft.fftshift(mask)
         mask = scipy.ndimage.convolve(mask.astype(float), window,
                 mode='nearest')
         mask = np.fft.ifftshift(mask)
-    fstrips *= mask
-    return np.abs(np.fft.ifft2(fstrips))
+    return np.abs(np.fft.ifftn(data * mask))
 
 
 def find_radiant(strips, t, fov_angles, window_size=41, v_halfwindow=1,
