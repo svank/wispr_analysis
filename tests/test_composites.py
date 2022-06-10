@@ -216,7 +216,7 @@ def test_gen_composite_ra_dec():
     return fig
 
 
-@image_comparison(baseline_images=['test_gen_composite_custom_trim('], extensions=['pdf'])
+@image_comparison(baseline_images=['test_gen_composite_custom_trim'], extensions=['pdf'])
 def test_gen_composite_custom_trim():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     

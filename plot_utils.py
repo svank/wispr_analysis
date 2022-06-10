@@ -71,7 +71,8 @@ def full_size_plot(img, **kwargs):
 def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         vmin='auto', vmax='auto', wcs_key=' ',
         detector_preset=None, level_preset=None,
-        grid=False, **kwargs):
+        grid=False, lat_spacing=10, lon_spacing=10,
+        **kwargs):
     """
     Does the Right Thing to plot a WISPR image.
     
@@ -140,7 +141,8 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             ax = plt.gca()
         else:
             ax = plt.subplot(111, projection=wcs)
-            setup_WCS_axes(ax, grid=grid)
+            setup_WCS_axes(ax, grid=grid, lat_spacing=lat_spacing,
+                    lon_spacing=lon_spacing)
     if cmap is None:
         cmap = wispr_cmap
     
@@ -152,10 +154,10 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     return im
 
 
-def setup_WCS_axes(ax, grid=True):
+def setup_WCS_axes(ax, grid=True, lat_spacing=10, lon_spacing=10):
     lon, lat = ax.coords
-    lat.set_ticks(np.arange(-90, 90, 10) * u.degree)
-    lon.set_ticks(np.arange(-180, 180, 15) * u.degree)
+    lat.set_ticks(np.arange(-90, 90, lat_spacing) * u.degree)
+    lon.set_ticks(np.arange(-180, 180, lon_spacing) * u.degree)
     lat.set_major_formatter('dd')
     lon.set_major_formatter('dd')
     if grid:
