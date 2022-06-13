@@ -42,16 +42,21 @@ def get_speeds_2D(cube, x_axis=None, y_axis=None, temporal_axis=None, dx=None,
         dy = y_axis[1] - y_axis[0]
     if dt is None:
         dt = temporal_axis[1] - temporal_axis[0]
-    omega = np.fft.fftfreq(cube.shape[0], dt)
-    kx = np.fft.fftfreq(cube.shape[2], dx)
-    ky = np.fft.fftfreq(cube.shape[1], dy)
+    omega = np.fft.fftfreq(cube.shape[0], dt)[:, None, None]
+    kx = np.fft.fftfreq(cube.shape[2], dx)[None, None, :]
+    ky = np.fft.fftfreq(cube.shape[1], dy)[None, :, None]
     with np.errstate(divide='ignore', invalid='ignore'):
-        vx = -omega[:, None, None] / kx[None, None, :]
-        vy = -omega[:, None, None] / ky[None, :, None]
-        
-        vx = np.repeat(vx, vy.shape[1], 1)
-        vy = np.repeat(vy, vx.shape[2], 2)
-    return vx, vy, fcube
+        vx = -omega / kx
+        vy = -omega / ky
+    
+    vx = np.broadcast_to(vx, fcube.shape)
+    vy = np.broadcast_to(vy, fcube.shape)
+    # In the above, leave kx, ky and omega as 1-D arrays so the vx and vy calcs
+    # are 2D. Below, update those three to have the same shape as vx and vy.
+    kx = np.broadcast_to(kx, fcube.shape)
+    ky = np.broadcast_to(ky, fcube.shape)
+    omega = np.broadcast_to(omega, fcube.shape)
+    return vx, vy, fcube, kx, ky, omega
 
 
 def select_speed_range(vmin, vmax, strips, spatial_axis=None,
