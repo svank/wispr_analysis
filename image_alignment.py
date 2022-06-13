@@ -463,10 +463,10 @@ do_iteration = do_iteration_no_crpix
 
 
 def iteratively_align_one_file(data):
-    fname, series_data, out_dir, write_file = data
+    fname, series_data, out_dir, write_file, wcs_key = data
     with utils.ignore_fits_warnings():
         d, h = fits.getdata(fname, header=True)
-        w = WCS(h, key='A')
+        w = WCS(h, key=wcs_key)
     t = utils.to_timestamp(fname)
     
     # Check up here, especially in case the frame has *zero* identified stars
@@ -504,36 +504,36 @@ def iteratively_align_one_file(data):
     if write_file:
         update_file_with_offset(angle, dra, ddec, dx, dy,
                 os.path.join(out_dir, os.path.basename(fname)),
-                h, d, w)
+                h, d, w, wcs_key=wcs_key)
                 
     rmse = np.sqrt(np.mean(np.sqrt(res.fun)))
     return angle, dx, dy, dra, ddec, t, rmse
 
 
 def update_file_with_offset(angle, dra, ddec, dx, dy, outfile,
-        header=None, data=None, wcs=None, infile=None):
+        header=None, data=None, wcs=None, infile=None, wcs_key='A'):
     if infile is not None:
         with utils.ignore_fits_warnings():
             data, header = fits.getdata(infile, header=True)
-            wcs = WCS(header, key='A')
+            wcs = WCS(header, key=wcs_key)
     
     header_matrix = np.array([[np.cos(angle), -np.sin(angle)],
                               [np.sin(angle), np.cos(angle)]]) @ wcs.wcs.pc
-    header['PC1_1A'] = header_matrix[0, 0]
-    header['PC1_2A'] = header_matrix[0, 1]
-    header['PC2_1A'] = header_matrix[1, 0]
-    header['PC2_2A'] = header_matrix[1, 1]
-    header['CRVAL1A'] = header['CRVAL1A'] + dra
-    header['CRVAL2A'] = header['CRVAL2A'] + ddec
-    header['CRPIX1A'] = header['CRPIX1A'] + dx
-    header['CRPIX2A'] = header['CRPIX2A'] + dy
+    header['PC1_1'+wcs_key] = header_matrix[0, 0]
+    header['PC1_2'+wcs_key] = header_matrix[0, 1]
+    header['PC2_1'+wcs_key] = header_matrix[1, 0]
+    header['PC2_2'+wcs_key] = header_matrix[1, 1]
+    header['CRVAL1'+wcs_key] = header['CRVAL1'+wcs_key] + dra
+    header['CRVAL2'+wcs_key] = header['CRVAL2'+wcs_key] + ddec
+    header['CRPIX1'+wcs_key] = header['CRPIX1'+wcs_key] + dx
+    header['CRPIX2'+wcs_key] = header['CRPIX2'+wcs_key] + dy
     
     with utils.ignore_fits_warnings():
         fits.writeto(outfile, data, header=header, overwrite=True)
 
 
 def iteratively_align_files(file_list, out_dir, series_by_frame,
-        smooth_offsets=True):
+        smooth_offsets=True, wcs_key='A'):
     os.makedirs(out_dir, exist_ok=True)
     
     data = process_map(iteratively_align_one_file, zip(
@@ -541,7 +541,8 @@ def iteratively_align_files(file_list, out_dir, series_by_frame,
                            (series_by_frame[utils.to_timestamp(fname)]
                                for fname in file_list),
                            repeat(out_dir),
-                           repeat(not smooth_offsets)),
+                           repeat(not smooth_offsets),
+                           repeat(wcs_key)),
                        total=len(file_list))
     
     data = np.array(data)
