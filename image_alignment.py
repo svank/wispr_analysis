@@ -464,10 +464,10 @@ do_iteration = do_iteration_no_crpix
 
 
 def iteratively_align_one_file(data):
-    fname, series_data, out_dir, write_file, wcs_key = data
+    fname, series_data, out_dir, write_file = data
     with utils.ignore_fits_warnings():
         d, h = fits.getdata(fname, header=True)
-        w = WCS(h, key=wcs_key)
+        w = WCS(h, key='A')
     t = utils.to_timestamp(fname)
     
     # Check up here, especially in case the frame has *zero* identified stars
@@ -505,36 +505,59 @@ def iteratively_align_one_file(data):
     if write_file:
         update_file_with_offset(angle, dra, ddec, dx, dy,
                 os.path.join(out_dir, os.path.basename(fname)),
-                h, d, w, wcs_key=wcs_key)
+                h, d, w)
                 
     rmse = np.sqrt(np.mean(np.sqrt(res.fun)))
     return angle, dx, dy, dra, ddec, t, rmse
 
 
 def update_file_with_offset(angle, dra, ddec, dx, dy, outfile,
-        header=None, data=None, wcs=None, infile=None, wcs_key='A'):
-    if infile is not None:
-        with utils.ignore_fits_warnings():
+        header=None, data=None, wcs=None, infile=None):
+    with utils.ignore_fits_warnings():
+        if infile is not None:
             data, header = fits.getdata(infile, header=True)
-            wcs = WCS(header, key=wcs_key)
+        wcs_hp = WCS(header, key=' ')
+        wcs_ra = WCS(header, key='A')
     
+    # Update the RA/Dec coordinates directly
     header_matrix = np.array([[np.cos(angle), -np.sin(angle)],
-                              [np.sin(angle), np.cos(angle)]]) @ wcs.wcs.pc
-    header['PC1_1'+wcs_key] = header_matrix[0, 0]
-    header['PC1_2'+wcs_key] = header_matrix[0, 1]
-    header['PC2_1'+wcs_key] = header_matrix[1, 0]
-    header['PC2_2'+wcs_key] = header_matrix[1, 1]
-    header['CRVAL1'+wcs_key] = header['CRVAL1'+wcs_key] + dra
-    header['CRVAL2'+wcs_key] = header['CRVAL2'+wcs_key] + ddec
-    header['CRPIX1'+wcs_key] = header['CRPIX1'+wcs_key] + dx
-    header['CRPIX2'+wcs_key] = header['CRPIX2'+wcs_key] + dy
+                              [np.sin(angle), np.cos(angle)]]) @ wcs_ra.wcs.pc
+    header['PC1_1A'] = header_matrix[0, 0]
+    header['PC1_2A'] = header_matrix[0, 1]
+    header['PC2_1A'] = header_matrix[1, 0]
+    header['PC2_2A'] = header_matrix[1, 1]
+    header['CRVAL1A'] = header['CRVAL1A'] + dra
+    header['CRVAL2A'] = header['CRVAL2A'] + ddec
+    header['CRPIX1A'] = header['CRPIX1A'] + dx
+    header['CRPIX2A'] = header['CRPIX2A'] + dy
+    
+    # Apply the same rotation to the HP coords
+    header_matrix = np.array([[np.cos(angle), -np.sin(angle)],
+                              [np.sin(angle), np.cos(angle)]]) @ wcs_hp.wcs.pc
+    header['PC1_1 '] = header_matrix[0, 0]
+    header['PC1_2 '] = header_matrix[0, 1]
+    header['PC2_1 '] = header_matrix[1, 0]
+    header['PC2_2 '] = header_matrix[1, 1]
+    
+    # Convert the new RA/Dec reference coord to its corresponding HP coord,
+    # using the original reference frames.
+    ref_px = wcs_ra.all_world2pix(header['CRVAL1A'], header['CRVAL2A'], 0)
+    ref_val = wcs_hp.all_pix2world(*ref_px, 0)
+    
+    # Set the corresponding HP coord as the HP reference coord
+    # Convert values to float b/c Headers don't like assignment of Numpy
+    # elements, apparently.
+    header['CRVAL1 '] = float(ref_val[0])
+    header['CRVAL2 '] = float(ref_val[1])
+    header['CRPIX1 '] = header['CRPIX1 '] + dx
+    header['CRPIX2 '] = header['CRPIX2 '] + dy
     
     with utils.ignore_fits_warnings():
         fits.writeto(outfile, data, header=header, overwrite=True)
 
 
 def iteratively_align_files(file_list, out_dir, series_by_frame,
-        smooth_offsets=True, wcs_key='A'):
+        smooth_offsets=True):
     os.makedirs(out_dir, exist_ok=True)
     
     data = process_map(iteratively_align_one_file, zip(
@@ -542,8 +565,7 @@ def iteratively_align_files(file_list, out_dir, series_by_frame,
                            (series_by_frame[utils.to_timestamp(fname)]
                                for fname in file_list),
                            repeat(out_dir),
-                           repeat(not smooth_offsets),
-                           repeat(wcs_key)),
+                           repeat(not smooth_offsets)),
                        total=len(file_list))
     
     data = np.array(data)
@@ -619,7 +641,7 @@ def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
     return output_array
 
 
-def iteratively_perturb_projections(file_list, out_dir, series_by_frame, wcs_key='A'):
+def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
     os.makedirs(out_dir, exist_ok=True)
     
     wcses = []
@@ -633,7 +655,7 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame, wcs_key
         for fname in file_list:
             t = utils.to_timestamp(fname)
             series_data = series_by_frame[t]
-            wcs = WCS(fits.getheader(fname), key=wcs_key)
+            wcs = WCS(fits.getheader(fname), key='A')
             
             # Check up here, especially in case the frame has *zero* identified stars
             # (i.e. a very bad frame)
@@ -705,8 +727,9 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame, wcs_key
     
     update_dict = {}
     for i, pert in enumerate(res.x):
-        key = f'PV2_{i}' + wcs_key
-        update_dict[key] = pert * header[key]
+        for wcs_key in ('A', ' '):
+            key = f'PV2_{i}' + wcs_key
+            update_dict[key] = pert * header[key]
     
     with utils.ignore_fits_warnings():
         for fname in file_list:
