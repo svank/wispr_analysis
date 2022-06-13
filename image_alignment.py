@@ -8,10 +8,11 @@ import warnings
 from astropy.io import fits
 from astropy.modeling import models, fitting
 from astropy.utils.exceptions import AstropyUserWarning
-from astropy.wcs import WCS
+from astropy.wcs import DistortionLookupTable, WCS
 import numpy as np
 import scipy.ndimage
 import scipy.optimize
+import scipy.stats
 from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
@@ -616,3 +617,203 @@ def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
         weight = np.exp(-(x[i] - xs)**2 / sig**2)
         output_array[i] = np.sum(weight * ys) / weight.sum()
     return output_array
+
+
+def iteratively_perturb_projections(file_list, out_dir, series_by_frame, wcs_key='A'):
+    os.makedirs(out_dir, exist_ok=True)
+    
+    wcses = []
+    all_ras = []
+    all_decs = []
+    all_xs_true = []
+    all_ys_true = []
+    
+    print("Reading files...")
+    with utils.ignore_fits_warnings():
+        for fname in file_list:
+            t = utils.to_timestamp(fname)
+            series_data = series_by_frame[t]
+            wcs = WCS(fits.getheader(fname), key=wcs_key)
+            
+            # Check up here, especially in case the frame has *zero* identified stars
+            # (i.e. a very bad frame)
+            if len(series_data) < 50:
+                print(f"Only {len(series_data)} stars found in {fname}---skipping")
+                continue
+
+            ras, decs, xs, ys = zip(*series_data)
+            xs = np.array(xs)
+            ys = np.array(ys)
+            ras = np.array(ras)
+            decs = np.array(decs)
+
+            xs_comp, ys_comp = np.array(wcs.all_world2pix(ras, decs, 0))
+            dx = xs_comp - xs
+            dy = ys_comp - ys
+            dr = np.sqrt(dx**2 + dy**2)
+            outlier_cutoff = dr.mean() + 2 * dr.std()
+            inliers = dr < outlier_cutoff
+
+            xs = xs[inliers]
+            ys = ys[inliers]
+            ras = ras[inliers]
+            decs = decs[inliers]
+
+            # Check down here after outlier removal
+            if len(series_data) < 50:
+                print(f"Only {len(series_data)} stars found in {fname} after outlier removal---skipping")
+                continue
+            
+            all_ras.append(ras)
+            all_decs.append(decs)
+            all_xs_true.append(xs)
+            all_ys_true.append(ys)
+            
+            wcses.append(wcs)
+    
+    print("Doing iteration...")
+    pv_orig = wcses[0].wcs.get_pv()
+    def f(pv_perts):
+        pv = wcses[0].wcs.get_pv()
+        
+        for i, pv_pert in enumerate(pv_perts):
+            for j, elem in enumerate(pv_orig):
+                if elem[0] == 2 and elem[1] == i:
+                    elem = (elem[0], elem[1], pv_pert * elem[2])
+                    pv[j] = elem
+        
+        err = []
+        for w, ras, decs, xs, ys in zip(wcses, all_ras, all_decs, all_xs_true, all_ys_true):
+            w.wcs.set_pv(pv)
+            
+            xs_comp, ys_comp = np.array(w.all_world2pix(ras, decs, 0))
+            ex = xs - xs_comp
+            ey = ys - ys_comp
+            err.append(np.sqrt(ex**2 + ey**2))
+        
+        return np.concatenate(err)
+    
+    n_pvs = len(
+        [e for e in wcses[0].wcs.get_pv() if e[0] == 2])
+    res = scipy.optimize.least_squares(f, [1] * n_pvs,
+                                      # loss='cauchy'
+                                      )
+    
+    print("Writing out updated files...")
+    with utils.ignore_fits_warnings():
+        header = fits.getheader(file_list[0])
+    
+    update_dict = {}
+    for i, pert in enumerate(res.x):
+        key = f'PV2_{i}' + wcs_key
+        update_dict[key] = pert * header[key]
+    
+    with utils.ignore_fits_warnings():
+        for fname in file_list:
+            with fits.open(fname) as hdul:
+                hdul[0].header.update(update_dict)
+                hdul.writeto(os.path.join(out_dir, os.path.basename(fname)), overwrite=True)
+    return update_dict, pv_orig
+
+
+def calc_binned_err_components(px_x, px_y, err_x, err_y, ret_coords=False):
+    if np.any(px_x > 960) or np.any(px_y > 1024):
+        raise ValueError("Unexpected binning for this image")
+    
+    berr_x, r, c, _ = scipy.stats.binned_statistic_2d(
+        px_y, px_x, err_x, 'median', 100,
+        expand_binnumbers=True,
+        range=((0, 1024), (0, 960)))
+    
+    berr_y, _, _, _ = scipy.stats.binned_statistic_2d(
+        px_y, px_x, err_y, 'median', 100,
+        expand_binnumbers=True,
+        range=((0, 1024), (0, 960)))
+    
+    if ret_coords:
+        r = (r[1:] + r[:-1]) / 2
+        c = (c[1:] + c[:-1]) / 2
+        return berr_x, berr_y, c, r
+    
+    return berr_x, berr_y
+
+
+def filter_distortion_table(data):
+    data = data.copy()
+    
+    # Trim empty (all-nan) rows and columns
+    trimmed = []
+    i = 0
+    while np.all(np.isnan(data[0])):
+        i += 1
+        data = data[1:]
+    trimmed.append(i)
+
+    i = 0
+    while np.all(np.isnan(data[-1])):
+        i += 1
+        data = data[:-1]
+    trimmed.append(i)
+
+    i = 0
+    while np.all(np.isnan(data[:, 0])):
+        i += 1
+        data = data[:, 1:]
+    trimmed.append(i)
+
+    i = 0
+    while np.all(np.isnan(data[:, -1])):
+        i += 1
+        data = data[:, :-1]
+    trimmed.append(i)
+    
+    # Replace interior nan values with the median of the surrounding values
+    nans = np.nonzero(np.isnan(data))
+    for r, c in zip(*nans):
+        r1, r2 = r-1, r+2
+        c1, c2 = c-1, c+2
+        r1, r2 = max(r1, 0), min(r2, data.shape[0])
+        c1, c2 = max(c1, 0), min(c2, data.shape[1])
+
+        data[r, c] = np.nanmedian(data[r1:r2, c1:c2])
+    
+    # Median-filter the whole image
+    data = scipy.ndimage.median_filter(data, size=3, mode='reflect')
+    
+    # Gaussian-blur the whole image
+    data = scipy.ndimage.gaussian_filter(data, sigma=4)
+    
+    # Replicate the edge rows/columns to replace those we trimmed earlier
+    data = np.pad(data, [trimmed[0:2], trimmed[2:]], mode='edge')
+    
+    return data
+
+
+def add_distortion_table(fname, outname, err_x, err_y, err_px, err_py):
+    dx = DistortionLookupTable(-err_x.astype(np.float32),
+                               (1, 1),
+                               (err_px[0], err_py[0]), 
+                               ((err_px[1] - err_px[0]), (err_py[1] - err_py[0])))
+    dy = DistortionLookupTable(-err_y.astype(np.float32),
+                               (1, 1),
+                               (err_px[0], err_py[0]), 
+                               ((err_px[1] - err_px[0]), (err_py[1] - err_py[0])))
+    with utils.ignore_fits_warnings():
+        data, header = fits.getdata(fname, header=True)
+        wcs = WCS(header, key='A')
+    wcs.cpdis1 = dx
+    wcs.cpdis2 = dy
+    hdul = wcs.to_fits()
+    
+    for key in ('extend', 'cpdis1', 'cpdis2',
+                'dp1.EXTVER', 'dp1.NAXES', 'dp1.AXIS.1', 'dp1.AXIS.2',
+                'dp2.EXTVER', 'dp2.NAXES', 'dp2.AXIS.1', 'dp2.AXIS.2'):
+        header[key] = hdul[0].header[key]
+    hdul[0].header = header
+    hdul[0].data = data
+    
+    if outname is None:
+        return hdul
+    with utils.ignore_fits_warnings():
+        hdul.writeto(outname, overwrite=True)
+
