@@ -32,14 +32,22 @@ class RadialTransformer():
         return pixel_in
 
 
-def reproject_to_radial(data, wcs):
-    out_shape = list(data.shape)
-    out_shape[1] -= 250
-    out_shape[1] *= 2
-    out_shape[0] += 350
+def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
+        ref_pa=80, ref_elongation=13):
+    if out_shape is None:
+        # Defaults that are decent for a full-res WISPR-I image
+        out_shape = list(data.shape)
+        out_shape[1] -= 250
+        out_shape[1] *= 2
+        out_shape[0] += 350
+    if dpa is None:
+        dpa = wcs.wcs.cdelt[1] * 1.5
+    if delongation is None:
+        delongation = wcs.wcs.cdelt[0] * .75
     transformer = RadialTransformer(
-            80, out_shape[0]//2, wcs.wcs.cdelt[1] * 1.5,
-            13, 0, wcs.wcs.cdelt[0] * .75, wcs)
+            ref_pa=ref_pa, ref_y=out_shape[0]//2, dpa=dpa,
+            ref_elongation=ref_elongation, ref_x=0, delongation=delongation,
+            wcs_in=wcs)
     reprojected = np.zeros(out_shape)
     reproject.adaptive.deforest.map_coordinates(data.astype(float),
             reprojected, transformer, out_of_range_nan=True,
