@@ -149,7 +149,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     if 'origin' not in kwargs:
         kwargs['origin'] = 'lower'
     im = ax.imshow(data, cmap=cmap,
-            norm=matplotlib.colors.PowerNorm(gamma=0.5, vmin=vmin, vmax=vmax),
+            norm=matplotlib.colors.PowerNorm(gamma=1/2.2, vmin=vmin, vmax=vmax),
             **kwargs)
     return im
 
