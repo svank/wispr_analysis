@@ -18,10 +18,10 @@ class RadialTransformer():
     
     def __call__(self, pixel_out):
         pixel_in = np.empty_like(pixel_out)
-        pa = (pixel_out[..., 1] - self.ref_y) * self.dpa + self.ref_pa
+        elongation, pa = self.all_pix2world(
+                pixel_out[..., 0], pixel_out[..., 1])
+        
         pa *= np.pi / 180
-        elongation = ((pixel_out[..., 0] - self.ref_x) * self.delongation
-                + self.ref_elongation)
         hp_lon = elongation * np.cos(pa - self.pa_of_ecliptic)
         hp_lat = elongation * np.sin(pa - self.pa_of_ecliptic)
         
@@ -30,6 +30,26 @@ class RadialTransformer():
         pixel_in[..., 0] = input_x
         pixel_in[..., 1] = input_y
         return pixel_in
+    
+    
+    def all_pix2world(self, x, y, origin=0):
+        x = x - origin
+        y = y - origin
+        pa = (y - self.ref_y) * self.dpa + self.ref_pa
+        elongation = ((x - self.ref_x) * self.delongation
+                + self.ref_elongation)
+        
+        return elongation, pa
+    
+    
+    def all_world2pix(self, elongation, pa, origin=0):
+        x = (elongation - self.ref_elongation) / self.delongation + self.ref_x
+        y = (pa - self.ref_pa) / self.dpa + self.ref_y
+        
+        x += origin
+        y += origin
+        
+        return x, y
 
 
 def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
@@ -52,4 +72,4 @@ def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
     reproject.adaptive.deforest.map_coordinates(data.astype(float),
             reprojected, transformer, out_of_range_nan=True,
             center_jacobian=False)
-    return reprojected
+    return reprojected, transformer
