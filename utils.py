@@ -115,6 +115,8 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     subdirs = []
     if filters is None:
         filters = []
+    if between is None:
+        between = (None, None)
     if len(filters) == 3 and isinstance(filters[0], str):
         filters = [filters]
     # Find all valid subdirectories.

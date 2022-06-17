@@ -240,7 +240,8 @@ def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
         return ani
 
 
-def plot_orbit(data_dir):
+def plot_orbit(data_dir, between=None, filters=None,
+        plot_full_orbit=True):
     """
     Plots PSP's orbital path and marks the locations of WISPR exposures.
     
@@ -253,12 +254,34 @@ def plot_orbit(data_dir):
         A directory containing WISPR images. It is scanned recursively by
         `utils.collect_files`, and exposure times and spacecraft locations are
         extracted from the headers.
+    between, filters
+        Parameters passed to `utils.collect_files` to select only certain files
+        to be plotted.
+    plot_full_orbit : bool
+        By default, ``between`` and ``filters`` apply only to which images are
+        indicated, while the full orbital path (as determined by the unfiltered
+        set of files) is plotted. Set this to ``False`` to only indicate the
+        oribal path for the filtered range of files.
     """
+    kwargs = {}
+    if not plot_full_orbit:
+        kwargs['between'] = between
+        kwargs['filters'] = filters
     ifiles, ofiles = utils.collect_files(data_dir, include_headers=True,
-            include_sortkey=True, order='date-avg')
+            include_sortkey=True, order='date-avg', **kwargs)
     headers = [f[-1] for f in sorted(chain(ifiles, ofiles))]
-    itimes = [utils.to_timestamp(f[0]) for f in ifiles]
-    otimes = [utils.to_timestamp(f[0]) for f in ofiles]
+    
+    if between is not None or filters is not None:
+        ifiles_dots, ofiles_dots = utils.collect_files(
+                data_dir, include_headers=False,
+                include_sortkey=False, order='date-avg',
+                between=between, filters=filters)
+    else:
+        ifiles_dots = [f[0] for f in ifiles]
+        ofiles_dots = [f[0] for f in ofiles]
+        
+    itimes = [utils.to_timestamp(f) for f in ifiles_dots]
+    otimes = [utils.to_timestamp(f) for f in ofiles_dots]
     times, positions, _ = utils.get_PSP_path_from_headers(headers)
     
     distance_scale = max(positions[:, 0].max() - positions[:, 0].min(),
@@ -270,6 +293,7 @@ def plot_orbit(data_dir):
     # Plot the Sun
     plt.scatter(0, 0, marker='*', color='k', s=80)
     
+    # Calculate locations for the dots
     ixs = np.interp(itimes, times, positions[:, 0])
     oxs = np.interp(otimes, times, positions[:, 0])
     iys = np.interp(itimes, times, positions[:, 1])
