@@ -71,17 +71,36 @@ def select_speed_range(vmin, vmax, strips, spatial_axis=None,
 
 def apply_velocity_mask(mask, data, filter_rolloff=0):
     if filter_rolloff > 1:
+        # Make a 1D window of the correct shape
         window_1d = scipy.signal.windows.hann(filter_rolloff*2 + 3)
         window_1d = window_1d[1:-1]
+        # Make a window of the appropriate shape by making an N-D cube of 1s,
+        # and iteratively multiplying by the window oriented horizontally, then
+        # vertically, then in depth, etc.
         window = np.ones([window_1d.size] * len(data.shape))
         for i in range(len(data.shape)):
             sel = [None] * len(data.shape)
             sel[i] = slice(None)
             window *= window_1d[tuple(sel)]
         window /= np.sum(window)
+        
+        # We want the window to smoothly roll off to zero at the edges. There's
+        # no pre-defined boundary mode in `scipy.ndimage.convolve` that
+        # achieves that---zero padding only gives a rolloff to 0.5 at the edges
+        # (where the mask is 1 at the edge). And we want to use
+        # `scipy.signal.fftconvolve` instead, since it's ridiculously faster
+        # for large mask arrays. `fftconvolve` seems to implicitly zero-pad the
+        # array, and to achieve a rolloff to zero, we need to also zero out the
+        # outsides of our mask array.
+        mask = mask.astype(float)
+        # Shift so we're zeroing out and rolling off at the highest frequencies
         mask = np.fft.fftshift(mask)
-        mask = scipy.ndimage.convolve(mask.astype(float), window,
-                mode='nearest')
+        edge = window_1d.size // 2
+        mask[:edge] = 0
+        mask[-edge:] = 0
+        mask[:, :edge] = 0
+        mask[:, -edge:] = 0
+        mask = scipy.signal.fftconvolve(mask.astype(float), window, mode='same')
         mask = np.fft.ifftshift(mask)
     return np.abs(np.fft.ifftn(data * mask))
 
