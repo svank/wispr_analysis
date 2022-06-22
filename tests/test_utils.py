@@ -172,20 +172,22 @@ def test_collect_files_two_filters():
     
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             filters=[('dsun_obs', 32067077000, 34213000000),
-                     ('xposure', 3.3e10, None)],
+                     ('xposure', 100, None)],
             include_headers=True)
     
     e = (all_values1 >= 32067077000) * (all_values1 <= 34213000000)
-    expected = e * (all_values2 >= 3.3e10)
+    expected = e * (all_values2 >= 100)
     # Ensure that the values chosen for the second filter actually have an effect
     assert np.sum(e) != np.sum(expected)
     
+    assert len(file_list) > 0
     assert len(file_list) == np.sum(expected)
+    
     headers = [f[1] for f in file_list]
     for h in headers:
         assert float(h['dsun_obs']) >= 32067077000
         assert float(h['dsun_obs']) <= 34213000000
-        assert float(h['xposure']) <= 3.3e10
+        assert float(h['xposure']) >= 100
 
 
 def test_ensure_data():
