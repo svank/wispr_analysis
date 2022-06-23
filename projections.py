@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import reproject
 
@@ -32,8 +33,8 @@ class RadialTransformer():
     
     
     def hp_to_elongation(self, lon, lat):
-        lon = lon * np.pi / 180
-        lat = lat * np.pi / 180
+        lon = np.asarray(lon) * np.pi / 180
+        lat = np.asarray(lat) * np.pi / 180
         
         # Expressions from Snyder (1987)
         # https://pubs.er.usgs.gov/publication/pp1395
@@ -52,8 +53,8 @@ class RadialTransformer():
     
     
     def elongation_to_hp(self, elongation, pa):
-        elongation = elongation * np.pi / 180
-        pa = pa * np.pi / 180
+        elongation = np.asarray(elongation) * np.pi / 180
+        pa = np.asarray(pa) * np.pi / 180
         pa -= (self.pa_of_ecliptic - 90)
         
         # Expressions from Snyder (1987)
@@ -69,8 +70,8 @@ class RadialTransformer():
     
     
     def all_pix2world(self, x, y, origin=0):
-        x = x - origin
-        y = y - origin
+        x = np.asarray(x) - origin
+        y = np.asarray(y) - origin
         pa = (y - self.ref_y) * self.dpa + self.ref_pa
         elongation = ((x - self.ref_x) * self.delongation
                 + self.ref_elongation)
@@ -79,6 +80,8 @@ class RadialTransformer():
     
     
     def all_world2pix(self, elongation, pa, origin=0):
+        elongation = np.asarray(elongation)
+        pa = np.asarray(pa)
         x = (elongation - self.ref_elongation) / self.delongation + self.ref_x
         y = (pa - self.ref_pa) / self.dpa + self.ref_y
         
@@ -109,3 +112,31 @@ def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
             reprojected, transformer, out_of_range_nan=True,
             center_jacobian=False)
     return reprojected, transformer
+
+
+def label_radial_axes(transformer, ax=None):
+    if ax is None:
+        ax = plt.gca()
+    
+    xmin, xmax = ax.get_xlim()
+    emin, emax = transformer.all_pix2world([xmin, xmax], [1, 1], 0)[0]
+    emin = int(np.ceil(emin/10)) * 10
+    emax = int(np.floor(emax/10)) * 10
+    xtick_locs = [transformer.all_world2pix(elongation, 0)[0]
+                  for elongation in range(emin, emax+1, 10)]
+    xtick_labels = [f"{elongation}°" for elongation in range(emin, emax+1, 10)]
+    ax.set_xticks(xtick_locs, xtick_labels)
+    ax.set_xlabel("Elongation")
+    
+    ymin, ymax = ax.get_ylim()
+    pmin, pmax = transformer.all_pix2world([1, 1], [ymin, ymax], 0)[1]
+    if pmin > pmax:
+        pmin, pmax = pmax, pmin
+    pmin = int(np.ceil(pmin/10)) * 10
+    pmax = int(np.floor(pmax/10)) * 10
+    ytick_locs = [transformer.all_world2pix(30, pa)[1]
+                  for pa in range(pmin, pmax+1, 10)]
+    ytick_labels = [f"{pa}°" for pa in range(pmin, pmax+1, 10)]
+    ax.set_yticks(ytick_locs, ytick_labels)
+    ax.set_ylabel("Position Angle")
+
