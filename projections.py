@@ -5,7 +5,8 @@ import reproject
 
 class RadialTransformer():
     def __init__(self, ref_pa, ref_y, dpa,
-            ref_elongation, ref_x, delongation, wcs_in):
+            ref_elongation, ref_x, delongation, wcs_in,
+            pa_of_ecliptic=90):
         self.ref_pa = ref_pa
         self.ref_elongation = ref_elongation
         self.ref_x = ref_x
@@ -14,7 +15,7 @@ class RadialTransformer():
         self.delongation = delongation
         self.wcs_in = wcs_in
         
-        self.pa_of_ecliptic = 90
+        self.pa_of_ecliptic = pa_of_ecliptic
     
     
     def __call__(self, pixel_out):
@@ -54,8 +55,8 @@ class RadialTransformer():
     
     def elongation_to_hp(self, elongation, pa):
         elongation = np.asarray(elongation) * np.pi / 180
-        pa = np.asarray(pa) * np.pi / 180
-        pa -= (self.pa_of_ecliptic - 90)
+        pa = np.asarray(pa) - (self.pa_of_ecliptic - 90)
+        pa *= np.pi / 180
         
         # Expressions from Snyder (1987)
         # https://pubs.er.usgs.gov/publication/pp1395
