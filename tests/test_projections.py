@@ -6,8 +6,7 @@ import pytest
 from pytest import approx
 
 
-@pytest.fixture
-def transformer():
+def get_transformer(inverse=False):
     ref_pa = 90
     ref_elongation = 40
     ref_x = 500
@@ -21,7 +20,9 @@ def transformer():
     wcs_in.wcs.crval = 10, 0
     wcs_in.wcs.cdelt = 2, 1.5
     
-    transformer = projections.RadialTransformer(
+    constructor = (projections.InverseRadialTransformer
+            if inverse else projections.RadialTransformer)
+    transformer = constructor(
             ref_pa=ref_pa, ref_y=ref_y, dpa=dpa,
             ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
             wcs_in=wcs_in)
@@ -29,7 +30,8 @@ def transformer():
     return transformer
 
 
-def test_radial_transformer(transformer):
+def test_radial_transformer():
+    transformer = get_transformer()
     # Test one known coordinate, the reference pixel for the output. It's on
     # the equator, so it's easy to know what HPLN and HPLT it maps to.
     pixel_out = np.array(
@@ -84,7 +86,8 @@ def test_radial_transformer(transformer):
             transformer.ref_pa + dy * transformer.dpa)
 
 
-def test_radial_transformer_all_world2pix(transformer):
+def test_radial_transformer_all_world2pix():
+    transformer = get_transformer()
     assert (transformer.all_world2pix(
                 transformer.ref_elongation,
                 transformer.ref_pa)
@@ -106,7 +109,8 @@ def test_radial_transformer_all_world2pix(transformer):
             == (transformer.ref_x + 2, transformer.ref_y + 2))
 
 
-def test_radial_transformer_all_pix2world(transformer):
+def test_radial_transformer_all_pix2world():
+    transformer = get_transformer()
     assert (transformer.all_pix2world(
                 transformer.ref_x,
                 transformer.ref_y)
@@ -131,7 +135,9 @@ def test_radial_transformer_all_pix2world(transformer):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic, transformer):
+def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic):
+    transformer = get_transformer()
+    
     transformer.pa_of_ecliptic = pa_of_ecliptic
     
     lat = np.linspace(-90, 90)
@@ -148,7 +154,8 @@ def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic, transformer):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic, transformer):
+def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic):
+    transformer = get_transformer()
     transformer.pa_of_ecliptic = pa_of_ecliptic
     
     elongation = np.linspace(0, 89)
@@ -165,7 +172,8 @@ def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic, transformer):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_pix_world_roundtrip(pa_of_ecliptic, transformer):
+def test_radial_transformer_pix_world_roundtrip(pa_of_ecliptic):
+    transformer = get_transformer()
     transformer.pa_of_ecliptic = pa_of_ecliptic
     
     x = np.linspace(0, 100)
@@ -181,7 +189,8 @@ def test_radial_transformer_pix_world_roundtrip(pa_of_ecliptic, transformer):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_world_pix_roundtrip(pa_of_ecliptic, transformer):
+def test_radial_transformer_world_pix_roundtrip(pa_of_ecliptic):
+    transformer = get_transformer()
     transformer.pa_of_ecliptic = pa_of_ecliptic
     
     pa = np.linspace(-100, 100)
@@ -196,7 +205,8 @@ def test_radial_transformer_world_pix_roundtrip(pa_of_ecliptic, transformer):
     np.testing.assert_allclose(PA, PA2)
 
 
-def test_radial_transformer_pa_of_ecliptic(transformer):
+def test_radial_transformer_pa_of_ecliptic():
+    transformer = get_transformer()
     for pa_of_ecliptic in [-90, -50, -10, 0, 10, 50, 90]:
         transformer.pa_of_ecliptic = pa_of_ecliptic
         
@@ -211,3 +221,19 @@ def test_radial_transformer_pa_of_ecliptic(transformer):
         e, pa = transformer.hp_to_elongation(.1, -.1)
         assert e == approx(np.sqrt(.1**2 + .1**2))
         assert pa == approx(pa_of_ecliptic + 45, rel=1e-4)
+
+
+def test_radial_transformer_roundtrip():
+    transformer = get_transformer(inverse=False)
+    inv_transformer = get_transformer(inverse=True)
+    
+    x = np.arange(400, 600, 20)
+    y = np.arange(800, 1200, 20)
+    
+    X, Y = np.meshgrid(x, y)
+    
+    pixel_out = np.stack((X, Y), axis=-1)
+    
+    pixel_in = inv_transformer(transformer(pixel_out))
+    
+    np.testing.assert_allclose(pixel_out, pixel_in)

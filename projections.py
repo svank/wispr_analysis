@@ -19,10 +19,10 @@ class RadialTransformer():
     
     
     def __call__(self, pixel_out):
-        pixel_out = pixel_out.astype(float, copy=False)
+        pixel_out = np.asarray(pixel_out, dtype=float)
         pixel_in = np.empty_like(pixel_out)
         elongation, pa = self.all_pix2world(
-                pixel_out[..., 0], pixel_out[..., 1])
+                pixel_out[..., 0], pixel_out[..., 1], 0)
         
         hp_lon, hp_lat = self.elongation_to_hp(elongation, pa)
         
@@ -92,8 +92,24 @@ class RadialTransformer():
         return x, y
 
 
+class InverseRadialTransformer(RadialTransformer):
+    def __call__(self, pixel_out):
+        pixel_out = np.asarray(pixel_out, dtype=float)
+        pixel_in = np.empty_like(pixel_out)
+        hp_lon, hp_lat = self.wcs_in.all_pix2world(
+                pixel_out[..., 0], pixel_out[..., 1], 0)
+        
+        elongation, pa = self.hp_to_elongation(hp_lon, hp_lat)
+        
+        input_x, input_y = self.all_world2pix(elongation, pa, 0)
+        
+        pixel_in[..., 0] = input_x
+        pixel_in[..., 1] = input_y
+        return pixel_in
+
+
 def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
-        ref_pa=100, ref_elongation=13):
+        ref_pa=100, ref_elongation=13, ref_x=None, ref_y=None):
     if out_shape is None:
         # Defaults that are decent for a full-res WISPR-I image
         out_shape = list(data.shape)
@@ -104,9 +120,40 @@ def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
         dpa = wcs.wcs.cdelt[1] * 1.5
     if delongation is None:
         delongation = wcs.wcs.cdelt[0] * .75
+    if ref_x is None:
+        ref_x = 0
+    if ref_y is None:
+        ref_y = out_shape[0] // 2
     transformer = RadialTransformer(
-            ref_pa=ref_pa, ref_y=out_shape[0]//2, dpa=-dpa,
-            ref_elongation=ref_elongation, ref_x=0, delongation=delongation,
+            ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
+            ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
+            wcs_in=wcs)
+    reprojected = np.zeros(out_shape)
+    reproject.adaptive.deforest.map_coordinates(data.astype(float),
+            reprojected, transformer, out_of_range_nan=True,
+            center_jacobian=False)
+    return reprojected, transformer
+
+
+def reproject_from_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
+        ref_pa=100, ref_elongation=13, ref_x=None, ref_y=None):
+    if out_shape is None:
+        # Defaults that are decent for a full-res WISPR-I image
+        out_shape = list(data.shape)
+        out_shape[1] -= 250
+        out_shape[1] *= 2
+        out_shape[0] += 350
+    if dpa is None:
+        dpa = wcs.wcs.cdelt[1] * 1.5
+    if delongation is None:
+        delongation = wcs.wcs.cdelt[0] * .75
+    if ref_x is None:
+        ref_x = 0
+    if ref_y is None:
+        ref_y = out_shape[0] // 2
+    transformer = InverseRadialTransformer(
+            ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
+            ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
             wcs_in=wcs)
     reprojected = np.zeros(out_shape)
     reproject.adaptive.deforest.map_coordinates(data.astype(float),
@@ -123,9 +170,11 @@ def label_radial_axes(transformer, ax=None):
     emin, emax = transformer.all_pix2world([xmin, xmax], [1, 1], 0)[0]
     emin = int(np.ceil(emin/10)) * 10
     emax = int(np.floor(emax/10)) * 10
+    spacing = 10 if (emax - emin) < 80 else 20
+    tick_values = range(emin, emax+1, spacing)
     xtick_locs = [transformer.all_world2pix(elongation, 0)[0]
-                  for elongation in range(emin, emax+1, 10)]
-    xtick_labels = [f"{elongation}°" for elongation in range(emin, emax+1, 10)]
+                  for elongation in tick_values]
+    xtick_labels = [f"{elongation}°" for elongation in tick_values]
     ax.set_xticks(xtick_locs, xtick_labels)
     ax.set_xlabel("Elongation")
     
@@ -135,9 +184,11 @@ def label_radial_axes(transformer, ax=None):
         pmin, pmax = pmax, pmin
     pmin = int(np.ceil(pmin/10)) * 10
     pmax = int(np.floor(pmax/10)) * 10
+    spacing = 10 if (pmax - pmin) < 80 else 20
+    tick_values = range(pmin, pmax+1, spacing)
     ytick_locs = [transformer.all_world2pix(30, pa)[1]
-                  for pa in range(pmin, pmax+1, 10)]
-    ytick_labels = [f"{pa}°" for pa in range(pmin, pmax+1, 10)]
+                  for pa in tick_values]
+    ytick_labels = [f"{pa}°" for pa in tick_values]
     ax.set_yticks(ytick_locs, ytick_labels)
     ax.set_ylabel("Position Angle")
 
