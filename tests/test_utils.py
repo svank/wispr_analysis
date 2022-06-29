@@ -45,8 +45,8 @@ def test_to_timestamp_list():
 
 
 def test_get_PSP_path():
-    dir_path = (os.path.dirname(__file__)
-                + '/test_data/WISPR_files_headers_only/')
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
     times, positions, vs = utils.get_PSP_path(dir_path)
     assert times.size == positions.shape[0] == vs.shape[0]
     assert np.all(times[1:] > times[:-1])
@@ -55,8 +55,8 @@ def test_get_PSP_path():
 
 
 def test_collect_files():
-    dir_path = (os.path.dirname(__file__)
-                + '/test_data/WISPR_files_headers_only/')
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
     files = utils.collect_files(dir_path, separate_detectors=True)
     files_avg = utils.collect_files(dir_path, separate_detectors=True,
             order='DATE-AVG')
@@ -93,17 +93,17 @@ def test_collect_files():
 
 
 def test_collect_files_with_headers():
-    dir_path = (os.path.dirname(__file__)
-                + '/test_data/WISPR_files_headers_only/')
-    file_list = utils.collect_files(dir_path + '20181101', include_headers=True,
-            separate_detectors=False)
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
+    file_list = utils.collect_files(os.path.join(dir_path, '20181101'),
+            include_headers=True, separate_detectors=False)
     assert len(file_list) == 58
     assert len(file_list[0]) == 2
     assert isinstance(file_list[0][1], fits.Header)
     
-    file_list = utils.collect_files(dir_path + '20181101', include_headers=True,
-            include_sortkey=True, separate_detectors=False,
-            order='date-avg')
+    file_list = utils.collect_files(os.path.join(dir_path, '20181101'),
+            include_headers=True, include_sortkey=True,
+            separate_detectors=False, order='date-avg')
     assert len(file_list) == 58
     assert len(file_list[0]) == 3
     assert isinstance(file_list[0][2], fits.Header)
@@ -112,8 +112,8 @@ def test_collect_files_with_headers():
 
 
 def test_collect_files_between():
-    dir_path = (os.path.dirname(__file__)
-                + '/test_data/WISPR_files_headers_only/')
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181102T000000', None))
     assert len(file_list) == 122
@@ -128,8 +128,8 @@ def test_collect_files_between():
 
 
 def test_collect_files_filters():
-    dir_path = (os.path.dirname(__file__)
-                + '/test_data/WISPR_files_headers_only/')
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             include_headers=True)
     all_values = np.array([f[1]['dsun_obs'] for f in file_list])
@@ -163,8 +163,8 @@ def test_collect_files_filters():
 
 
 def test_collect_files_two_filters():
-    dir_path = (os.path.dirname(__file__)
-                + '/test_data/WISPR_files_headers_only/')
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             include_headers=True)
     all_values1 = np.array([f[1]['dsun_obs'] for f in file_list])

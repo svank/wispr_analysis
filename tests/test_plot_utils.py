@@ -47,8 +47,8 @@ def test_parse_level_preset():
 @image_comparison(baseline_images=['test_plot_orbit'], extensions=['pdf'],
         tol=10)
 def test_plot_orbit():
-    dir_path = (os.path.dirname(__file__)
-                + '/test_data/WISPR_files_headers_only/')
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
     plot_utils.plot_orbit(dir_path)
     
     return plt.gcf()

@@ -41,13 +41,14 @@ def headers():
 @pytest.fixture
 def real_headers():
     with utils.ignore_fits_warnings():
-        path = os.path.dirname(__file__) + os.sep
-        h1 = fits.getheader(path+'test_data/WISPR_files_headers_only/20181101/'
-                                 'psp_L3_wispr_20181101T004548_V3_1221.fits')
-        h2 = fits.getheader(path+'test_data/WISPR_files_headers_only/20181101/'
-                                 'psp_L3_wispr_20181101T013048_V3_1221.fits')
-        h3 = fits.getheader(path+'test_data/WISPR_files_headers_only/20181101/'
-                                 'psp_L3_wispr_20181101T021548_V3_1221.fits')
+        path = os.path.join(os.path.dirname(__file__), 'test_data',
+                'WISPR_files_headers_only')
+        h1 = fits.getheader(os.path.join(
+            path, '20181101', 'psp_L3_wispr_20181101T004548_V3_1221.fits'))
+        h2 = fits.getheader(os.path.join(
+            path, '20181101', 'psp_L3_wispr_20181101T013048_V3_1221.fits'))
+        h3 = fits.getheader(os.path.join(
+            path, '20181101', 'psp_L3_wispr_20181101T021548_V3_1221.fits'))
     for h in (h1, h2, h3):
         h['naxis'] = 2
     return h1, h2, h3
