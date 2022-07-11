@@ -128,11 +128,10 @@ def calc_FOV_pos(sc, p, t=0):
 
 
 def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
-        output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None):
-    # Build output image WCS
+        output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
+        psychadelic=False):
     sc = sc.at(t0)
-    parcels = [parcel.at(t0) for parcel in parcels]
-    
+    # Build output image WCS
     if image_wcs is None:
         image_wcs = WCS(naxis=2)
         forward_elongation = angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
@@ -157,9 +156,13 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
     parcel_wcs.wcs.ctype = "HPLN-ARC", "HPLT-ARC"
     parcel_wcs.wcs.cunit = "deg", "deg"
     
-    output_image = np.zeros((output_size_y, output_size_x))
+    if psychadelic:
+        output_image = np.zeros((output_size_y, output_size_x, 3))
+    else:
+        output_image = np.zeros((output_size_y, output_size_x))
     
-    for parcel in parcels:
+    for p in parcels:
+        parcel = p.at(t0)
         if not parcel.in_front_of(sc):
             continue
         parcel_angular_width = 2 * np.arctan(parcel_width / 2 / (sc - parcel).r)
@@ -177,11 +180,17 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         vert_pos = 0
         parcel_wcs.wcs.crval = horiz_pos[0], vert_pos
         subimage = reproject.reproject_adaptive(
-                (parcel_image, parcel_wcs), image_wcs, output_image.shape,
+                (parcel_image, parcel_wcs), image_wcs, output_image.shape[:2],
                 boundary_mode='grid-constant', boundary_fill_value=0,
                 roundtrip_coords=False, return_footprint=False,
                 conserve_flux=True)
-        output_image += subimage / (sc - parcel).r**2 / parcel.r**2
+        subimage = subimage / (sc - parcel).r**2 / parcel.r**2
+        
+        if psychadelic:
+            np.random.seed(id(p) % (2**32 - 1))
+            color = np.random.random(3)
+            subimage = subimage[:, :, None] * color[None, None, :]
+        output_image += subimage
     
     return output_image, image_wcs
 
