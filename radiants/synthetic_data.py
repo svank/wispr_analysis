@@ -131,12 +131,21 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
         psychadelic=False):
     sc = sc.at(t0)
+    
     # Build output image WCS
     if image_wcs is None:
         image_wcs = WCS(naxis=2)
+        # Find elongation of s/c forward direction by computing the angle
+        # between it and the sunward direction
         forward_elongation = angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
+        # Set the reference pixel coordiantes as the forward-direction
+        # elongation for longitude, and zero latitude (assume s/c is in
+        # ecliptic plane)
         image_wcs.wcs.crval = forward_elongation[0] * 180 / np.pi, 0
+        # Set the reference pixel to be the central pixel of the image
         image_wcs.wcs.crpix = output_size_x/2 + .5, output_size_y/2 + .5
+        # Set the degrees/pixel value so that our specified FOV fits in the
+        # image
         cdelt = fov / max(output_size_x, output_size_y)
         image_wcs.wcs.cdelt = cdelt, cdelt
         image_wcs.wcs.ctype = f"HPLN-{projection}", f"HPLT-{projection}"
@@ -162,9 +171,13 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         output_image = np.zeros((output_size_y, output_size_x))
     
     for p in parcels:
+        # For each blob, calculate a position, update the WCS, and then project
+        # the blob image onto the output image.
+        # Is this overkill? Probably?
         parcel = p.at(t0)
         if not parcel.in_front_of(sc):
             continue
+        # Compute the apparent angular size of the parcel
         parcel_angular_width = 2 * np.arctan(parcel_width / 2 / (sc - parcel).r)
         parcel_angular_width *= 180 / np.pi # degrees
         cdelt = parcel_angular_width / parcel_res
@@ -173,9 +186,6 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         except TypeError:
             pass
         parcel_wcs.wcs.cdelt = cdelt, cdelt
-        # For each blob, calculate a position, update the WCS, and then project
-        # the blob image onto the output image.
-        # Is this overkill? Maybe?
         horiz_pos = calc_epsilon(sc, parcel) * 180 / np.pi
         vert_pos = 0
         parcel_wcs.wcs.crval = horiz_pos[0], vert_pos
@@ -184,12 +194,17 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
                 boundary_mode='grid-constant', boundary_fill_value=0,
                 roundtrip_coords=False, return_footprint=False,
                 conserve_flux=True)
+        # Scale the brightness of the reprojected blob
         subimage = subimage / (sc - parcel).r**2 / parcel.r**2
         
         if psychadelic:
+            # Add a dimension and assign a random color to the parcel. Ensure
+            # the same color is chosen for each frame.
             np.random.seed(id(p) % (2**32 - 1))
             color = np.random.random(3)
             subimage = subimage[:, :, None] * color[None, None, :]
+        
+        # Build up the output image by adding together all the reprojected blobs
         output_image += subimage
     
     return output_image, image_wcs
