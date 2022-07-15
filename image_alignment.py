@@ -744,12 +744,12 @@ def calc_binned_err_components(px_x, px_y, err_x, err_y, ret_coords=False):
         raise ValueError("Unexpected binning for this image")
     
     berr_x, r, c, _ = scipy.stats.binned_statistic_2d(
-        px_y, px_x, err_x, 'median', 100,
+        px_y, px_x, err_x, 'median', (1024//10, 960//10),
         expand_binnumbers=True,
         range=((0, 1024), (0, 960)))
     
     berr_y, _, _, _ = scipy.stats.binned_statistic_2d(
-        px_y, px_x, err_y, 'median', 100,
+        px_y, px_x, err_y, 'median', (1024//10, 960//10),
         expand_binnumbers=True,
         range=((0, 1024), (0, 960)))
     
@@ -761,7 +761,32 @@ def calc_binned_err_components(px_x, px_y, err_x, err_y, ret_coords=False):
     return berr_x, berr_y
 
 
-def filter_distortion_table(data):
+def filter_distortion_table(data, blur_sigma=4, med_filter_size=3):
+    """
+    Returns a filtered copy of a distortion map table.
+    
+    Any rows/columns at the edges that are all NaNs will be removed and
+    replaced with a copy of the closest non-removed edge at the end of
+    processing.
+    
+    Any NaN values that don't form a complete edge row/column will be replaced
+    with the median of all surrounding non-NaN pixels.
+    
+    Then median filtering is performed across the whole map to remove outliers,
+    and Gaussian filtering is applied to accept only slowly-varying
+    distortions.
+    
+    Arguments
+    ---------
+    data
+        The distortion map to be filtered
+    blur_sigma : float
+        The number of pixels constituting one standard deviation of the
+        Gaussian kernel. Set to 0 to disable Gaussian blurring.
+    med_filter_size : int
+        The size of the local neighborhood to consider for median filtering.
+        Set to 0 to disable median filtering.
+    """
     data = data.copy()
     
     # Trim empty (all-nan) rows and columns
@@ -792,19 +817,23 @@ def filter_distortion_table(data):
     
     # Replace interior nan values with the median of the surrounding values
     nans = np.nonzero(np.isnan(data))
+    replacements = np.zeros_like(data)
     for r, c in zip(*nans):
         r1, r2 = r-1, r+2
         c1, c2 = c-1, c+2
         r1, r2 = max(r1, 0), min(r2, data.shape[0])
         c1, c2 = max(c1, 0), min(c2, data.shape[1])
 
-        data[r, c] = np.nanmedian(data[r1:r2, c1:c2])
+        replacements[r, c] = np.nanmedian(data[r1:r2, c1:c2])
+    data[nans] = replacements[nans]
     
     # Median-filter the whole image
-    data = scipy.ndimage.median_filter(data, size=3, mode='reflect')
+    if med_filter_size:
+        data = scipy.ndimage.median_filter(data, size=med_filter_size, mode='reflect')
     
     # Gaussian-blur the whole image
-    data = scipy.ndimage.gaussian_filter(data, sigma=4)
+    if blur_sigma > 0:
+        data = scipy.ndimage.gaussian_filter(data, sigma=blur_sigma)
     
     # Replicate the edge rows/columns to replace those we trimmed earlier
     data = np.pad(data, [trimmed[0:2], trimmed[2:]], mode='edge')
@@ -813,14 +842,36 @@ def filter_distortion_table(data):
 
 
 def add_distortion_table(fname, outname, err_x, err_y, err_px, err_py):
+    """
+    Adds two distortion maps to a FITS file, for x and y distortion.
+    
+    Arguments
+    ---------
+    fname
+        The path to the input FITS file, to which distortions should be added
+    outname
+        The path to which the updated FITS file should be saved. If ``None``,
+        the updated ``HDUList`` is returned instead.
+    err_x, err_y
+        The x or y coordinate associated with each pixel in the provided
+        distortion maps
+    err_px, err_py
+        The distortion values, given in the sense of "the coordinate computed
+        for a pixel is offset by this much from its true location". The
+        negative of these values will be stored as the distortion map, and that
+        is the amount by which pixel coordinates will be shifted before being
+        converted to world coordinates.
+    """
     dx = DistortionLookupTable(-err_x.astype(np.float32),
-                               (1, 1),
+                               (0, 0),
                                (err_px[0], err_py[0]), 
-                               ((err_px[1] - err_px[0]), (err_py[1] - err_py[0])))
+                               ((err_px[1] - err_px[0]),
+                                   (err_py[1] - err_py[0])))
     dy = DistortionLookupTable(-err_y.astype(np.float32),
-                               (1, 1),
+                               (0, 0),
                                (err_px[0], err_py[0]), 
-                               ((err_px[1] - err_px[0]), (err_py[1] - err_py[0])))
+                               ((err_px[1] - err_px[0]),
+                                   (err_py[1] - err_py[0])))
     with utils.ignore_fits_warnings():
         data, header = fits.getdata(fname, header=True)
         wcs = WCS(header, key='A')

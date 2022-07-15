@@ -2,11 +2,14 @@ from .. import image_alignment, utils
 
 
 from itertools import product
+import os
 
 
+from astropy.io import fits
 from astropy.wcs import WCS
 import numpy as np
 import pytest
+from pytest import approx
 
 
 @pytest.mark.parametrize('x', [4.55, 5, 5.45])
@@ -495,3 +498,163 @@ def test_smooth_curve_outlier_rejection():
     assert np.all(y_sm[50-6:50+7] > 1)
     np.testing.assert_allclose(y_sm[:50-6], 1)
     np.testing.assert_allclose(y_sm[50+7:], 1)
+
+
+@pytest.mark.parametrize('wcs_key', [' ', 'A'])
+def test_add_distortion_table(tmpdir, wcs_key):
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_with_data_half_size')
+    in_file = os.path.join(
+        dir_path, '20181101', 'psp_L2_wispr_20181101T004530_V3_2222.fits')
+    
+    out_file = os.path.join(
+        tmpdir, 'psp_L2_wispr_20181101T004530_V3_2222.fits')
+    
+    with utils.ignore_fits_warnings():
+        data, header = fits.getdata(in_file, header=True)
+        wcs_orig = WCS(header, key=wcs_key)
+    
+    x = np.arange(data.shape[1])
+    y = np.arange(data.shape[0])
+    x_offset = 0.1 * x
+    x_offset = np.vstack([x_offset] * data.shape[0])
+    y_offset = 0.2 * y
+    y_offset = np.vstack([y_offset] * data.shape[1]).T
+    
+    image_alignment.add_distortion_table(
+        in_file, out_file, x_offset, y_offset, x, y)
+    
+    with utils.ignore_fits_warnings(), fits.open(out_file) as hdul:
+        wcs_new = WCS(hdul[0].header, hdul, key=wcs_key)
+    
+    for xi in np.linspace(0, data.shape[1] - 1, 10, dtype=int):
+        for yi in np.linspace(0, data.shape[0] - 1, 10, dtype=int):
+            dx = x_offset[yi, xi]
+            dy = y_offset[yi, xi]
+            
+            coords_orig = wcs_orig.all_pix2world(xi - dx, yi - dy, 0)
+            coords_new = wcs_new.all_pix2world(xi, yi, 0)
+            
+            assert coords_orig[0] == approx(coords_new[0], abs=1e-6)
+            assert coords_orig[1] == approx(coords_new[1], abs=1e-6)
+
+
+@pytest.mark.parametrize('wcs_key', [' ', 'A'])
+def test_binned_add_distortion_table(tmpdir, wcs_key):
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_with_data_half_size')
+    in_file = os.path.join(
+        dir_path, '20181101', 'psp_L2_wispr_20181101T004530_V3_2222.fits')
+    
+    out_file = os.path.join(
+        tmpdir, 'psp_L2_wispr_20181101T004530_V3_2222.fits')
+    
+    with utils.ignore_fits_warnings():
+        data, header = fits.getdata(in_file, header=True)
+        wcs_orig = WCS(header, key=wcs_key)
+    
+    x = np.linspace(0, data.shape[1], 50)
+    y = np.linspace(0, data.shape[0], 50)
+    x_offset = 0.1 * x
+    x_offset = np.vstack([x_offset] * data.shape[0])
+    y_offset = 0.2 * y
+    y_offset = np.vstack([y_offset] * data.shape[1]).T
+    
+    image_alignment.add_distortion_table(
+        in_file, out_file, x_offset, y_offset, x, y)
+    
+    with utils.ignore_fits_warnings(), fits.open(out_file) as hdul:
+        wcs_new = WCS(hdul[0].header, hdul, key=wcs_key)
+    
+    for xi in np.linspace(0, data.shape[1] - 1, 10, dtype=int):
+        for yi in np.linspace(0, data.shape[0] - 1, 10, dtype=int):
+            dx = np.interp(xi, x, x_offset[0])
+            dy = np.interp(yi, y, y_offset[:, 0])
+            
+            coords_orig = wcs_orig.all_pix2world(xi - dx, yi - dy, 0)
+            coords_new = wcs_new.all_pix2world(xi, yi, 0)
+            
+            assert coords_orig[0] == approx(coords_new[0], abs=1e-6)
+            assert coords_orig[1] == approx(coords_new[1], abs=1e-6)
+
+
+def test_filter_distortion_table_nan_edges():
+    data = np.zeros((100, 100))
+    
+    # Put nans at the edges that should be cleared, and values to fill them in
+    # with
+    data[2] = 9
+    data[-6] = 2
+    data[:, 3] = 5
+    data[:, -11] = -12.2
+    
+    data[:2] = np.nan
+    data[-5:] = np.nan
+    data[:, :3] = np.nan
+    data[:, -10:] = np.nan
+    
+    filtered = image_alignment.filter_distortion_table(
+            data, blur_sigma=0, med_filter_size=0)
+    
+    # The trimmed edges should be replaced with the edge values
+    np.testing.assert_equal(filtered[:2, 4:-11], 9)
+    np.testing.assert_equal(filtered[-5:, 4:-11], 2)
+    np.testing.assert_equal(filtered[:, :3], 5)
+    np.testing.assert_equal(filtered[:, -10:], -12.2)
+
+
+def test_filter_distortion_table_nans_center():
+    data = np.zeros((100, 100))
+    
+    # Put nans elsewhere that should not be trimmed
+    # And surround them with values to be medianed
+    data[2, :50] = np.nan
+    data[1, :50] = 1
+    data[3, :50] = 3
+    
+    data[50:, -11] = np.nan
+    data[50:, -10] = 1.25
+    data[50:, -12] = 1.75
+    
+    data[29, 29:32] = 1
+    data[30, 29:32] = 0
+    data[31, 29:32] = 10
+    data[30, 30] = np.nan
+    
+    filtered = image_alignment.filter_distortion_table(
+            data, blur_sigma=0, med_filter_size=0)
+    
+    # The nans should have been replaced with a neighborhood median
+    np.testing.assert_equal(
+            filtered[2, :49], np.median([1, 3]))
+    np.testing.assert_equal(
+            filtered[2, 49], np.median([0, 0, 0, 1, 1, 3, 3]))
+    
+    np.testing.assert_equal(
+            filtered[50, -11], np.median([0, 0, 0, 1.25, 1.25, 1.75, 1.75]))
+    np.testing.assert_equal(
+            filtered[51:, -11], np.median([1.25, 1.75]))
+    
+    np.testing.assert_equal(
+            filtered[30, 30], np.median([1, 1, 1, 0, 0, 10, 10, 10]))
+
+
+def test_filter_distortion_median_filter_image():
+    data = np.zeros((50, 50))
+    
+    data[30, 40] = 5
+    
+    filtered = image_alignment.filter_distortion_table(data, blur_sigma=0)
+    
+    assert filtered[30, 40] == 0
+
+
+def test_filter_distortion_gaussian_filter_image():
+    data = np.zeros((50, 50))
+    
+    data[30, 40] = 5
+    
+    filtered = image_alignment.filter_distortion_table(data, med_filter_size=0)
+    
+    assert filtered[30, 40] > 0
+    assert filtered[30, 40] < 5
