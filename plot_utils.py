@@ -5,6 +5,7 @@ from itertools import chain
 import warnings
 
 import astropy.units as u
+from astropy.visualization.wcsaxes import WCSAxes
 from astropy.wcs import WCS
 from matplotlib.animation import FuncAnimation
 import matplotlib.dates as mdates
@@ -137,12 +138,21 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         vmax = COLORBAR_PRESETS[level_preset][detector_preset][1]
     
     if ax is None:
-        if wcs is None or wcs is False:
-            ax = plt.gca()
-        else:
-            ax = plt.subplot(111, projection=wcs)
+        # No axes object was supplied, so we grab the current axes. (If axes
+        # are explicitly provided, we take them as-is.)
+        ax = plt.gca()
+        if wcs and not isinstance(ax, WCSAxes):
+            # We can't apply a WCS projection to existing axes. Instead, we
+            # have to destroy and recreate the current axes. We skip that if
+            # the axes already are WCSAxes, suggesting that this has been
+            # handled already.
+            position = ax.get_position().bounds
+            ax.remove()
+            ax = WCSAxes(plt.gcf(), position, wcs=wcs)
+            plt.gcf().add_axes(ax)
             setup_WCS_axes(ax, grid=grid, lat_spacing=lat_spacing,
                     lon_spacing=lon_spacing)
+    
     if cmap is None:
         cmap = wispr_cmap
     
@@ -164,7 +174,6 @@ def setup_WCS_axes(ax, grid=True, lat_spacing=10, lon_spacing=10):
         if isinstance(grid, bool):
             grid = 0.2
         ax.coords.grid(color='white', alpha=grid)
-    
 
 
 def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
