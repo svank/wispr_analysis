@@ -1,0 +1,4 @@
+[run]
+source = .
+omit = */tests/*
+command_line = -m pytest
