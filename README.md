@@ -3,6 +3,12 @@
 # wispr-analysis
 Shared tools for WISPR data analysis
 
+## Commands
+
+To run the tests, simply run `pytest` within the base directory of this repo.
+
+To generate a coverage report for the tests, run `NUMBA_DISABLE_JIT=1 coverage run; coverage html`.
+
 ## Some highlights
 
 `plot_utils.py`
