@@ -73,7 +73,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         vmin='auto', vmax='auto', wcs_key=' ',
         detector_preset=None, level_preset=None,
         grid=False, lat_spacing=10, lon_spacing=10,
-        relative_vmin=1, relative_vmax=1,
+        relative_vmin=1, relative_vmax=1, gamma=1/2.2,
         **kwargs):
     """
     Does the Right Thing to plot a WISPR image.
@@ -116,6 +116,8 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         specifies the opacity of the grid lines.
     relative_vmin, relative_vmax : float
         These values multiply the preset values for vmin and vmax
+    gamma : float
+        The gamma factor to use for scaling the color bar. Defaults to 1/2.2.
     kwargs
         Extra arguments passed to ``imshow``.
     """
@@ -165,7 +167,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     if 'origin' not in kwargs:
         kwargs['origin'] = 'lower'
     im = ax.imshow(data, cmap=cmap,
-            norm=matplotlib.colors.PowerNorm(gamma=1/2.2, vmin=vmin, vmax=vmax),
+            norm=matplotlib.colors.PowerNorm(gamma=gamma, vmin=vmin, vmax=vmax),
             **kwargs)
     return im
 
