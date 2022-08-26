@@ -815,17 +815,22 @@ def filter_distortion_table(data, blur_sigma=4, med_filter_size=3):
         data = data[:, :-1]
     trimmed.append(i)
     
-    # Replace interior nan values with the median of the surrounding values
-    nans = np.nonzero(np.isnan(data))
-    replacements = np.zeros_like(data)
-    for r, c in zip(*nans):
-        r1, r2 = r-1, r+2
-        c1, c2 = c-1, c+2
-        r1, r2 = max(r1, 0), min(r2, data.shape[0])
-        c1, c2 = max(c1, 0), min(c2, data.shape[1])
+    # Replace interior nan values with the median of the surrounding values.
+    # We're filling in from neighboring pixels, so if there are any nan pixels
+    # fully surrounded by nan pixels, we need to iterate a few times.
+    while np.any(np.isnan(data)):
+        nans = np.nonzero(np.isnan(data))
+        replacements = np.zeros_like(data)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(action='ignore', message='All-NaN slice')
+            for r, c in zip(*nans):
+                r1, r2 = r-1, r+2
+                c1, c2 = c-1, c+2
+                r1, r2 = max(r1, 0), min(r2, data.shape[0])
+                c1, c2 = max(c1, 0), min(c2, data.shape[1])
 
-        replacements[r, c] = np.nanmedian(data[r1:r2, c1:c2])
-    data[nans] = replacements[nans]
+                replacements[r, c] = np.nanmedian(data[r1:r2, c1:c2])
+        data[nans] = replacements[nans]
     
     # Median-filter the whole image
     if med_filter_size:

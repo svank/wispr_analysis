@@ -621,6 +621,9 @@ def test_filter_distortion_table_nans_center():
     data[31, 29:32] = 10
     data[30, 30] = np.nan
     
+    data[60:70, 60:70] = 10
+    data[63:67, 63:67] = np.nan
+    
     filtered = image_alignment.filter_distortion_table(
             data, blur_sigma=0, med_filter_size=0)
     
@@ -637,6 +640,8 @@ def test_filter_distortion_table_nans_center():
     
     np.testing.assert_equal(
             filtered[30, 30], np.median([1, 1, 1, 0, 0, 10, 10, 10]))
+    
+    np.testing.assert_equal(filtered[63:67, 63:67], 10)
 
 
 def test_filter_distortion_median_filter_image():
