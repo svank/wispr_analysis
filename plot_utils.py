@@ -27,12 +27,12 @@ PRESET_L2_O_MIN = 0
 
 COLORBAR_PRESETS = {
         '2': {
-            'i': (2e-12, 3e-10),
-            'o': (0, 1e-10),
+            'i': (PRESET_L2_I_MIN, 3e-10),
+            'o': (PRESET_L2_O_MIN, 1e-10),
             },
         '3': {
-            'i': (0, 1.545e-11),
-            'o': (0, .5e-11),
+            'i': (PRESET_L3_I_MIN, 1.545e-11),
+            'o': (PRESET_L3_O_MIN, .5e-11),
             }
         }
 
@@ -73,6 +73,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         vmin='auto', vmax='auto', wcs_key=' ',
         detector_preset=None, level_preset=None,
         grid=False, lat_spacing=10, lon_spacing=10,
+        relative_vmin=1, relative_vmax=1,
         **kwargs):
     """
     Does the Right Thing to plot a WISPR image.
@@ -113,10 +114,13 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     grid : boolean or float
         Whether to plot a coordinate grid over the image. If a ``float``,
         specifies the opacity of the grid lines.
+    relative_vmin, relative_vmax : float
+        These values multiply the preset values for vmin and vmax
     kwargs
         Extra arguments passed to ``imshow``.
     """
-    data, header, w = utils.ensure_data(data, header=True, wcs=True, wcs_key=wcs_key)
+    data, header, w = utils.ensure_data(
+            data, header=True, wcs=True, wcs_key=wcs_key)
     if wcs is None:
         wcs = w
     
@@ -133,9 +137,11 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             raise ValueError("Detector preset not recognized")
     
     if vmin == 'auto':
-        vmin = COLORBAR_PRESETS[level_preset][detector_preset][0]
+        vmin = (COLORBAR_PRESETS[level_preset][detector_preset][0]
+                * relative_vmin)
     if vmax == 'auto':
-        vmax = COLORBAR_PRESETS[level_preset][detector_preset][1]
+        vmax = (COLORBAR_PRESETS[level_preset][detector_preset][1]
+                * relative_vmax)
     
     if ax is None:
         # No axes object was supplied, so we grab the current axes. (If axes
