@@ -641,7 +641,8 @@ def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
     return output_array
 
 
-def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
+def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
+                                    also_shear=False):
     os.makedirs(out_dir, exist_ok=True)
     
     wcses = []
@@ -657,10 +658,11 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
             series_data = series_by_frame[t]
             wcs = WCS(fits.getheader(fname), key='A')
             
-            # Check up here, especially in case the frame has *zero* identified stars
-            # (i.e. a very bad frame)
+            # Check up here, especially in case the frame has *zero* identified
+            # stars (i.e. a very bad frame)
             if len(series_data) < 50:
-                print(f"Only {len(series_data)} stars found in {fname}---skipping")
+                print(f"Only {len(series_data)} stars found in "
+                      f"{fname}---skipping")
                 continue
 
             ras, decs, xs, ys = zip(*series_data)
@@ -683,7 +685,8 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
 
             # Check down here after outlier removal
             if len(series_data) < 50:
-                print(f"Only {len(series_data)} stars found in {fname} after outlier removal---skipping")
+                print(f"Only {len(series_data)} stars found in {fname} "
+                       "after outlier removal---skipping")
                 continue
             
             all_ras.append(ras)
@@ -696,6 +699,12 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
     print("Doing iteration...")
     pv_orig = wcses[0].wcs.get_pv()
     def f(pv_perts):
+        if also_shear:
+            shear_x = pv_perts[0]
+            shear_y = pv_perts[1]
+            pv_perts = pv_perts[2:]
+            shear = (np.array([[1, shear_x], [0, 1]])
+                     @ np.array([[1, 0], [shear_y, 1]]))
         pv = wcses[0].wcs.get_pv()
         
         for i, pv_pert in enumerate(pv_perts):
@@ -705,7 +714,11 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
                     pv[j] = elem
         
         err = []
-        for w, ras, decs, xs, ys in zip(wcses, all_ras, all_decs, all_xs_true, all_ys_true):
+        for w, ras, decs, xs, ys in zip(
+                wcses, all_ras, all_decs, all_xs_true, all_ys_true):
+            if also_shear:
+                w = w.deepcopy()
+                w.wcs.pc = shear @ w.wcs.pc
             w.wcs.set_pv(pv)
             
             xs_comp, ys_comp = np.array(w.all_world2pix(ras, decs, 0))
@@ -717,9 +730,17 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
     
     n_pvs = len(
         [e for e in wcses[0].wcs.get_pv() if e[0] == 2])
-    res = scipy.optimize.least_squares(f, [1] * n_pvs,
-                                      # loss='cauchy'
-                                      )
+    res = scipy.optimize.least_squares(
+            f, ([0, 0] if also_shear else []) + [1] * n_pvs)
+    
+    if also_shear:
+        shear_x = res.x[0]
+        shear_y = res.x[1]
+        res.x = res.x[2:]
+        shear = (np.array([[1, shear_x], [0, 1]])
+                 @ np.array([[1, 0], [shear_y, 1]]))
+    else:
+        shear_x, shear_y = 0, 0
     
     print("Writing out updated files...")
     with utils.ignore_fits_warnings():
@@ -735,8 +756,17 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame):
         for fname in file_list:
             with fits.open(fname) as hdul:
                 hdul[0].header.update(update_dict)
-                hdul.writeto(os.path.join(out_dir, os.path.basename(fname)), overwrite=True)
-    return update_dict, pv_orig
+                if also_shear:
+                    for wcs_key in ('A', ' '):
+                        w = WCS(hdul[0].header, key=wcs_key)
+                        w.wcs.pc = shear @ w.wcs.pc
+                        update = w.to_header(key=wcs_key)
+                        for k in update:
+                            if k.startswith("PC"):
+                                hdul[0].header[k] = update[k]
+                hdul.writeto(os.path.join(out_dir, os.path.basename(fname)),
+                             overwrite=True)
+    return update_dict, pv_orig, shear_x, shear_y
 
 
 def calc_binned_err_components(px_x, px_y, err_x, err_y, ret_coords=False):
