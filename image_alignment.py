@@ -644,7 +644,7 @@ def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
 
 
 def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
-                                    also_shear=False):
+                                    also_shear=False, n_extra_params=0):
     os.makedirs(out_dir, exist_ok=True)
     
     wcses = []
@@ -714,6 +714,9 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
                 if elem[0] == 2 and elem[1] == i:
                     elem = (elem[0], elem[1], pv_pert * elem[2])
                     pv[j] = elem
+                    break
+            else:
+                pv.append((2, i, pv_pert))
         
         err = []
         for w, ras, decs, xs, ys in zip(
@@ -733,7 +736,7 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
     n_pvs = len(
         [e for e in wcses[0].wcs.get_pv() if e[0] == 2])
     res = scipy.optimize.least_squares(
-            f, ([0, 0] if also_shear else []) + [1] * n_pvs)
+            f, ([0, 0] if also_shear else []) + ([1] * n_pvs) + ([0] * n_extra_params))
     
     if also_shear:
         shear_x = res.x[0]
@@ -752,7 +755,10 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
     for i, pert in enumerate(res.x):
         for wcs_key in ('A', ' '):
             key = f'PV2_{i}' + wcs_key
-            update_dict[key] = pert * header[key]
+            if key in header:
+                update_dict[key] = pert * header[key]
+            else:
+                update_dict[key] = pert
     
     with utils.ignore_fits_warnings():
         for fname in file_list:
