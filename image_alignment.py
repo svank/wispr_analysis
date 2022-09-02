@@ -405,11 +405,13 @@ def find_all_stars(ifiles, ret_all=False, start_at_max=True):
     crowded_out_x, crowded_out_y = np.array(crowded_out).T.reshape((2, -1))
     bad_x, bad_y = np.array(bad).T.reshape((2, -1))
     
+    # Change the defaultdict to just a dict
+    mapping = {k:v for k, v in mapping.items()}
+    
     if ret_all:
         return (mapping, mapping_by_frame, good_x, good_y, crowded_out_x,
                 crowded_out_y, bad_x, bad_y, codes)
-    # Change the defaultdict to just a dict
-    return {k:v for k, v in mapping}, mapping_by_frame
+    return mapping, mapping_by_frame
 
 
 def do_iteration_with_crpix(pts1, pts2, w1, w2, angle_start, dra_start,
