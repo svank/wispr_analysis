@@ -180,6 +180,8 @@ def gen_header(hdr_i, hdr_o, proj='ARC', level=False, key=' '):
     wcsh.wcs.cunit = wcs_i.wcs.cunit
     wcsh.wcs.pc = np.array([[1., 0.], [0., 1.]])
     
+    wcsh.pixel_shape = naxis1, naxis2
+    
     return wcsh, naxis1, naxis2
 
 

@@ -1,6 +1,10 @@
+from astropy.wcs import WCS
 import matplotlib.pyplot as plt
 import numpy as np
 import reproject
+import scipy.optimize
+
+from . import utils
 
 
 class RadialTransformer():
@@ -192,3 +196,51 @@ def label_radial_axes(transformer, ax=None):
     ax.set_yticks(ytick_locs, ytick_labels)
     ax.set_ylabel("Position Angle")
 
+
+def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
+        ref_hdr=None):
+    """Produces an RA/Dec WCS for an HP WCS, from a pair of RA/Dec and HP WCSs
+    
+    The indended use case is producing composite images, where an output HP WCS
+    is constructed from scratch, and a corresponding RA/Dec WCS in the same
+    projection is desired. To produce it, the RA/Dec and HP WCSs of one of the
+    input images are used.
+    """
+    if ref_hdr:
+        with utils.ignore_fits_warnings():
+            ref_wcs_hp = WCS(ref_hdr)
+            ref_wcs_ra = WCS(ref_hdr, key='A')
+    # Begin to create the output WCS
+    wcs_ra = wcs_hp.deepcopy()
+    wcs_ra.wcs.ctype = 'RA---ARC', 'DEC--ARC'
+    # Update the reference coordinate to the RA/Dec coordinate corresponding to
+    # the original HP reference coordinate.
+    wcs_ra.wcs.crval = ref_wcs_ra.all_pix2world(
+            *ref_wcs_hp.all_world2pix(*wcs_hp.wcs.crval, 0), 0)
+    wcs_ra.wcs.cdelt = -wcs_hp.wcs.cdelt[0], wcs_hp.wcs.cdelt[1]
+    
+    # We now need to find the rotation of the RA/Dec frame. We do that
+    # iteratively, using a set of reference HP coordinates for which we compute
+    # the corresponding RA/Dec coordinates using the reference WCSs
+    pts_x = np.linspace(50, ref_wcs_hp.pixel_shape[0] - 50, 5)
+    pts_y = np.linspace(50, ref_wcs_hp.pixel_shape[1] - 50, 5)
+    pts_x, pts_y = np.meshgrid(pts_x, pts_y)
+    
+    pts_hp = ref_wcs_hp.all_pix2world(pts_x, pts_y, 0)
+    pts_ra = ref_wcs_ra.all_pix2world(pts_x, pts_y, 0)
+    pts_x, pts_y = wcs_hp.all_world2pix(*pts_hp, 0) 
+    
+    def f(angle):
+        angle = angle[0]
+        wcs_ra.wcs.pc = np.array([[np.cos(angle), -np.sin(angle)],
+                                  [np.sin(angle), np.cos(angle)]])
+        pts_ra_trial = wcs_ra.all_pix2world(pts_x, pts_y, 0)
+        dra = pts_ra_trial[0] - pts_ra[0]
+        ddec = pts_ra_trial[1] - pts_ra[1]
+        return np.sum(np.square(dra)) + np.sum(np.square(ddec))
+    
+    res = scipy.optimize.minimize(f, 0, bounds=[[-np.pi, np.pi]])
+    angle = res.x[0]
+    wcs_ra.wcs.pc = np.array([[np.cos(angle), -np.sin(angle)],
+                              [np.sin(angle), np.cos(angle)]])
+    return wcs_ra

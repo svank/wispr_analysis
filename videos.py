@@ -23,6 +23,7 @@ from tqdm.contrib.concurrent import process_map
 from . import composites
 from . import data_cleaning
 from . import plot_utils
+from . import projections
 from . import utils
 
 
@@ -32,7 +33,7 @@ cmap.set_bad('black')
     
 def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
-        destreak=True, save_location=None):
+        destreak=True, overlay_celest=False, save_location=None):
     """
     Renders a video of a WISPR data sequence, in a composite field of view.
     
@@ -44,9 +45,8 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     and outer imagers (or no image is shown if none is available or the most
     recent image is over a day before the frame's timestamp).
     
-    The rendered video is displayed in the Jupyter environment. No other output
-    modes are currently supported.
-    
+    The rendered video is displayed in the Jupyter environment by default, but
+    can be saved to a file instread.
     Arguments
     ---------
     data_dir : str
@@ -75,6 +75,9 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         Number of frames per second in the video
     destreak : boolean
         Whether to enable the debris streak removal algorithm
+    save_location : str
+        If given, a file path at which to save the video. Otherwise, it is
+        displayed in the Jupyter environment.
     """
     i_files, o_files = utils.collect_files(
             data_dir, separate_detectors=True, include_sortkey=True,
@@ -174,7 +177,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         if save_location is not None:
             shutil.move(video_file, save_location)
         else:
-            display(Video( video_file, embed=True,
+            display(Video(video_file, embed=True,
                 html_attributes="controls loop"))
 
 
@@ -218,6 +221,22 @@ def draw_WISPR_video_frame(data):
         wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
         blank_i=(input_i is None), blank_o=(input_o is None))
     
+    if overlay_celest:
+        # Determine which input image is closest in time
+        if i is None:
+            dt_i = np.inf
+        else:
+            dt_i = np.abs(timesteps[0] - i_files[i][0])
+        if j is None:
+            dt_o = np.inf
+        else:
+            dt_o = np.abs(timesteps[0] - o_files[j][0])
+        if dt_i < dt_o:
+            hdr = i_files[i][2]
+        else:
+            hdr = o_files[j][2]
+        wcs_ra = projections.produce_radec_for_hp_wcs(wcs_plot, ref_hdr=hdr)
+    
     with plt.style.context('dark_background'):
         for t in timesteps:
             fig = plt.figure(figsize=(10, 7.5), dpi=250)
@@ -232,14 +251,25 @@ def draw_WISPR_video_frame(data):
 
             fig.subplots_adjust(top=0.96, bottom=0.10,
                     left=0.05, right=0.98)
-            lon, lat = ax.coords
-            lat.set_ticks(np.arange(-90, 90, 10) * u.degree)
-            lon.set_ticks(np.arange(-180, 180, 15) * u.degree)
-            lat.set_major_formatter('dd')
-            lon.set_major_formatter('dd')
+            plot_utils.setup_WCS_axes(ax)
             ax.set_xlabel("Helioprojective Longitude")
             ax.set_ylabel("Helioprojective Latitude")
-            ax.coords.grid(color='white', alpha=0.2)
+            
+            if overlay_celest:
+                ax.coords[0].set_ticks_position('b')
+                ax.coords[1].set_ticks_position('l')
+                
+                overlay = ax.get_coords_overlay(wcs_ra)
+                overlay.grid(color='gold', alpha=.2)
+                overlay[0].set_ticks(spacing=360/24*u.deg)
+                overlay[1].set_ticks(spacing=10*u.deg)
+                overlay[0].set_ticks_position('t')
+                overlay[1].set_ticks_position('r')
+                overlay[0].set_axislabel("Right Ascension")
+                overlay[1].set_axislabel("Declination")
+                
+                fig.subplots_adjust(top=0.90, bottom=0.10,
+                        left=0.05, right=0.95)
             
             ax_orbit = fig.add_axes((.13, .13, .12, .12))
             draw_overhead_map(ax_orbit, t, path_positions, path_times)
