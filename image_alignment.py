@@ -339,7 +339,7 @@ def find_stars_in_frame(data):
     fname, start_at_max = data
     t = utils.to_timestamp(fname)
     try:
-        (stars_x, stars_y, _, stars_ra, stars_dec,
+        (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
                 all_stars_x, all_stars_y, data,
                 binning) = prep_frame_for_star_finding(fname)
     except ValueError as e:
@@ -353,7 +353,8 @@ def find_stars_in_frame(data):
     
     mapping = {}
     
-    for x, y, ra, dec in zip(stars_x, stars_y, stars_ra, stars_dec):
+    for x, y, ra, dec, vmag in zip(
+            stars_x, stars_y, stars_ra, stars_dec, stars_vmag):
         fx, fy, err = fit_star(
                 x, y, data, all_stars_x, all_stars_y,
                 ret_more=False, binning=binning,
@@ -361,7 +362,7 @@ def find_stars_in_frame(data):
 
         if len(err) == 0:
             good.append((fx, fy))
-            mapping[(ra, dec)] = (fx, fy, t)
+            mapping[(ra, dec)] = (fx, fy, t, vmag)
         elif 'Crowded frame' in err:
             crowded_out.append((fx, fy))
         else:
@@ -395,10 +396,10 @@ def find_all_stars(ifiles, ret_all=False, start_at_max=True):
             codes[code] = codes.get(code, 0) + count
         
         mapping_by_frame[t] = []
-        for celest_coords, px_coords_and_time in mapping_in_frame.items():
-            mapping[celest_coords].append(px_coords_and_time)
+        for celest_coords, star_data in mapping_in_frame.items():
+            mapping[celest_coords].append(star_data)
             mapping_by_frame[t].append(
-                    (*celest_coords, *px_coords_and_time[:2]))
+                    (*celest_coords, *star_data[:2], star_data[3]))
 
     # The `reshape` calls handle the case that the input list is empty
     good_x, good_y = np.array(good).T.reshape((2, -1))
@@ -478,7 +479,7 @@ def iteratively_align_one_file(data):
         print(f"Only {len(series_data)} stars found in {fname}---skipping")
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     
-    ras, decs, xs, ys = zip(*series_data)
+    ras, decs, xs, ys, _ = zip(*series_data)
     xs = np.array(xs)
     ys = np.array(ys)
     ras = np.array(ras)
@@ -667,7 +668,7 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
                       f"{fname}---skipping")
                 continue
 
-            ras, decs, xs, ys = zip(*series_data)
+            ras, decs, xs, ys, _ = zip(*series_data)
             xs = np.array(xs)
             ys = np.array(ys)
             ras = np.array(ras)
