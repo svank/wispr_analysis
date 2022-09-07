@@ -334,7 +334,7 @@ def test_find_stars_in_frame(mocker, binning):
     decs = 0.5 * all_stars_y
     mocker.patch(image_alignment.__name__+'.prep_frame_for_star_finding',
             return_value=(
-                stars_x, stars_y, None,
+                stars_x, stars_y, [1] * len(stars_x),
                 ras, decs,
                 all_stars_x, all_stars_y, data, binning
             ))
@@ -365,7 +365,7 @@ def test_find_stars_in_frame(mocker, binning):
             assert codes[code] == 1
     
     for x, y in good:
-        assert mapping[(2*round(x), 0.5*round(y))] == (x, y, t)
+        assert mapping[(2*round(x), 0.5*round(y))] == (x, y, t, 1)
     assert len(mapping) == len(good)
 
 
