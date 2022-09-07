@@ -133,3 +133,6 @@ dmypy.json
 
 # Plotting test outputs
 result_images
+
+*/version.py
+docs/api

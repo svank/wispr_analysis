@@ -9,10 +9,10 @@ numba>=0.55
 numpy>=1.21
 pytest>=7.1
 # pytest-arraydiff>=0.5
-git+https://github.com/svank/pytest-arraydiff@fix-atol#egg=pytest-arraydiff
+pytest-arraydiff @ git+https://github.com/svank/pytest-arraydiff@fix-atol
 pytest-mock>=3.7
 # reproject>=0.8
-git+https://github.com/svank/reproject@everything#egg=reproject
+reproject @ git+https://github.com/svank/reproject@everything
 scipy>=1.8
 sunpy>=3.1
 tqdm>=4.64

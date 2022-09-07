@@ -15,7 +15,7 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
     """Finds the pixel bounds of a FITS header in an output WCS.
     
     The edges of the input image are transformed to the coordinate system of
-    `wcs_target`, and the extrema of these transformed coordinates are found.
+    ``wcs_target``, and the extrema of these transformed coordinates are found.
     In other words, this finds the size of the output image that is required to
     bound the reprojected input image.
     

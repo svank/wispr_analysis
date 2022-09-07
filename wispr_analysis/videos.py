@@ -47,6 +47,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     
     The rendered video is displayed in the Jupyter environment by default, but
     can be saved to a file instread.
+    
     Arguments
     ---------
     data_dir : str
@@ -58,11 +59,12 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         both timestamp can be `None`, to place no limit on the beginning or end
         of the video.
     trim_threshold : float
-        After filtering is done with the `between` values, the video start and
+        After filtering is done with the ``between`` values, the video start and
         end times are determined by scanning the time gaps between successive
         images. Starting from the midpoint of the data sequence, the time range
         being shown expands out in both directions to the first time gap that
-        exceeds `trim_thresholds` (a value in seconds). Set to None to disable.
+        exceeds ``trim_thresholds`` (a value in seconds). Set to None to
+        disable.
     level_preset : str or int
         The colorbar range is set with default values appropriate to L2 or L3
         data. This is autodetected from the files but can be overridden with

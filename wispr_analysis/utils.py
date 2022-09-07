@@ -63,8 +63,8 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     
     Subdirectories are searched, so this lists all WISPR files for an
     encounter when they are in separate subdirectories by date. By default,
-    returns two lists, one for each detector. Set `separate_detectors` to False
-    to return only a single, sorted list. Returned items are full paths
+    returns two lists, one for each detector. Set ``separate_detectors`` to
+    False to return only a single, sorted list. Returned items are full paths
     relative to the given directory.
     
     Invalid files are omitted. The expected structure is that subdirectories
@@ -72,19 +72,19 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     should be in the standard formated provided by the WISPR team.
     
     Files are ordered by the value of the FITS header key provided as the
-    `order` argument. Set `order` to None to sort by filename instead (which is
-    implicitly DATE-BEG, as that is contained in the filenames).
+    ``order`` argument. Set ``order`` to None to sort by filename instead
+    (which is implicitly DATE-BEG, as that is contained in the filenames).
     
     Arguments
     ---------
     top_level_dir : str
         The directory containing the FITS files or directories of FITS files
     separate_detectors : boolean
-        If `True`, two lists are returned---one for the inner imager, and one
-        for the outer. If `False`, a single list of all images is returned.
+        If ``True``, two lists are returned---one for the inner imager, and one
+        for the outer. If ``False``, a single list of all images is returned.
     order : str or None
         A FITS header keyword, the value of which is used as the sort key for
-        sorting the files. If `None`, the timestamp embedded in the filenames
+        sorting the files. If ``None``, the timestamp embedded in the filenames
         is used, which is faster than loading the header from each file.
     include_sortkey : boolean
         Whether to return the value of the sort key along with each file name.
@@ -94,11 +94,11 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     between : tuple
         Minimum and maximum allowable values of the sort key. Files whose
         sort-key value falls outside this range are excluded. Either value can
-        be `None`, to apply no minimum or maximum value.
+        be ``None``, to apply no minimum or maximum value.
     filters : list or tuple
         A list of additional filters to apply. Each element should be a tuple
         containing a FITS header keyword, a minimum value, and a maximum value.
-        Either of the latter two values can be `None` to apply to minimum or
+        Either of the latter two values can be ``None`` to apply to minimum or
         maximum. If only one filter is provided, it can be passed directly
         rather than as a one-element list. If the minimum or maximum value is
         provided as a number, the values extracted from the FITS headers will
@@ -106,9 +106,9 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
         
     Returns
     -------
-    A list or two lists, depending on `separate_detectors`. Each element is a
-    filename, or a tuple of up to `(sort_key, filename, header)` depending on
-    the values of `include_sortkey` and `include_headers`.
+    A list or two lists, depending on ``separate_detectors``. Each element is a
+    filename, or a tuple of up to ``(sort_key, filename, header)`` depending on
+    the values of ``include_sortkey`` and ``include_headers``.
     """
     i_files = []
     o_files = []
