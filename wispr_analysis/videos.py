@@ -241,7 +241,8 @@ def draw_WISPR_video_frame(data):
     
     with plt.style.context('dark_background'):
         for t in timesteps:
-            fig = plt.figure(figsize=(10, 7.5), dpi=250)
+            fig = plt.figure(figsize=(10, 7.5),
+                    dpi=250 if save_location else 150)
             ax = fig.add_subplot(111, projection=wcs_plot)
 
             im = ax.imshow(c, cmap=cmap, origin='lower',

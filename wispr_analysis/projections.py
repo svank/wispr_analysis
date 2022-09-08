@@ -230,14 +230,34 @@ def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
     pts_ra = ref_wcs_ra.all_pix2world(pts_x, pts_y, 0)
     pts_x, pts_y = wcs_hp.all_world2pix(*pts_hp, 0) 
     
+    pts_ra[0] *= np.pi / 180
+    pts_ra[1] *= np.pi / 180
+    
     def f(angle):
         angle = angle[0]
         wcs_ra.wcs.pc = np.array([[np.cos(angle), -np.sin(angle)],
                                   [np.sin(angle), np.cos(angle)]])
         pts_ra_trial = wcs_ra.all_pix2world(pts_x, pts_y, 0)
-        dra = pts_ra_trial[0] - pts_ra[0]
-        ddec = pts_ra_trial[1] - pts_ra[1]
-        return np.sum(np.square(dra)) + np.sum(np.square(ddec))
+        
+        ra1, dec1 = pts_ra_trial
+        ra2, dec2 = pts_ra
+        
+        ra1 = ra1 * np.pi / 180
+        dec1 = dec1 * np.pi / 180
+        
+        sindec1 = np.sin(dec1)
+        cosdec1 = np.cos(dec1)
+        sindec2 = np.sin(dec2)
+        cosdec2 = np.cos(dec2)
+        dra = ra1 - ra2
+        
+        # Great-circle distance---handles the wraparound in RA
+        gcd = np.arctan(
+                np.sqrt((cosdec2 * np.sin(dra))**2
+                    + (cosdec1 * sindec2 - sindec1 * cosdec2 * np.cos(dra))**2 )
+                / (sindec1 * sindec2 + cosdec1 * cosdec2 * np.cos(dra))
+                )
+        return np.sum(np.square(gcd))
     
     res = scipy.optimize.minimize(f, 0, bounds=[[-np.pi, np.pi]])
     angle = res.x[0]
