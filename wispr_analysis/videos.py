@@ -77,6 +77,8 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         Number of frames per second in the video
     destreak : boolean
         Whether to enable the debris streak removal algorithm
+    overlay_celest : boolean
+        Whether to show an RA/Dec grid as well as an HP grid
     save_location : str
         If given, a file path at which to save the video. Otherwise, it is
         displayed in the Jupyter environment.

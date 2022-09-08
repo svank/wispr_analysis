@@ -1,10 +1,12 @@
-from .. import projections
+from .. import composites, projections, utils
 
+from astropy.io import fits
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
 from matplotlib.testing.conftest import mpl_test_settings
 from matplotlib.testing.decorators import image_comparison
 import numpy as np
+import os
 import pytest
 from pytest import approx
 
@@ -310,3 +312,55 @@ def test_reproject_from_radial():
     plt.imshow(out, cmap='viridis', vmin=0)
     
     return plt.gcf()
+
+
+@pytest.mark.parametrize('use_inner_as_ref', [True, False])
+@pytest.mark.parametrize('pass_wcs', [True, False])
+def test_produce_radec_for_hp_wcs(pass_wcs, use_inner_as_ref):
+    dir = os.path.join(
+            os.path.dirname(__file__), 'test_data',
+            'WISPR_files_headers_only', '20181101')
+    ifile = os.path.join(dir, 'psp_L3_wispr_20181101T051548_V3_1221.fits')
+    ofile = os.path.join(dir, 'psp_L3_wispr_20181101T060030_V3_2222.fits')
+    
+    with utils.ignore_fits_warnings():
+        ihdr = fits.getheader(ifile)
+        ohdr = fits.getheader(ofile)
+    for hdr in [ihdr, ohdr]:
+        hdr['NAXIS'] = 2
+        hdr['NAXIS1'] = 960
+        hdr['NAXIS2'] = 1024
+    
+    wcs_hp, _, _ = composites.gen_header(ihdr, ohdr)
+    wcs_hp = wcs_hp[250:, 350:]
+    
+    if use_inner_as_ref:
+        ref_hdr = ihdr
+    else:
+        ref_hdr = ohdr
+    
+    with utils.ignore_fits_warnings():
+        ref_wcs_hp = WCS(ref_hdr)
+        ref_wcs_ra = WCS(ref_hdr, key='A')
+    
+    if pass_wcs:
+        wcs_ra = projections.produce_radec_for_hp_wcs(
+                wcs_hp, ref_wcs_hp, ref_wcs_ra)
+    else:
+        wcs_ra = projections.produce_radec_for_hp_wcs(wcs_hp, ref_hdr=ref_hdr)
+        
+    pts_x = np.linspace(0, 1400, 6)
+    pts_y = np.linspace(0, 2100, 6)
+    pts_x, pts_y = np.meshgrid(pts_x, pts_y)
+    
+    computed_ra = wcs_ra.all_pix2world(pts_x, pts_y, 0)
+    
+    pts_hp = wcs_hp.all_pix2world(pts_x, pts_y, 0)
+    pts_ref_xy = ref_wcs_hp.all_world2pix(*pts_hp, 0)
+    real_ra = ref_wcs_ra.all_pix2world(*pts_ref_xy, 0)
+    
+    # We may end up with NaNs (when computing pts_ref_xy) if the HP coordinates
+    # are outside the bounds of the projection of the reference image.
+    ok = np.isfinite(real_ra)
+    np.testing.assert_allclose(
+            np.array(computed_ra)[ok], np.array(real_ra)[ok], atol=.2)
