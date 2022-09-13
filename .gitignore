@@ -136,3 +136,5 @@ result_images
 
 */version.py
 docs/api
+
+.vscode
