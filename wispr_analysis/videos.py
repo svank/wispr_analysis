@@ -249,7 +249,7 @@ def draw_WISPR_video_frame(data):
 
             im = ax.imshow(c, cmap=cmap, origin='lower',
                            norm=matplotlib.colors.PowerNorm(
-                               gamma=0.5, vmin=0, vmax=vmax))
+                               gamma=1/2.2, vmin=0, vmax=vmax))
             text = ax.text(20, 20,
                     datetime.fromtimestamp(t).strftime("%Y-%m-%d, %H:%M"),
                     color='white')
