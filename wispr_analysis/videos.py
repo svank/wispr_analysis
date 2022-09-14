@@ -14,7 +14,6 @@ import astropy.units as u
 from astropy.wcs import WCS
 from IPython.display import display, Video
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import reproject
 from tqdm.auto import tqdm
@@ -27,7 +26,7 @@ from . import projections
 from . import utils
 
 
-cmap = copy.copy(plt.cm.Greys_r)
+cmap = copy.copy(matplotlib.cm.Greys_r)
 cmap.set_bad('black')
 
     
@@ -186,13 +185,10 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
 
 
 def draw_WISPR_video_frame(data):
-    (pair, timesteps), local_vars = data
-    # `locals` is not updatable (except at the lop level where locals() is just
-    # globals()), so we have to update globals() instead. Since we're
-    # multiprocessing, those global variables will be thrown away when this
-    # process ends.
-    globals().update(local_vars)
+    (pair, timesteps), data = data
     i, j = pair
+    i_files, o_files = data['i_files'], data['o_files']
+    destreak = data['destreak']
     
     if i is None:
         input_i = None
@@ -221,11 +217,11 @@ def draw_WISPR_video_frame(data):
         # needed (for now...)
         input_i if input_i is not None else i_files[0][1],
         input_o if input_o is not None else o_files[0][1],
-        bounds=bounds,
-        wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
+        bounds=data['bounds'],
+        wcsh=data['wcsh'], naxis1=data['naxis1'], naxis2=data['naxis2'],
         blank_i=(input_i is None), blank_o=(input_o is None))
     
-    if overlay_celest:
+    if data['overlay_celest']:
         # Determine which input image is closest in time
         if i is None:
             dt_i = np.inf
@@ -241,15 +237,15 @@ def draw_WISPR_video_frame(data):
             hdr = o_files[j][2]
         wcs_ra = projections.produce_radec_for_hp_wcs(wcs_plot, ref_hdr=hdr)
     
-    with plt.style.context('dark_background'):
+    with matplotlib.style.context('dark_background'):
         for t in timesteps:
-            fig = plt.figure(figsize=(10, 7.5),
-                    dpi=250 if save_location else 150)
+            fig = matplotlib.figure.Figure(figsize=(10, 7.5),
+                    dpi=250 if data['save_location'] else 150)
             ax = fig.add_subplot(111, projection=wcs_plot)
 
             im = ax.imshow(c, cmap=cmap, origin='lower',
                            norm=matplotlib.colors.PowerNorm(
-                               gamma=1/2.2, vmin=0, vmax=vmax))
+                               gamma=1/2.2, vmin=0, vmax=data['vmax']))
             text = ax.text(20, 20,
                     datetime.fromtimestamp(t).strftime("%Y-%m-%d, %H:%M"),
                     color='white')
@@ -260,7 +256,7 @@ def draw_WISPR_video_frame(data):
             ax.set_xlabel("Helioprojective Longitude")
             ax.set_ylabel("Helioprojective Latitude")
             
-            if overlay_celest:
+            if data['overlay_celest']:
                 ax.coords[0].set_ticks_position('b')
                 ax.coords[1].set_ticks_position('l')
                 
@@ -277,10 +273,9 @@ def draw_WISPR_video_frame(data):
                         left=0.05, right=0.95)
             
             ax_orbit = fig.add_axes((.13, .13, .12, .12))
-            draw_overhead_map(ax_orbit, t, path_positions, path_times)
+            draw_overhead_map(ax_orbit, t, data['path_positions'], data['path_times'])
             
-            fig.savefig(f"{tmpdir}/{t:035.20f}.png")
-            plt.close(fig)
+            fig.savefig(f"{data['tmpdir']}/{t:035.20f}.png")
 
 
 def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
@@ -458,7 +453,7 @@ def process_one_file_for_pointing(inputs):
 
 def plot_one_frame_for_pointing(imap, omap, starfield_wcs, t, ts, fname,
         sun_coords, path_positions, path_times, tmpdir, cadence_i, cadence_o):
-    fig = plt.figure(figsize=(10, 6), dpi=140)
+    fig = matplotlib.figure.Figure(figsize=(10, 6), dpi=140)
     ax = fig.add_subplot(111, projection=starfield_wcs)
     
     rcolor = np.array((.88, .08, .08))[None, None, :]
@@ -473,7 +468,7 @@ def plot_one_frame_for_pointing(imap, omap, starfield_wcs, t, ts, fname,
     
     ax.text(1200, 20, os.path.basename(fname), color='white')
     
-    plt.scatter(*sun_coords, s=50, color='yellow')
+    ax.scatter(*sun_coords, s=50, color='yellow')
     
     fig.subplots_adjust(top=0.96, bottom=0.10,
             left=0.09, right=0.98)
@@ -482,12 +477,11 @@ def plot_one_frame_for_pointing(imap, omap, starfield_wcs, t, ts, fname,
     ax.set_ylabel("Declication")
     ax.coords.grid(color='white', alpha=0.2)
     
-    with plt.style.context('dark_background'):
+    with matplotlib.style.context('dark_background'):
         ax_orbit = fig.add_axes((.85, .73, .12, .12))
         draw_overhead_map(ax_orbit, ts, path_positions, path_times)
 
     fig.savefig(f"{tmpdir}/{ts:035.20f}.png")
-    plt.close('all')
 
 
 def draw_overhead_map(ax_orbit, t, path_positions, path_times):
