@@ -29,7 +29,7 @@ from . import utils
 cmap = copy.copy(matplotlib.cm.Greys_r)
 cmap.set_bad('black')
 
-    
+
 def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
         destreak=True, overlay_celest=False, save_location=None):
@@ -89,7 +89,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     o_files = [(utils.to_timestamp(f[0]), f[1], f[2]) for f in o_files]
     i_tstamps = [f[0] for f in i_files]
     o_tstamps = [f[0] for f in o_files]
-    tstamps = sorted(itertools.chain(i_tstamps, o_tstamps))   
+    tstamps = sorted(itertools.chain(i_tstamps, o_tstamps))
     
     # Do this before setting the time range, so the full s/c trajectory is
     # visible in the inset plot
@@ -108,14 +108,14 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         else:
             i = 0
         t_start = tstamps[i+1]
-
+        
         j = np.nonzero(t_deltas[midpoint:] > trim_threshold)[0]
         if len(j):
             j = j[0] + midpoint
         else:
             j = len(tstamps) - 1
         t_end = tstamps[j]
-
+    
     i_files = [v for v in i_files if t_start <= v[0] <= t_end]
     o_files = [v for v in o_files if t_start <= v[0] <= t_end]
     i_tstamps = [f[0] for f in i_files]
@@ -128,9 +128,9 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     bounds = composites.find_collective_bounds(
             ([v[-1] for v in i_files[::3]], [v[-1] for v in o_files[::3]]),
             wcsh, ((33, 40, 42, 39), (20, 25, 26, 31)))
-
+    
     frames = np.linspace(t_start, t_end, fps*duration)
-
+    
     images = []
     # Determine the correct pair of images for each timestep
     for t in frames:
@@ -166,12 +166,31 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         vmax = max(*[d[1] for d in colorbar_data.values()])
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Rather than explicitly passing ~15 different variables to the
-        # per-frame plotting function, let's be hacky and just send the whole
-        # dictionary of local variables, which is mostly things we need to send
-        # anyway.
-        arguments = zip(images, repeat(locals()))
-        process_map(draw_WISPR_video_frame, arguments, total=len(images))
+        def arguments():
+            for (i, j), timesteps in images:
+                args = dict(
+                    timesteps=timesteps, destreak=destreak, bounds=bounds,
+                    wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
+                    overlay_celest=overlay_celest, save_location=save_location,
+                    tmpdir=tmpdir, vmax=vmax, path_positions=path_positions,
+                    path_times=path_times, ifile=None, next_ifile=None,
+                    prev_ifile=None, ihdr=None, ofile=None, next_ofile=None,
+                    prev_ofile=None, ohdr=None, fallback_ifile=i_files[0][1],
+                    fallback_ofile=o_files[0][1])
+                if i is not None:
+                    args['ifile'] = i_files[i][1]
+                    if 0 < i < len(i_files) - 1:
+                        args['next_ifile'] = i_files[i+1][1]
+                        args['prev_ifile'] = i_files[i-1][1]
+                    args['ihdr'] = i_files[i][2]
+                if j is not None:
+                    args['ofile'] = o_files[j][1]
+                    if 0 < j < len(o_files) - 1:
+                        args['next_ofile'] = o_files[j+1][1]
+                        args['prev_ofile'] = o_files[j-1][1]
+                    args['ohdr'] = o_files[j][2]
+                yield args
+        process_map(draw_WISPR_video_frame, arguments(), total=len(images))
         video_file = os.path.join(tmpdir, 'out.mp4')
         os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
                   f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
@@ -185,73 +204,68 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
 
 
 def draw_WISPR_video_frame(data):
-    (pair, timesteps), data = data
-    i, j = pair
-    i_files, o_files = data['i_files'], data['o_files']
-    destreak = data['destreak']
-    
-    if i is None:
+    if data['ifile'] is None:
         input_i = None
+    elif data['destreak'] and data['next_ifile']:
+        input_i = data_cleaning.dust_streak_filter(
+                data['prev_ifile'], data['ifile'], data['next_ifile'],
+                sliding_window_stride=3)
+        input_i = (input_i, data['ihdr'])
     else:
-        if destreak and 0 < i < len(i_files) - 1:
-            input_i = data_cleaning.dust_streak_filter(
-                    i_files[i-1][1], i_files[i][1], i_files[i+1][1],
-                    sliding_window_stride=3)
-            input_i = (input_i, i_files[i][2])
-        else:
-            input_i = i_files[i][1]
-    
-    if j is None:
+        input_i = data['ifile']
+       
+    if data['ofile'] is None:
         input_o = None
+    elif data['destreak'] and data['next_ofile']:
+        input_o = data_cleaning.dust_streak_filter(
+                data['prev_ofile'], data['ofile'], data['next_ofile'],
+                sliding_window_stride=3)
+        input_o = (input_o, data['ohdr'])
     else:
-        if destreak and 0 < j < len(o_files) - 1:
-            input_o = data_cleaning.dust_streak_filter(
-                    o_files[j-1][1], o_files[j][1], o_files[j+1][1],
-                    sliding_window_stride=3)
-            input_o = (input_o, o_files[j][2])
-        else:
-            input_o = o_files[j][1]
+        input_o = data['ofile']
     
     c, wcs_plot = composites.gen_composite(
         # Even if we're blanking one of the images, a header is still
         # needed (for now...)
-        input_i if input_i is not None else i_files[0][1],
-        input_o if input_o is not None else o_files[0][1],
+        input_i if input_i is not None else data['fallback_ifile'],
+        input_o if input_o is not None else data['fallback_ofile'],
         bounds=data['bounds'],
         wcsh=data['wcsh'], naxis1=data['naxis1'], naxis2=data['naxis2'],
         blank_i=(input_i is None), blank_o=(input_o is None))
     
     if data['overlay_celest']:
         # Determine which input image is closest in time
-        if i is None:
+        if data['ifile'] is None:
             dt_i = np.inf
         else:
-            dt_i = np.abs(timesteps[0] - i_files[i][0])
-        if j is None:
+            dt_i = np.abs(data['timesteps'][0] - utils.to_timestamp(data['ifile']))
+        if data['ofile'] is None:
             dt_o = np.inf
         else:
-            dt_o = np.abs(timesteps[0] - o_files[j][0])
+            dt_o = np.abs(data['timesteps'][0] - utils.to_timestamp(data['ofile']))
         if dt_i < dt_o:
-            hdr = i_files[i][2]
+            hdr = data['ihdr']
         else:
-            hdr = o_files[j][2]
+            hdr = data['ohdr']
         wcs_ra = projections.produce_radec_for_hp_wcs(wcs_plot, ref_hdr=hdr)
     
     with matplotlib.style.context('dark_background'):
-        for t in timesteps:
-            fig = matplotlib.figure.Figure(figsize=(10, 7.5),
-                    dpi=250 if data['save_location'] else 150)
+        for t in data['timesteps']:
+            fig = matplotlib.figure.Figure(
+                figsize=(10, 7.5),
+                dpi=250 if data['save_location'] else 150)
             ax = fig.add_subplot(111, projection=wcs_plot)
 
-            im = ax.imshow(c, cmap=cmap, origin='lower',
-                           norm=matplotlib.colors.PowerNorm(
-                               gamma=1/2.2, vmin=0, vmax=data['vmax']))
-            text = ax.text(20, 20,
+            ax.imshow(c, cmap=cmap, origin='lower',
+                      norm=matplotlib.colors.PowerNorm(
+                          gamma=1/2.2, vmin=0, vmax=data['vmax']))
+            ax.text(20, 20,
                     datetime.fromtimestamp(t).strftime("%Y-%m-%d, %H:%M"),
                     color='white')
 
-            fig.subplots_adjust(top=0.96, bottom=0.10,
-                    left=0.05, right=0.98)
+            fig.subplots_adjust(
+                top=0.96, bottom=0.10,
+                left=0.05, right=0.98)
             plot_utils.setup_WCS_axes(ax)
             ax.set_xlabel("Helioprojective Longitude")
             ax.set_ylabel("Helioprojective Latitude")
@@ -269,8 +283,9 @@ def draw_WISPR_video_frame(data):
                 overlay[0].set_axislabel("Right Ascension")
                 overlay[1].set_axislabel("Declination")
                 
-                fig.subplots_adjust(top=0.90, bottom=0.10,
-                        left=0.05, right=0.95)
+                fig.subplots_adjust(
+                    top=0.90, bottom=0.10,
+                    left=0.05, right=0.95)
             
             ax_orbit = fig.add_axes((.13, .13, .12, .12))
             draw_overhead_map(ax_orbit, t, data['path_positions'], data['path_times'])

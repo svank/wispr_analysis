@@ -321,9 +321,7 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
                     boundary_mode='ignore_threshold', **kwargs)
     if return_both:
         return o1, o2, wcsh
-    replace = np.isnan(o1)
-    composite = o1
-    composite[replace] = o2[replace]
+    composite = np.where(np.isnan(o1), o2, o1)
     return composite, wcsh
 
 

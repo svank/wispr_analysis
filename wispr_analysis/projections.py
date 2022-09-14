@@ -228,7 +228,7 @@ def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
     
     pts_hp = ref_wcs_hp.all_pix2world(pts_x, pts_y, 0)
     pts_ra = ref_wcs_ra.all_pix2world(pts_x, pts_y, 0)
-    pts_x, pts_y = wcs_hp.all_world2pix(*pts_hp, 0) 
+    pts_x, pts_y = wcs_hp.all_world2pix(*pts_hp, 0)
     
     pts_ra[0] *= np.pi / 180
     pts_ra[1] *= np.pi / 180
