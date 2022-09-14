@@ -117,6 +117,13 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
         filters = []
     if between is None:
         between = (None, None)
+    parse_key_as_timestamp = False
+    if order is None or order.startswith("DATE"):
+        parse_key_as_timestamp = True
+        between = (
+            to_timestamp(between[0]) if between[0] is not None else None,
+            to_timestamp(between[1]) if between[1] is not None else None,
+        )
     if len(filters) == 3 and isinstance(filters[0], str):
         filters = [filters]
     # Find all valid subdirectories.
@@ -141,8 +148,9 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
                     header = fits.getheader(fname)
                     key = header[order]
             
-            if ((between[0] is not None and key < between[0])
-                    or (between[1] is not None and key > between[1])):
+            fkey = to_timestamp(key) if parse_key_as_timestamp else key
+            if ((between[0] is not None and fkey < between[0])
+                    or (between[1] is not None and fkey > between[1])):
                 continue
             
             skip = False

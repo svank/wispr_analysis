@@ -428,9 +428,10 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
                             tmpdir, cadence_i, cadence_o))
             p_plot.close()
             p_plot.join()
-                
+        
         os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
                   f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
+                   " -x264-params keyint=30"
                   f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {tmpdir}/out.mp4")
         video = Video(f"{tmpdir}/out.mp4",
                 embed=True, html_attributes="controls loop")

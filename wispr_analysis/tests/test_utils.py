@@ -127,6 +127,22 @@ def test_collect_files_between():
     assert len(file_list) == 34
 
 
+def test_collect_files_between_timestamp_parsing():
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
+    file_list = utils.collect_files(dir_path, separate_detectors=False,
+            between=('20181102T000000', None), order='DATE-AVG')
+    assert len(file_list) == 122
+    
+    file_list = utils.collect_files(dir_path, separate_detectors=False,
+            between=(None, '20181102T000000'), order='DATE-AVG')
+    assert len(file_list) == 58
+    
+    file_list = utils.collect_files(dir_path, separate_detectors=False,
+            between=('20181101T103000', '20181102T000000'), order='DATE-AVG')
+    assert len(file_list) == 34
+
+
 def test_collect_files_filters():
     dir_path = os.path.join(os.path.dirname(__file__),
                 'test_data', 'WISPR_files_headers_only')
