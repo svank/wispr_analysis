@@ -1,5 +1,7 @@
 import copy
 from datetime import datetime
+import functools
+import gc
 from itertools import repeat
 import itertools
 from math import floor
@@ -203,6 +205,20 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                 html_attributes="controls loop"))
 
 
+# We seem to get slowly-increasing memory usage when making a long-ish video
+# which becomes significant with 20 worker processes, and manually running
+# the GC seems to keep that in check.
+def wrap_with_gc(function):
+    @functools.wraps(function)
+    def wrapped(*args, **kwargs):
+        ret = function(*args, **kwargs)
+        del args, kwargs
+        gc.collect()
+        return ret
+    return wrapped
+
+
+@wrap_with_gc
 def draw_WISPR_video_frame(data):
     if data['ifile'] is None:
         input_i = None
