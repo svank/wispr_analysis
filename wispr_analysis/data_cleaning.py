@@ -113,7 +113,14 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
             np.sum(rows_filter[bad_px.shape[0]//2:] > .9 * bad_px.shape[0]),
             np.sum(cols_filter[:bad_px.shape[1]//2] > .9 * bad_px.shape[1]),
             np.sum(cols_filter[bad_px.shape[1]//2:] > .9 * bad_px.shape[1]))
-    if np.any(np.array(trim) > 100):
+    threshold = 100
+    if (utils.to_timestamp(hdr2['DATE-END'])
+            < utils.to_timestamp('psp_L3_wispr_20181201T000000_V3_2222.fits')
+            and hdr2.get('detector', 1) == 2):
+        # The outer-FOV images from the first encounter have extra thick
+        # top/bottom margins, so allow that.
+        threshold = 150
+    if np.any(np.array(trim) > threshold):
         warnings.warn(f"File {hdr2['filename']} appears to have very large"
                       f" margins. Skipping...")
         ret = [img2]

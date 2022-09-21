@@ -30,10 +30,13 @@ def headers():
     h3 = fits.Header()
     
     h1['date-avg'] = '20210101T000001'
+    h1['date-end'] = h1['date-avg']
     h1['filename'] = 'img1.fits'
     h2['date-avg'] = '20210101T000002'
+    h2['date-end'] = h1['date-avg']
     h2['filename'] = 'img2.fits'
     h3['date-avg'] = '20210101T000003'
+    h3['date-end'] = h1['date-avg']
     h3['filename'] = 'img3.fits'
     return h1, h2, h3
 
