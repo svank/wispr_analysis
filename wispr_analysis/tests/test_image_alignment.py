@@ -82,12 +82,14 @@ def test_fit_star():
     all_stars_x = [x_star, 20]
     all_stars_y = [y_star, 1]
     
-    fx, fy, err = image_alignment.fit_star(10, 10, data,
+    fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
             all_stars_x, all_stars_y)
     
     assert len(err) == 0
     assert fx == pytest.approx(x_star, abs=.1)
     assert fy == pytest.approx(y_star, abs=.1)
+    assert xstd == pytest.approx(sig_star, abs=.2)
+    assert ystd == pytest.approx(sig_star, abs=.2)
 
 
 @pytest.mark.parametrize('start_at_max', [True, False])
@@ -113,7 +115,7 @@ def test_fit_star_multiple_peaks(start_at_max):
     all_stars_x = [x_star, 20]
     all_stars_y = [y_star, 1]
     
-    fx, fy, err = image_alignment.fit_star(10, 10, data,
+    fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
             all_stars_x, all_stars_y, start_at_max=start_at_max)
     
     assert len(err) == 0
@@ -123,6 +125,8 @@ def test_fit_star_multiple_peaks(start_at_max):
     else:
         assert fx == pytest.approx(x_star_2, abs=.1)
         assert fy == pytest.approx(y_star_2, abs=.1)
+    assert xstd == pytest.approx(sig_star, abs=.2)
+    assert ystd == pytest.approx(sig_star, abs=.2)
 
 
 def test_fit_star_crowded():
@@ -159,7 +163,7 @@ def test_fit_star_crowded():
         all_stars_x = [x_star, x]
         all_stars_y = [y_star, y]
     
-        fx, fy, err = image_alignment.fit_star(10, 10, data,
+        fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
                 all_stars_x, all_stars_y, cutout_size=7)
         
         if x_is_crowded and y_is_crowded:
@@ -182,7 +186,7 @@ def test_fit_star_no_peak():
     all_stars_x = [10, 20]
     all_stars_y = [10, 1]
     
-    fx, fy, err = image_alignment.fit_star(10, 10, data,
+    fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
             all_stars_x, all_stars_y)
     
     assert 'No peak found' in err
@@ -206,7 +210,7 @@ def test_fit_star_too_wide():
     all_stars_x = [x_star, 20]
     all_stars_y = [y_star, 1]
     
-    fx, fy, err = image_alignment.fit_star(10, 10, data,
+    fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
             all_stars_x, all_stars_y)
     
     assert 'Fit too wide' in err
@@ -230,7 +234,7 @@ def test_fit_star_too_narrow():
     all_stars_x = [x_star, 20]
     all_stars_y = [y_star, 1]
     
-    fx, fy, err = image_alignment.fit_star(10, 10, data,
+    fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
             all_stars_x, all_stars_y)
     
     assert 'Fit too narrow' in err
@@ -263,7 +267,7 @@ def test_fit_star_too_close_to_edge():
         all_stars_x = [x_star, 20]
         all_stars_y = [y_star, 1]
         
-        fx, fy, err = image_alignment.fit_star(10, 10, data,
+        fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
                 all_stars_x, all_stars_y)
         
         if x_at_edge or y_at_edge:

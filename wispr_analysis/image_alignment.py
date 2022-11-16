@@ -6,9 +6,8 @@ import warnings
 
 
 from astropy.io import fits
-from astropy.modeling import models, fitting
-from astropy.utils.exceptions import AstropyUserWarning
 from astropy.wcs import DistortionLookupTable, WCS
+from numba import njit
 import numpy as np
 import scipy.ndimage
 import scipy.optimize
@@ -79,7 +78,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     except:
         err = ["Invalid values encountered"]
         if not ret_more:
-            return np.nan, np.nan, err
+            return np.nan, np.nan, np.nan, np.nan, np.nan, err
     
     cutout_size = cutout.shape[0]
     
@@ -102,9 +101,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     if n_in_cutout > 1:
         err.append("Crowded frame")
         if not ret_more:
-            return x, y, err
-    
-    fitter = fitting.LevMarLSQFitter()
+            return x, y, np.nan, np.nan, np.nan, err
     
     if start_at_max:
         i_max = np.argmax(cutout)
@@ -113,51 +110,116 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         x_start = x - cutout_start_x
         y_start = y - cutout_start_y
     
-    model = (models.Gaussian2D(
-                amplitude=cutout.max(),
-                x_mean=x_start,
-                y_mean=y_start,
-                x_stddev=bin_factor,
-                y_stddev=bin_factor,
-                bounds=dict(
-                    amplitude=(0, np.inf),
-                    x_mean=(-1, cutout_size),
-                    y_mean=(-1, cutout_size),
-                    ))
-             + models.Planar2D(
-                 intercept=np.median(cutout),
-                 slope_x=0,
-                 slope_y=0))
-    
-    yy, xx = np.mgrid[:cutout.shape[0], :cutout.shape[1]]
-    
     with warnings.catch_warnings():
         warnings.filterwarnings(action='error')
         try:
-            fitted = fitter(model, xx, yy, cutout, maxiter=500)
-        except (AstropyUserWarning, RuntimeWarning):
+            # We'll follow astropy's example and apply bounds ourself with the
+            # lm fitter, which is 10x faster than using the bounds-aware fitter
+            # without any real change in outputs.
+            bounds=np.array([
+                (0,             # amplitude
+                 -1,            # x0
+                 -1,            # y0
+                 -np.inf,       # y_std
+                 1,             # x_std / y_std
+                 -np.pi/2,      # theta
+                 -np.inf,       # intercept
+                 -np.inf,       # x slope
+                 -np.inf),      # y slope
+                (np.inf,        # amplitude
+                 cutout_size,   # x0
+                 cutout_size,   # y0
+                 np.inf,        # y_std
+                 np.inf,        # x_std / y_std
+                 np.pi/2,       # theta
+                 np.inf,        # intercept
+                 np.inf,        # x slope
+                 np.inf),       # y slope
+                ])
+            res = scipy.optimize.least_squares(
+                    model_error,
+                    [cutout.max(),      # amplitude
+                     x_start,           # x0
+                     y_start,           # y0
+                     bin_factor,        # y_std
+                     1,                 # x_std / y_std
+                     0,                 # theta
+                     np.median(cutout), # intercept
+                     0,                 # x slope
+                     0,                 # y slope
+                    ],
+                    args=(cutout, bounds),
+                    method='lm'
+                )
+            A, xc, yc, ystd, stdr, theta, intercept, slope_x, slope_y = res.x
+            xstd = ystd * stdr
+        except RuntimeWarning:
             err.append("No solution found")
             if ret_more:
                 return None, cutout, err, cutout_start_x, cutout_start_y
             else:
-                return np.nan, np.nan, err
+                return np.nan, np.nan, np.nan, np.nan, np.nan, err
     
     max_std = MAX_SIGMA * bin_factor
     min_std = MIN_SIGMA * bin_factor
     
-    if fitted.amplitude_0 < 0.5 * (np.max(cutout) - fitted.intercept_1):
+    if A < 0.5 * (np.max(cutout) - intercept):
         err.append("No peak found")
-    if fitted.x_stddev_0 > max_std or fitted.y_stddev_0 > max_std:
+    if xstd > max_std or ystd > max_std:
         err.append("Fit too wide")
-    if fitted.x_stddev_0 < min_std or fitted.y_stddev_0 < min_std:
+    if xstd < min_std or ystd < min_std:
         err.append("Fit too narrow")
-    if (not (0 < fitted.x_mean_0.value < cutout_size - 1)
-            or not (0 < fitted.y_mean_0.value < cutout_size - 1)):
+    if (not (0 < xc < cutout_size - 1)
+            or not (0 < yc < cutout_size - 1)):
         err.append("Fitted peak too close to edge")
     
     if ret_more:
-        return fitted, cutout, err, cutout_start_x, cutout_start_y
-    return fitted.x_mean_0.value + cutout_start_x, fitted.y_mean_0.value + cutout_start_y, err
+        return res, cutout, err, cutout_start_x, cutout_start_y
+    return (xc + cutout_start_x,
+            yc + cutout_start_y,
+            xstd,
+            ystd,
+            theta,
+            err)
+
+
+@njit
+def model_fcn(params, cutout):
+    x = np.empty(cutout.shape, dtype=np.int64)
+    y = np.empty(cutout.shape, dtype=np.int64)
+    for i in range(cutout.shape[0]):
+        for j in range(cutout.shape[1]):
+            x[i, j] = j
+            y[i, j] = i
+    
+    A, xc, yc, ystd, stdr, theta, intercept, slope_x, slope_y = params
+    xstd = stdr * ystd
+    
+    a = np.cos(theta)**2 / (2 * xstd**2) + np.sin(theta)**2 / (2 * ystd**2)
+    b = np.sin(2*theta)  / (2 * xstd**2) - np.sin(2*theta)  / (2 * ystd**2)
+    c = np.sin(theta)**2 / (2 * xstd**2) + np.cos(theta)**2 / (2 * ystd**2)
+    
+    model = (
+        A * np.exp(
+            - a * (x-xc)**2
+            - b * (x-xc) * (y-yc)
+            - c * (y-yc)**2
+        )
+        + intercept + slope_x * x + slope_y * y
+    )
+    
+    return model
+
+
+@njit
+def model_error(params, cutout, bounds):
+    for i in range(len(params)):
+        if params[i] < bounds[0][i]:
+            params[i] = bounds[0][i]
+        if params[i] > bounds[1][i]:
+            params[i] = bounds[1][i]
+    model = model_fcn(params, cutout)
+    return (model - cutout).flatten()
 
 
 try:
@@ -174,9 +236,10 @@ DIM_CUTOFF = 8
 BRIGHT_CUTOFF = 2
 
 def prep_frame_for_star_finding(fname):
-    with utils.ignore_fits_warnings():
-        data, hdr = fits.getdata(fname, header=True)
-        w = WCS(hdr, key='A')
+    with utils.ignore_fits_warnings(), fits.open(fname) as hdul:
+        data = hdul[0].data
+        hdr = hdul[0].header
+        w = WCS(hdr, hdul, key='A')
     
     if data.shape not in ((1024, 960), (2048, 1920)):
         raise ValueError(
@@ -355,7 +418,7 @@ def find_stars_in_frame(data):
     
     for x, y, ra, dec, vmag in zip(
             stars_x, stars_y, stars_ra, stars_dec, stars_vmag):
-        fx, fy, err = fit_star(
+        fx, fy, fxstd, fystd, theta, err = fit_star(
                 x, y, data, all_stars_x, all_stars_y,
                 ret_more=False, binning=binning,
                 start_at_max=start_at_max)
