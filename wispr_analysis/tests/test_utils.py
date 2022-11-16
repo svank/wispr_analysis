@@ -398,7 +398,6 @@ def test_sliding_window_stride():
         np.testing.assert_array_equal(arr2[::2], arr2[1::2])
         np.testing.assert_array_equal(arr2[:, ::2], arr2[:, 1::2])
         np.testing.assert_array_equal(arr[::2, ::2], arr2[::2, ::2])
-    return mean
 
 
 @pytest.mark.array_compare
