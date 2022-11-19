@@ -3,6 +3,7 @@
 # platform: osx-arm64
 astropy>=5.0
 ipython>=8.3
+ipywidgets>=8.0
 # Set version more strictly to avoid test failures
 matplotlib==3.6.*
 numba>=0.55

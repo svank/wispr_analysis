@@ -7,6 +7,7 @@ import warnings
 import astropy.units as u
 from astropy.visualization.wcsaxes import WCSAxes
 from astropy.wcs import WCS
+from ipywidgets import interact
 from matplotlib.animation import FuncAnimation
 import matplotlib.dates as mdates
 import matplotlib.colors
@@ -508,3 +509,18 @@ def date_to_mdate(date):
     date = datetime.fromtimestamp(date, tz=timezone.utc)
     return mdates.date2num(date)
 
+
+def browse_frames(frames, *args, **kwargs):
+    """
+    Allows interactive browsing of a list of frames
+    
+    Arguments
+    ---------
+    frames : Iterable
+        A list of anything that can be the first argument to `plot_WISPR`
+    *args, **kwargs
+        Additional arguments to pass to plot_WISPR
+    """
+    def plot(f):
+        plot_WISPR(frames[f], *args, **kwargs)
+    interact(plot, f=(0, len(frames)))
