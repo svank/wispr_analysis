@@ -34,7 +34,7 @@ cmap.set_bad('black')
 
 def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
-        destreak=True, overlay_celest=False, save_location=None):
+        remove_debris=True, overlay_celest=False, save_location=None):
     """
     Renders a video of a WISPR data sequence, in a composite field of view.
     
@@ -76,7 +76,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         Duration of the output video in seconds
     fps : float
         Number of frames per second in the video
-    destreak : boolean
+    remove_debris : boolean
         Whether to enable the debris streak removal algorithm
     overlay_celest : boolean
         Whether to show an RA/Dec grid as well as an HP grid
@@ -171,8 +171,8 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         def arguments():
             for (i, j), timesteps in images:
                 args = dict(
-                    timesteps=timesteps, destreak=destreak, bounds=bounds,
-                    wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
+                    timesteps=timesteps, remove_debris=remove_debris,
+                    bounds=bounds, wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
                     overlay_celest=overlay_celest, save_location=save_location,
                     tmpdir=tmpdir, vmax=vmax, path_positions=path_positions,
                     path_times=path_times, ifile=None, next_ifile=None,
@@ -222,7 +222,7 @@ def wrap_with_gc(function):
 def draw_WISPR_video_frame(data):
     if data['ifile'] is None:
         input_i = None
-    elif data['destreak'] and data['next_ifile']:
+    elif data['remove_debris'] and data['next_ifile']:
         input_i = data_cleaning.dust_streak_filter(
                 data['prev_ifile'], data['ifile'], data['next_ifile'],
                 sliding_window_stride=3)
@@ -232,7 +232,7 @@ def draw_WISPR_video_frame(data):
        
     if data['ofile'] is None:
         input_o = None
-    elif data['destreak'] and data['next_ofile']:
+    elif data['remove_debris'] and data['next_ofile']:
         input_o = data_cleaning.dust_streak_filter(
                 data['prev_ofile'], data['ofile'], data['next_ofile'],
                 sliding_window_stride=3)
