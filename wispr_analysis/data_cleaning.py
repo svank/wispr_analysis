@@ -18,7 +18,8 @@ from . import plot_utils
 from . import utils
 
 
-def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60*60,
+def dust_streak_filter(img1, img2, img3, radec=True,
+        greatest_allowed_gap=2.5*60*60,
         window_width=9, return_mask=False, return_header=False,
         sliding_window_stride=1):
     if window_width % 2 != 1:
@@ -28,14 +29,17 @@ def dust_streak_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60
         if isinstance(img1, tuple):
             img1, hdr1 = img1
         else:
+            img1 = os.path.expanduser(img1)
             img1, hdr1 = fits.getdata(img1, header=True)
         if isinstance(img2, tuple):
             img2, hdr2 = img2
         else:
+            img2 = os.path.expanduser(img2)
             img2, hdr2 = fits.getdata(img2, header=True)
         if isinstance(img3, tuple):
             img3, hdr3 = img3
         else:
+            img3 = os.path.expanduser(img3)
             img3, hdr3 = fits.getdata(img3, header=True)
     
     if return_header:
@@ -332,13 +336,16 @@ def clean_file(data):
 def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
         save_masks=False, save_plots=False, overwrite=False,
         filters=None, dust_streak_filter_kwargs={}):
+    input_dir = os.path.expanduser(input_dir)
     if not input_dir.endswith(os.sep):
         input_dir = input_dir + os.sep
     if output_dir is not None:
+        output_dir = os.path.expanduser(output_dir)
         os.makedirs(output_dir, exist_ok=True)
         if not output_dir.endswith(os.sep):
             output_dir = output_dir + os.sep
     if plot_dir is not None:
+        plot_dir = os.path.expanduser(plot_dir)
         os.makedirs(plot_dir, exist_ok=True)
         if not plot_dir.endswith(os.sep):
             plot_dir = plot_dir + os.sep

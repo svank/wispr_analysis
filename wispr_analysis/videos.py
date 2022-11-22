@@ -167,6 +167,8 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     if vmax is None:
         vmax = max(*[d[1] for d in colorbar_data.values()])
     
+    save_location = os.path.expanduser(save_location)
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         def arguments():
             for (i, j), timesteps in images:

@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 import copy
+import os
 
 from astropy.io import fits
 import astropy.units as u
@@ -249,11 +250,13 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             img_i, hdr_i = fname_i
             hdr_i = hdr_i.copy()
         else:
+            fname_i = os.path.expanduser(fname_i)
             img_i, hdr_i = fits.getdata(fname_i, header=True)
         if isinstance(fname_o, tuple):
             img_o, hdr_o = fname_o
             hdr_o = hdr_o.copy()
         else:
+            fname_o = os.path.expanduser(fname_o)
             img_o, hdr_o = fits.getdata(fname_o, header=True)
     
     if wcsh is None:

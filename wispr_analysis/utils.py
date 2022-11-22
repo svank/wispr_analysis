@@ -34,6 +34,7 @@ def to_timestamp(datestring, as_datetime=False):
 
 
 def get_PSP_path(data_dir):
+    data_dir = os.path.expanduser(data_dir)
     files = collect_files(data_dir, separate_detectors=False, order='date-avg',
             include_headers=True)
     return get_PSP_path_from_headers([f[1] for f in files])
@@ -126,6 +127,8 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
         )
     if len(filters) == 3 and isinstance(filters[0], str):
         filters = [filters]
+    
+    top_level_dir = os.path.expanduser(top_level_dir)
     # Find all valid subdirectories.
     for fname in os.listdir(top_level_dir):
         path = f"{top_level_dir}/{fname}"
@@ -198,6 +201,7 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
 
 def ensure_data(input, header=True, wcs=False, wcs_key=' '):
     if isinstance(input, str):
+        input = os.path.expanduser(input)
         with ignore_fits_warnings(), fits.open(input) as hdul:
             data = hdul[0].data
             hdr = hdul[0].header
