@@ -44,6 +44,51 @@ def test_find_bounds(wcs_key):
 
 
 @pytest.mark.parametrize('wcs_key', [' ', 'A'])
+def test_find_bounds_wrap_aware(wcs_key):
+    shape = (180, 360)
+    wcs_out = WCS(naxis=2)
+    crpix = [shape[1]/2+1, shape[0]/2+1]
+    wcs_out.wcs.crpix = crpix
+    wcs_out.wcs.crval = 180, 0
+    wcs_out.wcs.cdelt = 1, 1
+    wcs_out.wcs.ctype = 'RA---CAR', 'DEC--CAR'
+    wcs_out.wcs.cunit = 'deg', 'deg'
+    
+    wcs_in = WCS(naxis=2)
+    wcs_in.wcs.crpix = 10, 10
+    # Add an offset to avoid anything landing right at pixel boundaries and so
+    # having to care about floating-point error
+    wcs_in.wcs.crval = 0.1, 0.1
+    wcs_in.wcs.cdelt = 1, 1
+    wcs_in.wcs.ctype = "RA---CAR", "DEC--CAR"
+    
+    header = wcs_in.to_header(key=wcs_key)
+    header['NAXIS1'] = 40
+    header['NAXIS2'] = 20
+    
+    bounds = composites.find_bounds_wrap_aware(header, wcs_out, key=wcs_key)
+    
+    assert bounds == [(0, 31, 81, 101), (351, 360, 81, 101)]
+    
+    bounds = composites.find_bounds_wrap_aware(header, wcs_out, trim=(1,2,4,5),
+            key=wcs_key)
+    
+    assert bounds == [(0, 29, 85, 96), (352, 360, 85, 96)]
+    
+    wcs_in.wcs.pc = [
+            [np.cos(45*np.pi/180), -np.sin(45*np.pi/180)],
+            [np.sin(45*np.pi/180), np.cos(45*np.pi/180)]]
+    header = wcs_in.to_header(key=wcs_key)
+    header['NAXIS1'] = 40
+    header['NAXIS2'] = 20
+    
+    bounds = composites.find_bounds_wrap_aware(header, wcs_out, key=wcs_key)
+    
+    assert bounds == [(0, 28, 77, 119), (346, 360, 78, 104)]
+    
+
+
+@pytest.mark.parametrize('wcs_key', [' ', 'A'])
 def test_find_collective_bounds(wcs_key):
     wcs_out = WCS(naxis=2)
     wcs_out.wcs.crpix = 1, 1

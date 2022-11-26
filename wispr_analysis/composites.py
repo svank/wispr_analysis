@@ -73,6 +73,92 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
             int(np.ceil(np.max(cy))))
 
 
+def find_bounds_wrap_aware(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
+    """Finds the pixel bounds of a FITS header in an output WCS, handling wraps.
+    
+    The edges of the input image are transformed to the coordinate system of
+    ``wcs_target``, and the extrema of these transformed coordinates are found.
+    In other words, this finds the size of the output image that is required to
+    bound the reprojected input image.
+    
+    This version of the function handles the case that the x axis of the output
+    WCS is periodic and the input WCS straddles the wrap point. Two sets of
+    bounds are returned, for the two halves of the input WCS.
+    
+    Parameters
+    ----------
+    hdr : astropy.io.fits.header.Header or str
+        A FITS header describing an input image's size and coordinate system,
+        or the path to a FITS file whose header will be loaded.
+    wcs_target : astropy.io.fits.header.Header or astropy.wcs.WCS
+        A WCS object describing an output coordinate system.
+    trim : tuple
+        How many rows/columns to ignore from the input image. In order,
+        (left, right, bottom, top).
+    hdr_key : str
+        The key argument passed to WCS, to select which of a header's
+        coordinate systems to use.
+    
+    Returns
+    -------
+    bounds : list of tuples
+        The bounding coordinates. In order, (left, right, bottom, top). One or
+        two such tuples are returned, depending on whether the input WCS
+        straddles the output's wrap point.
+    """
+    with utils.ignore_fits_warnings():
+        if isinstance(hdr, str):
+            with fits.open(hdr) as hdul:
+                hdr = hdul[0].header
+                wcs = WCS(hdr, hdul, key=key)
+        else:
+            wcs = WCS(hdr, key=key)
+        if not isinstance(wcs_target, WCS):
+            wcs_target = WCS(wcs_target)
+    left = 0 + trim[0]
+    right = hdr['naxis1'] - trim[1]
+    bottom = 0 + trim[2]
+    top = hdr['naxis2'] - trim[3]
+    xs = np.concatenate((
+        np.arange(left, right),
+        np.full(top-bottom, right - 1),
+        np.arange(right - 1, left - 1, -1),
+        np.full(top-bottom, left)))
+    ys = np.concatenate((
+        np.full(right - left, bottom),
+        np.arange(bottom, top),
+        np.full(right - left, top - 1),
+        np.arange(top - 1, bottom - 1, -1)))
+    
+    lon, lat = wcs.all_pix2world(xs, ys, 0)
+    assert not np.any(np.isnan(lon)) and not np.any(np.isnan(lat))
+    cx, cy = wcs_target.all_world2pix(lon, lat, 0)
+    
+    ranges = []
+    
+    cx_hist, cx_hist_edges = np.histogram(cx, bins=11)
+    if cx_hist[0] > 0 and cx_hist[-1] > 0 and cx_hist[len(cx_hist)//2] == 0:
+        divider = cx_hist_edges[len(cx_hist)//2]
+        for f in (cx < divider, cx > divider):
+            cxf = cx[f]
+            cyf = cy[f]
+            xmin = cxf.min()
+            xmax = cxf.max()
+            ymin = cyf.min()
+            ymax = cyf.max()
+            ranges.append((xmin, xmax, ymin, ymax))
+    else:
+        ranges.append((cx.min(), cx.max(), cy.min(), cy.max()))
+    for i, r in enumerate(ranges):
+        r = (
+            int(np.floor(r[0])),
+            int(np.ceil(r[1])),
+            int(np.floor(r[2])),
+            int(np.ceil(r[3])))
+        ranges[i] = r
+    return ranges
+
+
 def find_collective_bounds(hdrs, wcs_target, trim=(0, 0, 0, 0), key=' '):
     """
     Finds the bounding coordinates for a set of input images.
