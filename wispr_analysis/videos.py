@@ -1,5 +1,5 @@
 import copy
-from datetime import datetime
+from datetime import datetime, timezone
 import functools
 import gc
 from itertools import repeat
@@ -277,8 +277,9 @@ def draw_WISPR_video_frame(data):
             ax.imshow(c, cmap=cmap, origin='lower',
                       norm=matplotlib.colors.PowerNorm(
                           gamma=1/2.2, vmin=0, vmax=data['vmax']))
+            timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
             ax.text(20, 20,
-                    datetime.fromtimestamp(t).strftime("%Y-%m-%d, %H:%M"),
+                    timestamp.strftime("%Y-%m-%d, %H:%M"),
                     color='white')
 
             fig.subplots_adjust(
