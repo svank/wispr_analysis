@@ -180,8 +180,8 @@ def test_fit_star_no_peak():
     xx, yy = np.meshgrid(x, y)
     
     data = 2 + .1 * xx - .2 * yy
-    np.random.seed(1)
-    data += np.random.random(data.shape)
+    #np.random.seed(1)
+    #data += np.random.random(data.shape)
     
     all_stars_x = [10, 20]
     all_stars_y = [10, 1]

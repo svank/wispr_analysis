@@ -354,12 +354,15 @@ def test_find_mask():
     assert data_cleaning.find_mask(path, f) == f
 
 
-def test_fit_and_subtract_stars_in_frame(mocker):
+@pytest.mark.parametrize('theta', [-80, -20, 0, 30, 70])
+@pytest.mark.parametrize('xstd', [.8, 1.2])
+@pytest.mark.parametrize('ystd', [.9, 1.3])
+def test_fit_and_subtract_stars_in_frame(mocker, theta, xstd, ystd):
     gamp = 10
-    gx, gy = 50, 30
-    gxstd, gystd = 0.8, 1.3
-    gtheta = 70 * np.pi / 180
-    data = np.empty((100, 100))
+    gx, gy = 20, 30
+    gxstd, gystd = xstd, ystd
+    gtheta = theta * np.pi / 180
+    data = np.empty((50, 50))
     data = image_alignment.model_fcn(
             (gamp, gx, gy, gystd, gxstd / gystd, gtheta, .1, .05, .08),
             data)

@@ -121,18 +121,18 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
                 (0,             # amplitude
                  -1,            # x0
                  -1,            # y0
+                 -np.inf,       # x_std
                  -np.inf,       # y_std
-                 1,             # x_std / y_std
-                 -np.pi/2,      # theta
+                 -2*np.pi,      # theta
                  -np.inf,       # intercept
                  -np.inf,       # x slope
                  -np.inf),      # y slope
                 (np.inf,        # amplitude
                  cutout_size,   # x0
                  cutout_size,   # y0
+                 np.inf,        # x_std
                  np.inf,        # y_std
-                 np.inf,        # x_std / y_std
-                 np.pi/2,       # theta
+                 2*np.pi,       # theta
                  np.inf,        # intercept
                  np.inf,        # x slope
                  np.inf),       # y slope
@@ -142,8 +142,8 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
                     [cutout.max(),      # amplitude
                      x_start,           # x0
                      y_start,           # y0
+                     bin_factor,        # x_std
                      bin_factor,        # y_std
-                     1,                 # x_std / y_std
                      0,                 # theta
                      np.median(cutout), # intercept
                      0,                 # x slope
@@ -152,8 +152,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
                     args=(cutout, bounds),
                     method='lm'
                 )
-            A, xc, yc, ystd, stdr, theta, intercept, slope_x, slope_y = res.x
-            xstd = ystd * stdr
+            A, xc, yc, xstd, ystd, theta, intercept, slope_x, slope_y = res.x
         except RuntimeWarning:
             err.append("No solution found")
             if ret_more:
@@ -178,7 +177,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         return res, cutout, err, cutout_start_x, cutout_start_y
     if ret_star:
         star = model_fcn(
-                (A, xc, yc, ystd, stdr, theta, 0, 0, 0),
+                (A, xc, yc, xstd, ystd, theta, 0, 0, 0),
                 cutout)
         return star, cutout_start_x, cutout_start_y
     return (xc + cutout_start_x,
@@ -198,8 +197,7 @@ def model_fcn(params, cutout):
             x[i, j] = j
             y[i, j] = i
     
-    A, xc, yc, ystd, stdr, theta, intercept, slope_x, slope_y = params
-    xstd = stdr * ystd
+    A, xc, yc, xstd, ystd, theta, intercept, slope_x, slope_y = params
     
     a = np.cos(theta)**2 / (2 * xstd**2) + np.sin(theta)**2 / (2 * ystd**2)
     b = np.sin(2*theta)  / (2 * xstd**2) - np.sin(2*theta)  / (2 * ystd**2)
