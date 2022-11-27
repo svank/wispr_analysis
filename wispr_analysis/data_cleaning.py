@@ -369,11 +369,11 @@ def find_mask(masks_dir, fnames):
     """
     Finds a mask file for a given data file(s) by matching timestamps
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     masks_dir : str
         A directory containing mask files, with a directory structure parseable
-        by `utils.collect_files`.
+        by ``utils.collect_files``.
     fnames : str or list
         One or more data files.
     
@@ -414,7 +414,7 @@ def fit_and_subtract_stars_in_frame(fname, start_at_max=True):
     
     Returns
     -------
-    data : `np.ndarray`
+    data : ``np.ndarray``
         The image with all fitted stars subtracted
     """
     try:

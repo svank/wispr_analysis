@@ -76,8 +76,8 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     ``order`` argument. Set ``order`` to None to sort by filename instead
     (which is implicitly DATE-BEG, as that is contained in the filenames).
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     top_level_dir : str
         The directory containing the FITS files or directories of FITS files
     separate_detectors : boolean
@@ -302,8 +302,8 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     each pixel is the statistic for a window centered on that pixel. Values are
     duplicated at the edges, where the window does not fit in the input array.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     data : ``ndarray``
         The input array. Can have any dimensionality.
     window_width : int
@@ -311,7 +311,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         size in all dimensions.
     stats : str or list of str
         The statistics to compute. Multiple stats can be specified. Supported
-        options are 'mean', 'std', and 'median'. For each, `NaN` values within
+        options are 'mean', 'std', and 'median'. For each, ``NaN`` values within
         the window are ignored.
     trim : list
         A list of 2*N values, where N is the number of dimensions of the input

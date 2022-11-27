@@ -22,11 +22,11 @@ Contents
    :skip: chain
    :skip: WCS
    :skip: DistortionLookupTable
-   :skip: AstropyUserWarning
    :skip: floor
    :skip: ceil
    :skip: process_map
    :skip: tqdm
+   :skip: njit
 
 .. automodapi:: wispr_analysis.plot_utils
    :no-inheritance-diagram:

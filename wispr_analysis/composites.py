@@ -166,20 +166,20 @@ def find_collective_bounds(hdrs, wcs_target, trim=(0, 0, 0, 0), key=' '):
     Calls `find_bounds` for each provided header, and finds the bounding box in
     the output coordinate system that will contain all of the input images.
     
-    Paramters
-    ---------
+    Parameters
+    ----------
     hdrs : Iterable
         Either a list of Headers, or a list of lists of Headers. If the latter,
-        `trim` can be a list of trim values, one for each of the lists of
+        ``trim`` can be a list of trim values, one for each of the lists of
         Headers. Instead of Headers, each instance can be the path to a FITS
         file.
     wcs_target : astropy.wcs.WCS
         A WCS object describing an output coordinate system.
     trim : tuple or list
         How many rows/columns to ignore from the input image. In order,
-        (left, right, bottom, top). If `hdrs` is a list of lists of Headers,
-        this can be (but does not have to be) be a list of tuples of trim values,
-        one for each list of Headers.
+        (left, right, bottom, top). If ``hdrs`` is a list of lists of Headers,
+        this can be (but does not have to be) be a list of tuples of trim
+        values, one for each list of Headers.
     hdr_key : str
         The key argument passed to WCS, to select which of a header's
         coordinate systems to use.
@@ -213,8 +213,8 @@ def gen_header(hdr_i, hdr_o, proj='ARC', level=False, key=' '):
     The output WCS will have a reference pixel near the center of the composite
     field of view, with other values set accordingly.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     hdr_i, hdr_o : astropy.io.fits.Header
         The FITS headers for an inner-FOV and outer-FOV image
     proj : str
@@ -279,8 +279,8 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     """
     Generates a composite image from two WISPR images (inner and outer)
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     fname_i, fname_o : str
         The file names of the inner and outer images
     proj : str
@@ -322,7 +322,7 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
         default for that value. Set to ``False`` to disable trimming. The
         default is sensible values for typical L3 images.
     kwargs
-        Any remaining arguments are passed to `reproject.reproject_adaptive`.
+        Any remaining arguments are passed to ``reproject.reproject_adaptive``.
     
     Returns
     -------

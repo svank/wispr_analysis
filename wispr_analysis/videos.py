@@ -49,11 +49,11 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     The rendered video is displayed in the Jupyter environment by default, but
     can be saved to a file instread.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     data_dir : str
         Directory containing WISPR fits files. Will be scanned by
-        `utils.collect_files`
+        ``utils.collect_files``
     between : tuple
         A beginning and end timestamp of the format 'YYYYMMDDTHHMMSS'. Only the
         files between these timestamps will be included in the video. Either or
@@ -328,11 +328,11 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
     carefully balanced, so it's possible to see incomplete usage of all cores
     or increasing RAM usage if the second queue can't keep up.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     data_dir : str
         Directory containing WISPR fits files. Will be scanned by
-        `utils.collect_files`
+        ``utils.collect_files``
     between : tuple
         A beginning and end timestamp of the format 'YYYYMMDDTHHMMSS'. Only the
         files between these timestamps will be included in the video. Either or
@@ -340,16 +340,16 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
         of the video.
     show : boolean
         When `True`, the rendered video is shown in the Jupyter environment.
-        Otherwise, an IPython `Video` object is returned.
+        Otherwise, an IPython ``Video`` object is returned.
     fps : float
         Number of frames per second in the video
     file_load_inverval : int
-        Only the first out of every `file_load_interval` files is considered.
+        Only the first out of every ``file_load_interval`` files is considered.
         This option is mostly intended to speed up rendering during
         development, and no care is taken to ensure this cooperates well with
         the interleaving of images from the two cameras.
     plot_inverval : int
-        Only the first out of every `plot_interval` considered files is
+        Only the first out of every ``plot_interval`` considered files is
         rendered in the video.
     """
     files = utils.collect_files(

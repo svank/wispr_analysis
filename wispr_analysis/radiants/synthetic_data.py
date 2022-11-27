@@ -30,8 +30,8 @@ class Thing:
         "In front" is defined relative to the forward direction of the other
         object.
         
-        Arguments
-        ---------
+        Parameters
+        ----------
         other : `Thing`
             Another `Thing` instance
         t : float

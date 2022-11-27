@@ -84,8 +84,8 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     world coordinates if possible. The colorbar is scaled by the square root of
     the data.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     data
         A data array to plot, or the name of a FITS file from which to load the
         data and WCS information.
@@ -190,8 +190,8 @@ def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
     """
     Renders a movie that blinks between several images.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     imgs
         Any number of data arrays to be plotted via `plot_WISPR`, or a list of
         functions, each of which is fully responsible for plotting a single
@@ -266,14 +266,14 @@ def plot_orbit(data_dir, between=None, filters=None,
     Only the plane-of-the-ecliptic components of the spacecraft position are
     plotted.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     data_dir
         A directory containing WISPR images. It is scanned recursively by
-        `utils.collect_files`, and exposure times and spacecraft locations are
+        ``utils.collect_files``, and exposure times and spacecraft locations are
         extracted from the headers.
     between, filters
-        Parameters passed to `utils.collect_files` to select only certain files
+        Parameters passed to ``utils.collect_files`` to select only certain files
         to be plotted.
     plot_full_orbit : bool
         By default, ``between`` and ``filters`` apply only to which images are
@@ -409,8 +409,8 @@ def x_axis_dates(*args, **kwargs):
     YYYY-MM-DD dates. This function converts a list of timestamps to
     matplotlib's format while also configuring the x axis to display as dates.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     dates
         A list of dates to be converted to a matplotlib-friendly format. Should
         be either a format understood by utils.to_timestamp, or POSIX timestamps.
@@ -489,8 +489,8 @@ def date_to_mdate(date):
     """
     Converts a single date to matplotlib's format. See `x_axis_dates` for details.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     date
         A date to be converted to a matplotlib-friendly format. Should be
         either a format understood by utils.to_timestamp, or a POSIX timestamp.
@@ -514,8 +514,8 @@ def browse_frames(frames, *args, **kwargs):
     """
     Allows interactive browsing of a list of frames
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     frames : Iterable
         A list of anything that can be the first argument to `plot_WISPR`
     *args, **kwargs

@@ -24,8 +24,8 @@ def make_cutout(x, y, data, cutout_size, normalize=True):
     
     Raises an error if the cutout extends beyond the data bounds.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     x, y : float
         Floating-point array indices around which to center the cutout
     data : array
@@ -679,19 +679,19 @@ def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
     NaN values are ignored in the kernel integration, and NaNs in the input
     will be replaced with a smoothed value.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     x, y : numpy arrays
         x and y values of the signal
     sig
         Width of the standard deviation of the Gaussian, in the same units as
-        `x`
+        ``x``
     n_sig
         The Gaussian kernel is integrated out to this many standard deviations
     outlier_sig
         Before integrating the kernel, the window from -n_sig to +n_sig is
         checked for outliers. Any point deviating from the window's mean by at
-        least `outlier_sig` times the window standard deviation is ignored.
+        least ``outlier_sig`` times the window standard deviation is ignored.
     """
     output_array = np.zeros_like(y, dtype=float)
     not_nan = np.isfinite(y)
@@ -882,8 +882,8 @@ def filter_distortion_table(data, blur_sigma=4, med_filter_size=3):
     and Gaussian filtering is applied to accept only slowly-varying
     distortions.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     data
         The distortion map to be filtered
     blur_sigma : float
@@ -956,8 +956,8 @@ def add_distortion_table(fname, outname, err_x, err_y, err_px, err_py):
     """
     Adds two distortion maps to a FITS file, for x and y distortion.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     fname
         The path to the input FITS file, to which distortions should be added
     outname
