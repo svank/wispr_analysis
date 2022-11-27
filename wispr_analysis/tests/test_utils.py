@@ -333,6 +333,16 @@ def test_get_hann_rolloff_3d():
     np.testing.assert_equal(window[:, :, :4], window[:, :, -4:][:, :, ::-1])
 
 
+def test_get_hann_rolloff_some_zeros():
+    comparison = utils.get_hann_rolloff(10, 4)
+    
+    test = utils.get_hann_rolloff((10, 10), (4, 0))
+    np.testing.assert_equal(np.stack([comparison] * 10).T, test)
+    
+    test = utils.get_hann_rolloff((10, 10), (0, 4))
+    np.testing.assert_equal(np.stack([comparison] * 10), test)
+
+
 def test_get_hann_rolloff_errors():
     # Too many rolloff sizes
     with pytest.raises(ValueError):
@@ -369,6 +379,14 @@ def test_get_hann_rolloff_errors():
     # Non-integer rolloff
     with pytest.raises(ValueError):
         utils.get_hann_rolloff(10, 2.2)
+    
+    # All-zeros rolloff
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff(25, 0)
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((25, 25), 0)
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((25, 25), (0, 0))
 
 
 @pytest.mark.array_compare

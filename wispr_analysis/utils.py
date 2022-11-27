@@ -241,7 +241,7 @@ def get_hann_rolloff(shape, rolloff):
         raise ValueError(
                 "`rolloff` must be a scalar or match the length of `shape`")
     hann_widths = rolloff * 2
-    if (np.any(hann_widths <= 2)
+    if (np.all(hann_widths <= 2)
             or np.any(hann_widths != hann_widths.astype(int))):
         raise ValueError(
                 "`rolloff` should be > 1 and an integer or half-integer")
@@ -263,6 +263,8 @@ def get_hann_rolloff(shape, rolloff):
             warnings.warn(f"Rolloff size of {hann_width/2} doesn't fit for "
                           f"dimension {i} with size {shape[i]}---the two ends "
                            "overlap")
+        if hann_width == 0:
+            continue
         window = scipy.signal.windows.hann(hann_width)[:ceil(hann_width/2)]
         # Create a [:, :, :] type of slice, and then set the index for the
         # current dimension to be just the end so we can multiply it by
