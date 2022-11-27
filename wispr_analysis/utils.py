@@ -238,10 +238,13 @@ def get_hann_rolloff(shape, rolloff):
     if len(rolloff) == 1:
         rolloff = np.concatenate([rolloff] * len(shape))
     elif len(rolloff) != len(shape):
-        raise ValueError("`rolloff` must be a scalar or match the length of `shape`")
+        raise ValueError(
+                "`rolloff` must be a scalar or match the length of `shape`")
     hann_widths = rolloff * 2
-    if np.any(hann_widths <= 2) or np.any(hann_widths != hann_widths.astype(int)):
-        raise ValueError("`rolloff` should be > 1 and an integer or half-integer")
+    if (np.any(hann_widths <= 2)
+            or np.any(hann_widths != hann_widths.astype(int))):
+        raise ValueError(
+                "`rolloff` should be > 1 and an integer or half-integer")
     mask = np.ones(shape)
     for i, hann_width in zip(range(len(shape)), hann_widths):
         if hann_width / 2 >= shape[i]:
@@ -249,7 +252,8 @@ def get_hann_rolloff(shape, rolloff):
                              f"dimension {i} with size {shape[i]}")
         if hann_width >= shape[i]:
             warnings.warn(f"Rolloff size of {hann_width/2} doesn't fit for "
-                          f"dimension {i} with size {shape[i]}---the two ends overlap")
+                          f"dimension {i} with size {shape[i]}---the two ends "
+                           "overlap")
         window = scipy.signal.windows.hann(hann_width)[:ceil(hann_width/2)]
         mask_indices = [slice(None)] * len(shape)
         mask_indices[i] = slice(0, window.size)
