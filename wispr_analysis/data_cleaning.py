@@ -431,8 +431,9 @@ def fit_and_subtract_stars_in_frame(fname, start_at_max=True):
                 ret_more=False, ret_star=True, binning=binning,
                 start_at_max=start_at_max, normalize_cutout=False)
         
-        data[cutout_start_y:cutout_start_y + star.shape[0],
-             cutout_start_x:cutout_start_x + star.shape[1]] -= star
+        if star is not None:
+            data[cutout_start_y:cutout_start_y + star.shape[0],
+                 cutout_start_x:cutout_start_x + star.shape[1]] -= star
     
     return data
 

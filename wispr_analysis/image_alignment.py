@@ -78,9 +78,12 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
                 x, y, data, cutout_size, normalize_cutout)
     except:
         err = ["Invalid values encountered"]
+        if ret_star:
+            return None, None, None
         if not ret_more:
             return np.nan, np.nan, np.nan, np.nan, np.nan, err
     
+    cutout = cutout.astype(float)
     cutout_size = cutout.shape[0]
     
     if all_stars_x is None:
@@ -101,6 +104,8 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     err = []
     if n_in_cutout > 1:
         err.append("Crowded frame")
+        if ret_star:
+            return None, None, None
         if not ret_more:
             return x, y, np.nan, np.nan, np.nan, err
     
@@ -157,6 +162,8 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
             err.append("No solution found")
             if ret_more:
                 return None, cutout, err, cutout_start_x, cutout_start_y
+            elif ret_star:
+                return None, None, None
             else:
                 return np.nan, np.nan, np.nan, np.nan, np.nan, err
     
