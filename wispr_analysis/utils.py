@@ -245,8 +245,17 @@ def get_hann_rolloff(shape, rolloff):
             or np.any(hann_widths != hann_widths.astype(int))):
         raise ValueError(
                 "`rolloff` should be > 1 and an integer or half-integer")
-    mask = np.ones(shape)
-    for i, hann_width in zip(range(len(shape)), hann_widths):
+    
+    # We'll create one dimension of the output array, roll it off, duplicate &
+    # stack it to create the next dimension, roll it off, etc. This lets us
+    # replace lots of multiplication with copies, which is especially helpful
+    # for large mask arrays. The order we go through the dimensions seems to
+    # be much faster than the other way through, probably for cache reasons.
+    mask = np.ones(shape[-1])
+    for i, hann_width in zip(range(len(shape)-1, -1, -1), hann_widths[::-1]):
+        if i != len(shape) - 1:
+            # Duplicate the existing dimensions
+            mask = np.stack([mask] * shape[i], axis=0)
         if hann_width / 2 >= shape[i]:
             raise ValueError(f"Rolloff size of {hann_width/2} is too large for"
                              f"dimension {i} with size {shape[i]}")
@@ -255,15 +264,18 @@ def get_hann_rolloff(shape, rolloff):
                           f"dimension {i} with size {shape[i]}---the two ends "
                            "overlap")
         window = scipy.signal.windows.hann(hann_width)[:ceil(hann_width/2)]
-        mask_indices = [slice(None)] * len(shape)
-        mask_indices[i] = slice(0, window.size)
-        window_indices = [None] * len(shape)
-        window_indices[i] = slice(None)
+        # Create a [:, :, :] type of slice, and then set the index for the
+        # current dimension to be just the end so we can multiply it by
+        # our window.
+        mask_indices = [slice(None)] * (len(shape) - i)
+        mask_indices[0] = slice(0, window.size)
+        window_indices = [None] * (len(shape) - i)
+        window_indices[0] = slice(None)
         mask[tuple(mask_indices)] = (
                 mask[tuple(mask_indices)] * window[tuple(window_indices)])
         
-        mask_indices[i] = slice(-window.size, None)
-        window_indices[i] = slice(None, None, -1)
+        mask_indices[0] = slice(-window.size, None)
+        window_indices[0] = slice(None, None, -1)
         mask[tuple(mask_indices)] = (
                 mask[tuple(mask_indices)] * window[tuple(window_indices)])
     return mask
