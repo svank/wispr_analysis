@@ -14,8 +14,7 @@ import reproject
 import scipy.ndimage
 from tqdm.auto import tqdm
 
-from . import plot_utils
-from . import utils
+from . import image_alignment, plot_utils, utils
 
 
 def dust_streak_filter(img1, img2, img3, radec=True,
@@ -399,4 +398,41 @@ def find_mask(masks_dir, fnames):
     if isinstance(orig_fnames, str):
         return found_masks[0]
     return found_masks
+
+
+def fit_and_subtract_stars_in_frame(fname, start_at_max=True):
+    """
+    Given a file name, loads the data and fits and subtracts all stars
+    
+    Parameters
+    ----------
+    fname : str
+        The FITS file to load
+    start_at_max : bool
+        Whether the fitting routine should start at the maximum-value pixel in
+        each neighborhood
+    
+    Returns
+    -------
+    data : `np.ndarray`
+        The image with all fitted stars subtracted
+    """
+    try:
+        (stars_x, stars_y, _, _, _,
+                all_stars_x, all_stars_y, data,
+                binning) = image_alignment.prep_frame_for_star_finding(fname)
+    except ValueError as e:
+        print(e)
+        return data
+    
+    for x, y in zip(stars_x, stars_y):
+        star, cutout_start_x, cutout_start_y = image_alignment.fit_star(
+                x, y, data, all_stars_x, all_stars_y,
+                ret_more=False, ret_star=True, binning=binning,
+                start_at_max=start_at_max, normalize_cutout=False)
+        
+        data[cutout_start_y:cutout_start_y + star.shape[0],
+             cutout_start_x:cutout_start_x + star.shape[1]] -= star
+    
+    return data
 

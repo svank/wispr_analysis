@@ -66,7 +66,8 @@ def make_cutout(x, y, data, cutout_size, normalize=True):
 MIN_SIGMA = 0.05
 MAX_SIGMA = 1
 def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
-        ret_more=False, binning=2, start_at_max=True):
+        ret_more=False, ret_star=False, binning=2, start_at_max=True,
+        normalize_cutout=True):
     bin_factor = 2 / binning
     cutout_size = int(round(cutout_size * bin_factor))
     if cutout_size % 2 != 1:
@@ -74,7 +75,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     
     try:
         cutout, cutout_start_x, cutout_start_y = make_cutout(
-                x, y, data, cutout_size)
+                x, y, data, cutout_size, normalize_cutout)
     except:
         err = ["Invalid values encountered"]
         if not ret_more:
@@ -175,6 +176,11 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     
     if ret_more:
         return res, cutout, err, cutout_start_x, cutout_start_y
+    if ret_star:
+        star = model_fcn(
+                (A, xc, yc, ystd, stdr, theta, 0, 0, 0),
+                cutout)
+        return star, cutout_start_x, cutout_start_y
     return (xc + cutout_start_x,
             yc + cutout_start_y,
             xstd,

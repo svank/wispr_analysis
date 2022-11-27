@@ -1,4 +1,5 @@
 from .. import data_cleaning
+from .. import image_alignment
 from .. import utils
 
 import os
@@ -351,3 +352,31 @@ def test_find_mask():
     
     f = files[1:4]
     assert data_cleaning.find_mask(path, f) == f
+
+
+def test_fit_and_subtract_stars_in_frame(mocker):
+    gamp = 10
+    gx, gy = 50, 30
+    gxstd, gystd = 0.8, 1.3
+    gtheta = 70 * np.pi / 180
+    data = np.empty((100, 100))
+    data = image_alignment.model_fcn(
+            (gamp, gx, gy, gystd, gxstd / gystd, gtheta, .1, .05, .08),
+            data)
+    data_no_star = image_alignment.model_fcn(
+            (0, gx, gy, gystd, gxstd / gystd, gtheta, .1, .05, .08),
+            data)
+    
+    mocker.patch(
+            (data_cleaning.__name__
+                +'.image_alignment.prep_frame_for_star_finding'),
+            return_value=(
+                [gx+.1], [gy-.25], [1],
+                [1], [1],
+                [gx+.1], [gy-.25], data, 1
+            ))
+    
+    cleaned = data_cleaning.fit_and_subtract_stars_in_frame('', True)
+    
+    np.testing.assert_allclose(cleaned, data_no_star)
+
