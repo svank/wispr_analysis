@@ -186,7 +186,7 @@ def setup_WCS_axes(ax, grid=True, lat_spacing=10, lon_spacing=10):
 
 
 def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
-        labels=None, label_kw={}, setup_fcn=None):
+        labels=None, label_kw={}, setup_fcn=None, **kwargs):
     """
     Renders a movie that blinks between several images.
     
@@ -214,10 +214,12 @@ def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
         None, this function is called to create the ``Figure`` and ``Axes`` for
         plotting. Otherwise, ``imgs[0]`` is called for this purpose (as well as
         for plotting the first frame).
+    kwargs
+        Passed to `plot_WISPR`
     """
-    if not isinstance(vmins, Iterable):
+    if not isinstance(vmins, Iterable) or isinstance(vmins, str):
         vmins = [vmins] * len(imgs)
-    if not isinstance(vmaxs, Iterable):
+    if not isinstance(vmaxs, Iterable) or isinstance(vmaxs, str):
         vmaxs = [vmaxs] * len(imgs)
     if not isinstance(cmaps, Iterable) and not isinstance(cmaps, str):
         cmaps = [cmaps] * len(imgs)
@@ -230,7 +232,7 @@ def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
         fig = plt.gcf()
         ax = plt.gca()
     else:
-        fig, ax = full_size_plot(imgs[0])
+        fig, ax = full_size_plot(imgs[0], **kwargs)
     
     if 'x' not in label_kw:
         label_kw['x'] = .02
@@ -245,7 +247,7 @@ def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
             imgs[i]()
         else:
             plot_WISPR(imgs[i], ax=ax, vmin=vmins[i], vmax=vmaxs[i],
-                    cmap=cmaps[i])
+                    cmap=cmaps[i], **kwargs)
         ax.axis('off')
         if labels is not None:
             plt.text(s=labels[i], zorder=99, **label_kw)
