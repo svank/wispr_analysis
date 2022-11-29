@@ -400,7 +400,8 @@ def find_mask(masks_dir, fnames):
     return found_masks
 
 
-def fit_and_subtract_stars_in_frame(fname, start_at_max=True):
+def fit_and_subtract_stars_in_frame(fname, start_at_max=True,
+        filter_crowded=True):
     """
     Given a file name, loads the data and fits and subtracts all stars
     
@@ -425,15 +426,20 @@ def fit_and_subtract_stars_in_frame(fname, start_at_max=True):
         print(e)
         return data
     
+    if not filter_crowded:
+        all_stars_x = all_stars_y = None
+    
+    stars = np.zeros_like(data)
+    
     for x, y in zip(stars_x, stars_y):
-        star, cutout_start_x, cutout_start_y = image_alignment.fit_star(
+        star, cutout_start_x, cutout_start_y, err = image_alignment.fit_star(
                 x, y, data, all_stars_x, all_stars_y,
                 ret_more=False, ret_star=True, binning=binning,
                 start_at_max=start_at_max, normalize_cutout=False)
         
-        if star is not None:
-            data[cutout_start_y:cutout_start_y + star.shape[0],
-                 cutout_start_x:cutout_start_x + star.shape[1]] -= star
+        if star is not None and len(err) == 0:
+            stars[cutout_start_y:cutout_start_y + star.shape[0],
+                 cutout_start_x:cutout_start_x + star.shape[1]] += star
     
-    return data
+    return data - stars
 

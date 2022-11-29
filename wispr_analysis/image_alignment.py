@@ -76,10 +76,10 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     try:
         cutout, cutout_start_x, cutout_start_y = make_cutout(
                 x, y, data, cutout_size, normalize_cutout)
-    except:
+    except FloatingPointError:
         err = ["Invalid values encountered"]
         if ret_star:
-            return None, None, None
+            return None, None, None, err
         if not ret_more:
             return np.nan, np.nan, np.nan, np.nan, np.nan, err
     
@@ -105,7 +105,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     if n_in_cutout > 1:
         err.append("Crowded frame")
         if ret_star:
-            return None, None, None
+            return None, None, None, err
         if not ret_more:
             return x, y, np.nan, np.nan, np.nan, err
     
@@ -163,7 +163,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
             if ret_more:
                 return None, cutout, err, cutout_start_x, cutout_start_y
             elif ret_star:
-                return None, None, None
+                return None, None, None, err
             else:
                 return np.nan, np.nan, np.nan, np.nan, np.nan, err
     
@@ -186,7 +186,7 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         star = model_fcn(
                 (A, xc, yc, xstd, ystd, theta, 0, 0, 0),
                 cutout)
-        return star, cutout_start_x, cutout_start_y
+        return star, cutout_start_x, cutout_start_y, err
     return (xc + cutout_start_x,
             yc + cutout_start_y,
             xstd,
@@ -246,7 +246,8 @@ good_pixel_map = ~scipy.ndimage.binary_dilation(bad_pixel_map, iterations=3)
 DIM_CUTOFF = 8
 BRIGHT_CUTOFF = 2
 
-def prep_frame_for_star_finding(fname):
+def prep_frame_for_star_finding(fname, dim_cutoff=DIM_CUTOFF,
+        bright_cutoff=BRIGHT_CUTOFF):
     with utils.ignore_fits_warnings(), fits.open(fname) as hdul:
         data = hdul[0].data
         hdr = hdul[0].header
@@ -309,7 +310,7 @@ def prep_frame_for_star_finding(fname):
     
     all_stars_x, all_stars_y = stars_x, stars_y
     
-    filter = (stars_vmag < DIM_CUTOFF) * (stars_vmag > BRIGHT_CUTOFF)
+    filter = (stars_vmag < dim_cutoff) * (stars_vmag > bright_cutoff)
     if hdr['detector'] == 1:
         filter *= good_pixel_map[np.round(stars_y / bin_factor).astype(int),
                                  np.round(stars_x / bin_factor).astype(int)]
