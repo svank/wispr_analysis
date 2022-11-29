@@ -319,22 +319,27 @@ def plot_orbit(data_dir, between=None, filters=None,
     iys = np.interp(itimes, times, positions[:, 1])
     oys = np.interp(otimes, times, positions[:, 1])
     
-    ithetas = np.arctan2(np.gradient(iys), np.gradient(ixs))
-    ithetas += np.pi/2
-    othetas = np.arctan2(np.gradient(oys), np.gradient(oxs))
-    othetas += np.pi/2
+    if len(iys):
+        ithetas = np.arctan2(np.gradient(iys), np.gradient(ixs))
+        ithetas += np.pi/2
+        ixs += 0.05 * distance_scale * np.cos(ithetas)
+        iys += 0.05 * distance_scale * np.sin(ithetas)
     
-    ixs += 0.05 * distance_scale * np.cos(ithetas)
-    iys += 0.05 * distance_scale * np.sin(ithetas)
-    oxs += 0.025 * distance_scale * np.cos(othetas)
-    oys += 0.025 * distance_scale * np.sin(othetas)
+    if len(oys):
+        othetas = np.arctan2(np.gradient(oys), np.gradient(oxs))
+        othetas += np.pi/2
+        oxs += 0.025 * distance_scale * np.cos(othetas)
+        oys += 0.025 * distance_scale * np.sin(othetas)
+    
     
     # Plot the exposure markers with transparency, and plot dummy points
     # without transparency for the plot legend.
-    plt.scatter(ixs, iys, color='C1', s=5, alpha=0.2)
-    plt.scatter(None, None, color='C1', s=5, label='WISPR-I')
-    plt.scatter(oxs, oys, color='C2', s=5, alpha=0.2)
-    plt.scatter(None, None, color='C2', s=5, label='WISPR-O')
+    if len(iys):
+        plt.scatter(ixs, iys, color='C1', s=5, alpha=0.2)
+        plt.scatter(None, None, color='C1', s=5, label='WISPR-I')
+    if len(ixs):
+        plt.scatter(oxs, oys, color='C2', s=5, alpha=0.2)
+        plt.scatter(None, None, color='C2', s=5, label='WISPR-O')
     plt.gcf().legend(loc='upper right', frameon=False, title='Exposures')
     
     # Collect information for marking dates
