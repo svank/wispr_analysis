@@ -333,7 +333,7 @@ def test_get_hann_rolloff_3d():
     np.testing.assert_equal(window[:, :, :4], window[:, :, -4:][:, :, ::-1])
 
 
-def test_get_hann_rolloff_some_zeros():
+def test_get_hann_rolloff_some_zeros_rolloffs():
     comparison = utils.get_hann_rolloff(10, 4)
     
     test = utils.get_hann_rolloff((10, 10), (4, 0))
@@ -343,28 +343,92 @@ def test_get_hann_rolloff_some_zeros():
     np.testing.assert_equal(np.stack([comparison] * 10), test)
 
 
+def test_get_hann_rolloff_zero_borders_1d():
+    window = utils.get_hann_rolloff(60, 10, 5)
+    comp = utils.get_hann_rolloff(50, 10, 0)
+    
+    np.testing.assert_equal(window[:5], 0)
+    np.testing.assert_equal(window[-5:], 0)
+    np.testing.assert_equal(window[5:-5], comp)
+    
+
+def test_get_hann_rolloff_zero_borders_2d():
+    window = utils.get_hann_rolloff((22, 24), 5, (1, 2))
+    comp = utils.get_hann_rolloff((20, 20), 5, 0)
+    
+    np.testing.assert_equal(window[0:1], 0)
+    np.testing.assert_equal(window[-1:], 0)
+    np.testing.assert_equal(window[:, 0:2], 0)
+    np.testing.assert_equal(window[:, -2:], 0)
+    
+    np.testing.assert_equal(window[1:-1, 2:-2], comp)
+    
+
+def test_get_hann_rolloff_zero_borders_4d():
+    window = utils.get_hann_rolloff((22, 12, 14, 16), 4, (5, 0, 1, 2))
+    comp = utils.get_hann_rolloff((12, 12, 12, 12), 4, 0)
+    
+    np.testing.assert_equal(window[0:5], 0)
+    np.testing.assert_equal(window[-5:], 0)
+    np.testing.assert_equal(window[:, :, :1], 0)
+    np.testing.assert_equal(window[:, :, -1:], 0)
+    np.testing.assert_equal(window[..., :2], 0)
+    np.testing.assert_equal(window[..., -2:], 0)
+    
+    np.testing.assert_equal(window[5:-5, :, 1:-1, 2:-2], comp)
+    
+
 def test_get_hann_rolloff_errors():
-    # Too many rolloff sizes
+    # Wrong number of rolloff sizes
     with pytest.raises(ValueError):
         utils.get_hann_rolloff(50, (20, 30))
     with pytest.raises(ValueError):
         utils.get_hann_rolloff((20, 30), (20, 30, 40))
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((20, 30, 10), (20, 30))
+    
+    # Wrong number of zero-pad sizes
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff(50, 5, (20, 30))
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((20, 30), 5, (20, 30, 40))
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((20, 30, 10), 5, (20, 30))
     
     # Rolloffs that don't even fit in the window
     with pytest.raises(ValueError):
-        utils.get_hann_rolloff(10, 20)
+        utils.get_hann_rolloff(10, 10)
     with pytest.raises(ValueError):
         utils.get_hann_rolloff((10, 20), (3, 30))
     with pytest.raises(ValueError):
         utils.get_hann_rolloff((10, 20), (12, 3))
+    # With zero-padded edges
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((10, 20), (8, 3), (1, 0))
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((10, 20), (4, 6), (1, 7))
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((10, 20), (4, 8), (1, 7))
     
     # Rolloffs for which the two ends overlap
     with pytest.warns(Warning):
-        utils.get_hann_rolloff(10, 8)
+        utils.get_hann_rolloff(10, 9)
     with pytest.warns(Warning):
         utils.get_hann_rolloff((10, 20), (3, 12))
     with pytest.warns(Warning):
         utils.get_hann_rolloff((10, 20), (8, 3))
+    # With zero-padded edges
+    with pytest.warns(Warning):
+        utils.get_hann_rolloff((10, 20), (4, 3), (1, 0))
+    with pytest.warns(Warning):
+        utils.get_hann_rolloff((10, 20), (4, 3), (1, 7))
+    with pytest.warns(Warning):
+        utils.get_hann_rolloff((10, 20), (4, 4), (1, 7))
+    # No warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        utils.get_hann_rolloff(11, 5)
+        utils.get_hann_rolloff(15, 5, 2)
     
     # Check that the following does *not* cause a warning
     with warnings.catch_warnings():
@@ -387,6 +451,14 @@ def test_get_hann_rolloff_errors():
         utils.get_hann_rolloff((25, 25), 0)
     with pytest.raises(ValueError):
         utils.get_hann_rolloff((25, 25), (0, 0))
+    
+    # Negative zero padding
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff(15, 3, -1)
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((15, 13), 3, (-1, 4))
+    with pytest.raises(ValueError):
+        utils.get_hann_rolloff((15, 13), 3, (4, -1))
 
 
 @pytest.mark.array_compare

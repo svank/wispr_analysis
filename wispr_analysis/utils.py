@@ -232,9 +232,36 @@ def ensure_data(input, header=True, wcs=False, wcs_key=' '):
     return ret_val
 
 
-def get_hann_rolloff(shape, rolloff):
+def get_hann_rolloff(shape, rolloff, zeros=0):
+    """
+    Generates an ND Hann rolloff window
+    
+    The window is zero at the edges, rises through half a Hann window to one,
+    and then drops through half a Hann window to zero. In multiple dimensions,
+    the corners are the product of multiple Hann functions.
+    
+    Parameters
+    ----------
+    shape : tuple or int
+        The shape of the generated window
+    rolloff : tuple or int
+        The width of the half-Hann window (i.e. the number of pixels it takes
+        to rise from 0 to 1). Can be specified as one number, or a tuple of
+        numbers, one for each axis.
+    zeros : tuple or int
+        The number of zeros that should be at the edges before the Hann rolloff
+        starts. Can be specified as one number, or a tuple of numbers, one for
+        each axis.
+    
+    Returns
+    -------
+    rolloff : ``np.ndarray``
+        The Hann-rolloff window
+    """
     shape = np.atleast_1d(shape)
     rolloff = np.atleast_1d(rolloff)
+    zeros = np.atleast_1d(zeros)
+    
     if len(rolloff) == 1:
         rolloff = np.concatenate([rolloff] * len(shape))
     elif len(rolloff) != len(shape):
@@ -246,40 +273,56 @@ def get_hann_rolloff(shape, rolloff):
         raise ValueError(
                 "`rolloff` should be > 1 and an integer or half-integer")
     
+    if np.any(zeros < 0):
+        raise ValueError("`zeros` must be > 0")
+    if len(zeros) == 1:
+        zeros = np.concatenate([zeros] * len(shape))
+    elif len(zeros) != len(shape):
+        raise ValueError(
+                "`zeros` must be a scalar or match the length of `shape`")
+    
     # We'll create one dimension of the output array, roll it off, duplicate &
     # stack it to create the next dimension, roll it off, etc. This lets us
     # replace lots of multiplication with copies, which is especially helpful
     # for large mask arrays. The order we go through the dimensions seems to
     # be much faster than the other way through, probably for cache reasons.
     mask = np.ones(shape[-1])
-    for i, hann_width in zip(range(len(shape)-1, -1, -1), hann_widths[::-1]):
+    for i, hann_width, nzeros in zip(
+            range(len(shape)-1, -1, -1), hann_widths[::-1], zeros[::-1]):
         if i != len(shape) - 1:
             # Duplicate the existing dimensions
             mask = np.stack([mask] * shape[i], axis=0)
-        if hann_width / 2 >= shape[i]:
-            raise ValueError(f"Rolloff size of {hann_width/2} is too large for"
+        if hann_width / 2 >= shape[i] - 2 * nzeros:
+            raise ValueError(f"Rolloff size of {hann_width/2} is too large for "
                              f"dimension {i} with size {shape[i]}")
-        if hann_width >= shape[i]:
+        if hann_width >= shape[i] - 2 * nzeros:
             warnings.warn(f"Rolloff size of {hann_width/2} doesn't fit for "
                           f"dimension {i} with size {shape[i]}---the two ends "
                            "overlap")
-        if hann_width == 0:
-            continue
-        window = scipy.signal.windows.hann(hann_width)[:ceil(hann_width/2)]
+        
         # Create a [:, :, :] type of slice, and then set the index for the
         # current dimension to be just the end so we can multiply it by
         # our window.
         mask_indices = [slice(None)] * (len(shape) - i)
-        mask_indices[0] = slice(0, window.size)
-        window_indices = [None] * (len(shape) - i)
-        window_indices[0] = slice(None)
-        mask[tuple(mask_indices)] = (
-                mask[tuple(mask_indices)] * window[tuple(window_indices)])
         
-        mask_indices[0] = slice(-window.size, None)
-        window_indices[0] = slice(None, None, -1)
-        mask[tuple(mask_indices)] = (
-                mask[tuple(mask_indices)] * window[tuple(window_indices)])
+        if hann_width:
+            window = scipy.signal.windows.hann(hann_width)[:ceil(hann_width/2)]
+            mask_indices[0] = slice(nzeros, window.size + nzeros)
+            window_indices = [None] * (len(shape) - i)
+            window_indices[0] = slice(None)
+            mask[tuple(mask_indices)] = (
+                    mask[tuple(mask_indices)] * window[tuple(window_indices)])
+            
+            mask_indices[0] = slice(
+                    -window.size-nzeros, -nzeros if nzeros else None)
+            window_indices[0] = slice(None, None, -1)
+            mask[tuple(mask_indices)] = (
+                    mask[tuple(mask_indices)] * window[tuple(window_indices)])
+        if nzeros:
+            mask_indices[0] = slice(0, nzeros)
+            mask[tuple(mask_indices)] = 0
+            mask_indices[0] = slice(-nzeros, None)
+            mask[tuple(mask_indices)] = 0
     return mask
 
 
