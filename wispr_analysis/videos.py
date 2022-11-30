@@ -8,6 +8,7 @@ from math import floor
 import multiprocessing
 import os
 import shutil
+import subprocess
 import tempfile
 import warnings
 
@@ -196,10 +197,12 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                 yield args
         process_map(draw_WISPR_video_frame, arguments(), total=len(images))
         video_file = os.path.join(tmpdir, 'out.mp4')
-        os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
-                  f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
-                  " -x264-params keyint=30"
-                  f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {video_file}")
+        subprocess.call(
+                f"ffmpeg -loglevel error -r {fps} "
+                f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
+                 "-pix_fmt yuv420p -x264-params keyint=30 "
+                f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {video_file}",
+                shell=True)
         if save_location is not None:
             shutil.move(video_file, save_location)
         else:
@@ -458,10 +461,12 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
             p_plot.close()
             p_plot.join()
         
-        os.system(f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
-                  f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
-                   " -x264-params keyint=30"
-                  f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {tmpdir}/out.mp4")
+        subprocess.call(
+                f"ffmpeg -loglevel error -r {fps} -pattern_type glob"
+                f" -i '{tmpdir}/*.png' -c:v libx264 -pix_fmt yuv420p"
+                 " -x264-params keyint=30"
+                f" -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {tmpdir}/out.mp4",
+                shell=True)
         video = Video(f"{tmpdir}/out.mp4",
                 embed=True, html_attributes="controls loop")
         if show:
