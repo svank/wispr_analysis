@@ -379,6 +379,11 @@ def test_fit_and_subtract_stars_in_frame(mocker, theta, xstd, ystd):
                 [gx+.1], [gy-.25], data, 1
             ))
     
+    mocker.patch(
+            (data_cleaning.__name__
+                +'.fits.getdata'),
+            return_value=data)
+    
     cleaned = data_cleaning.fit_and_subtract_stars_in_frame('', True)
     
     np.testing.assert_allclose(cleaned, data_no_star)

@@ -418,6 +418,31 @@ def fit_and_subtract_stars_in_frame(fname, start_at_max=True,
     data : ``np.ndarray``
         The image with all fitted stars subtracted
     """
+    with utils.ignore_fits_warnings():
+        data = fits.getdata(fname)
+    stars = fit_stars_in_frame(fname, start_at_max=start_at_max,
+            filter_crowded=filter_crowded)
+    return data - stars
+
+
+def fit_stars_in_frame(fname, start_at_max=True,
+        filter_crowded=True):
+    """
+    Given a file name, loads the data and fits all stars
+    
+    Parameters
+    ----------
+    fname : str
+        The FITS file to load
+    start_at_max : bool
+        Whether the fitting routine should start at the maximum-value pixel in
+        each neighborhood
+    
+    Returns
+    -------
+    data : ``np.ndarray``
+        The image with all fitted stars subtracted
+    """
     try:
         (stars_x, stars_y, _, _, _,
                 all_stars_x, all_stars_y, data,
@@ -441,5 +466,5 @@ def fit_and_subtract_stars_in_frame(fname, start_at_max=True,
             stars[cutout_start_y:cutout_start_y + star.shape[0],
                  cutout_start_x:cutout_start_x + star.shape[1]] += star
     
-    return data - stars
+    return stars
 
