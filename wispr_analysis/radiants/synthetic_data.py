@@ -50,7 +50,7 @@ class Thing:
             other.vy,
             self.x - other.x,
             self.y - other.y)
-        return np.abs(angle) < np.pi/2
+        return np.atleast_1d(np.abs(angle) < np.pi/2)
     
     @property
     def r(self):
