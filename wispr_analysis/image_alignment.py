@@ -86,6 +86,14 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
     cutout = cutout.astype(float)
     cutout_size = cutout.shape[0]
     
+    err = []
+    if np.any(np.isnan(cutout)):
+        err.append("NaNs in cutout")
+        if ret_star:
+            return None, None, None, err
+        if not ret_more:
+            return x, y, np.nan, np.nan, np.nan, err
+    
     if all_stars_x is None:
         all_stars_x = np.array([x])
     else:
@@ -101,7 +109,6 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         * (all_stars_y > cutout_start_y - .5)
         * (all_stars_y < cutout_start_y + cutout_size - .5))
     
-    err = []
     if n_in_cutout > 1:
         err.append("Crowded frame")
         if ret_star:
@@ -142,18 +149,19 @@ def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
                  np.inf,        # x slope
                  np.inf),       # y slope
                 ])
+            x0 = [cutout.max(),      # amplitude
+                  x_start,           # x0
+                  y_start,           # y0
+                  bin_factor,        # x_std
+                  bin_factor,        # y_std
+                  0,                 # theta
+                  np.median(cutout), # intercept
+                  0,                 # x slope
+                  0,                 # y slope
+                 ]
             res = scipy.optimize.least_squares(
                     model_error,
-                    [cutout.max(),      # amplitude
-                     x_start,           # x0
-                     y_start,           # y0
-                     bin_factor,        # x_std
-                     bin_factor,        # y_std
-                     0,                 # theta
-                     np.median(cutout), # intercept
-                     0,                 # x slope
-                     0,                 # y slope
-                    ],
+                    x0,
                     args=(cutout, bounds),
                     method='lm'
                 )
