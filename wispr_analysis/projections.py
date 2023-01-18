@@ -132,11 +132,11 @@ def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
             ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
             ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
             wcs_in=wcs)
-    reprojected = np.zeros(out_shape)
-    reproject.adaptive.deforest.map_coordinates(data.astype(float),
+    reprojected = np.zeros((1, *out_shape))
+    reproject.adaptive.deforest.map_coordinates(data.astype(float).reshape((1, *data.shape)),
             reprojected, transformer, out_of_range_nan=True,
             center_jacobian=False)
-    return reprojected, transformer
+    return reprojected[0], transformer
 
 
 def reproject_from_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
@@ -159,11 +159,11 @@ def reproject_from_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
             ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
             ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
             wcs_in=wcs)
-    reprojected = np.zeros(out_shape)
-    reproject.adaptive.deforest.map_coordinates(data.astype(float),
+    reprojected = np.zeros((1, *out_shape))
+    reproject.adaptive.deforest.map_coordinates(data.astype(float).reshape((1, *data.shape)),
             reprojected, transformer, out_of_range_nan=True,
             center_jacobian=False)
-    return reprojected, transformer
+    return reprojected[0], transformer
 
 
 def label_radial_axes(transformer, ax=None):
