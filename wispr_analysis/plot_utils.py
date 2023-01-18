@@ -508,8 +508,11 @@ def date_to_mdate(date):
         A date that have been converted to matplotlib's date format, ready for
         use as the x-axis quantity when plotting.
     """
-    if isinstance(date, Iterable) and not isinstance(date, str):
-        return [date_to_mdate(x) for x in date]
+    if isinstance(date, (Iterable, np.ndarray)) and not isinstance(date, str):
+        output = [date_to_mdate(x) for x in date]
+        if isinstance(date, np.ndarray):
+            output = np.array(output)
+        return output
     
     if isinstance(date, str):
         date = utils.to_timestamp(date)
