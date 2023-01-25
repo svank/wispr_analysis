@@ -337,7 +337,7 @@ def ignore_fits_warnings():
 
 
 def sliding_window_stats(data, window_width, stats=['mean', 'std'],
-        trim=None, sliding_window_stride=1):
+        trim=None, sliding_window_stride=1, where=None, check_nans=True):
     """
     Computes stats in a sliding window.
     
@@ -349,9 +349,8 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     ----------
     data : ``ndarray``
         The input array. Can have any dimensionality.
-    window_width : int
-        The size of the sliding window. Currently restricted to having the same
-        size in all dimensions.
+    window_width : int or tuple
+        The size of the sliding window. If an integer, is applied to all axes.
     stats : str or list of str
         The statistics to compute. Multiple stats can be specified. Supported
         options are 'mean', 'std', and 'median'. For each, ``NaN`` values within
@@ -367,8 +366,16 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         Set this to a value N > 1 to compute the sliding window only for every
         N pixels along each dimension. The computed values will then be
         replicated into the skipped pixels.
-    
+    where : ``ndarray``
+        An optinal binary mask indicating which pixels to include in the
+        calculations. Cannot be used when calculating medians.
+    check_nans : boolean
+        Whether to use the NaN-handling calculation functions, which does slow
+        things down.
     """
+    if where is not None and 'median' in stats:
+        raise ValueError("'where' parameter not supported for medians")
+    
     stats_orig = stats
     if isinstance(stats, str):
         stats = [stats]
@@ -380,16 +387,26 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         cut.append(slice(trim[2*i], data.shape[i] - trim[2*i + 1]))
     data_trimmed = data[tuple(cut)]
     
+    if type(window_width) is int:
+        window_width = [window_width] * len(data.shape)
+    
     sliding_window = np.lib.stride_tricks.sliding_window_view(
-            data_trimmed, [window_width] * len(data.shape))
+            data_trimmed, window_width)
     cut = [slice(None, None, sliding_window_stride)] * len(data.shape)
     sliding_window = sliding_window[tuple(cut)]
+    if where is not None:
+        sliding_where = np.lib.stride_tricks.sliding_window_view(
+                where, window_width)
+        sliding_where = sliding_where[tuple(cut)]
+    else:
+        # The actual default value these functions use
+        sliding_where = True
     
     outputs = []
     name_to_fcn = {
-            'mean': np.nanmean,
-            'std': np.nanstd,
-            'median': np.nanmedian,
+            'mean': np.nanmean if check_nans else np.mean,
+            'std': np.nanstd if check_nans else np.std,
+            'median': np.nanmedian if check_nans else np.median,
         }
     
     with warnings.catch_warnings():
@@ -398,14 +415,19 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         warnings.filterwarnings(action='ignore',
                 message=".*degrees of freedom <= 0.*")
         
+        window_axes = tuple(np.arange(len(data.shape), 2*len(data.shape)))
         for stat in stats:
             # In the sliding window, the first N dimensions are the dimensions
             # of the input array, and the second N dimensions are the
             # dimensions of the window. E.g. for a 5x5 window over a 25x25
             # array, the sliding window ix 23x23x5x5.
-            window_axes = np.arange(len(data.shape), 2*len(data.shape))
+            kwargs = {}
+            if stat != 'median':
+                kwargs['where'] = sliding_where
             outputs.append(name_to_fcn[stat](sliding_window,
-                axis=tuple(window_axes)))
+                axis=window_axes,
+                **kwargs
+            ))
     
     if sliding_window_stride > 1:
         # Duplicate rows/columns to account for the stride
@@ -413,6 +435,13 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
             for j in range(len(data.shape)):
                 outputs[i] = np.repeat(outputs[i], sliding_window_stride,
                         axis=j)
+            # If the data size wasn't evenly divisible by the stride, we've
+            # expanded it too much. Trim it down to the size it should have.
+            slices = [
+                    slice(data.shape[j] - window_width[j] + 1)
+                    for j in range(len(data.shape))]
+            outputs[i] = outputs[i][tuple(slices)]
+    
     # Pad the edges, since the sliding window can't go all the way to the edge.
     padding = []
     for i in range(len(data.shape)):

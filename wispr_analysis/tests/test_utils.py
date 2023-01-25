@@ -471,23 +471,90 @@ def test_sliding_window_stats():
     return mean
 
 
-def test_sliding_window_stride():
+def test_sliding_window_stride_2():
     data1 = np.ones((15, 30))
     data2 = np.full((15, 30), 10)
     data = np.vstack((data1, data2))
     
     std, mean = utils.sliding_window_stats(data, 5, ['std', 'mean'])
-    std1, mean1 = utils.sliding_window_stats(data, 5, ['std', 'mean'])
-    np.testing.assert_array_equal(std, std1)
-    np.testing.assert_array_equal(mean, mean1)
-    
     std2, mean2 = utils.sliding_window_stats(data, 5, ['std', 'mean'],
             sliding_window_stride=2)
     
+    assert std2.shape == std.shape
+    assert mean2.shape == mean.shape
+    
+    # Check the padded columns
+    for arr in std, mean, std2, mean2:
+        np.testing.assert_array_equal(arr[0], arr[3])
+        np.testing.assert_array_equal(arr[1], arr[3])
+        np.testing.assert_array_equal(arr[-2], arr[-3])
+        np.testing.assert_array_equal(arr[-1], arr[-3])
+        np.testing.assert_array_equal(arr[:, 0], arr[:, 3])
+        np.testing.assert_array_equal(arr[:, 1], arr[:, 3])
+        np.testing.assert_array_equal(arr[:, -2], arr[:, -3])
+        np.testing.assert_array_equal(arr[:, -1], arr[:, -3])
+    
+    # Trim off the padded columns
+    std = std[2:-2, 2:-2]
+    std2 = std2[2:-2, 2:-2]
+    mean = mean[2:-2, 2:-2]
+    mean2 = mean2[2:-2, 2:-2]
+    
     for arr, arr2 in zip((std, mean), (std2, mean2)):
+        np.testing.assert_array_equal(arr[::2, ::2], arr2[::2, ::2])
         np.testing.assert_array_equal(arr2[::2], arr2[1::2])
         np.testing.assert_array_equal(arr2[:, ::2], arr2[:, 1::2])
-        np.testing.assert_array_equal(arr[::2, ::2], arr2[::2, ::2])
+
+
+def test_sliding_window_stride_3():
+    data1 = np.ones((15, 31))
+    data2 = np.full((15, 31), 10)
+    data = np.vstack((data1, data2))
+    
+    std, mean = utils.sliding_window_stats(data, 5, ['std', 'mean'])
+    std2, mean2 = utils.sliding_window_stats(data, 5, ['std', 'mean'],
+            sliding_window_stride=3)
+    
+    assert std2.shape == std.shape
+    assert mean2.shape == mean.shape
+    
+    # Check the padded columns
+    for arr in std, mean, std2, mean2:
+        np.testing.assert_array_equal(arr[0], arr[3])
+        np.testing.assert_array_equal(arr[1], arr[3])
+        np.testing.assert_array_equal(arr[-2], arr[-3])
+        np.testing.assert_array_equal(arr[-1], arr[-3])
+        np.testing.assert_array_equal(arr[:, 0], arr[:, 3])
+        np.testing.assert_array_equal(arr[:, 1], arr[:, 3])
+        np.testing.assert_array_equal(arr[:, -2], arr[:, -3])
+        np.testing.assert_array_equal(arr[:, -1], arr[:, -3])
+    
+    # Trim off the padded columns
+    std = std[2:-2, 2:-2]
+    std2 = std2[2:-2, 2:-2]
+    mean = mean[2:-2, 2:-2]
+    mean2 = mean2[2:-2, 2:-2]
+    
+    for arr, arr2 in zip((std, mean), (std2, mean2)):
+        np.testing.assert_array_equal(arr[::3, ::3], arr2[::3, ::3])
+        np.testing.assert_array_equal(arr2[::3], arr2[1::3])
+        np.testing.assert_array_equal(arr2[1:-1:3], arr2[2::3])
+        np.testing.assert_array_equal(arr2[:, ::3], arr2[:, 1::3])
+        np.testing.assert_array_equal(arr2[:, ::3], arr2[:, 2::3])
+
+
+def test_sliding_window_nans():
+    data = np.ones((15, 15))
+    data[2, 2] = np.nan
+    
+    mean_with_nan = utils.sliding_window_stats(data, 5, 'mean',
+            check_nans=False)
+    mean_wo_nan = utils.sliding_window_stats(data, 5, 'mean',
+            check_nans=True)
+    
+    np.testing.assert_array_equal(mean_wo_nan, 1)
+    np.testing.assert_allclose(mean_with_nan[:5, :5], np.nan, equal_nan=True)
+    np.testing.assert_array_equal(mean_with_nan[5:, 5:], 1)
 
 
 @pytest.mark.array_compare
@@ -517,4 +584,25 @@ def test_sliding_window_1D():
     mean_trimmed = utils.sliding_window_stats(data, 5, 'mean', trim=(3, 4))
     
     return np.vstack((mean, mean_strided, mean_trimmed))
+
+
+def test_sliding_window_where():
+    data = np.ones((15, 15))
+    data[::2, ::2] = 2
     
+    mean = utils.sliding_window_stats(data, 5, ['mean'], where=(data == 1))[0]
+    
+    np.testing.assert_array_equal(mean, 1)
+
+
+def test_sliding_window_asymmetric_window():
+    data = np.ones((15, 15))
+    data[::2] = 2
+    
+    mean = utils.sliding_window_stats(data, (1, 5), 'mean')
+    
+    assert mean.shape == data.shape
+    
+    np.testing.assert_array_equal(mean[::2], 2)
+    np.testing.assert_array_equal(mean[1::2], 1)
+
