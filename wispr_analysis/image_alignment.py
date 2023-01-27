@@ -243,7 +243,7 @@ def model_error(params, cutout, bounds):
 
 try:
     bad_pixel_map = np.load(
-            '/Users/svankooten/Nextcloud/Parker Solar Probe/WISPR Perihelion Data/bad_pixel_mask.npz')['map']
+            '/home/svankooten/psp/WISPR/bad_pixel_mask.npz')['map']
 except:
     bad_pixel_map = np.zeros((1024, 960), dtype=bool)
     import warnings
