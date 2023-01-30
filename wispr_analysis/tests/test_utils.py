@@ -471,20 +471,19 @@ def test_sliding_window_stats():
     return mean
 
 
-def test_sliding_window_stride_2():
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+def test_sliding_window_stride_2(stat):
     data1 = np.ones((15, 30))
     data2 = np.full((15, 30), 10)
     data = np.vstack((data1, data2))
     
-    std, mean = utils.sliding_window_stats(data, 5, ['std', 'mean'])
-    std2, mean2 = utils.sliding_window_stats(data, 5, ['std', 'mean'],
-            sliding_window_stride=2)
+    out = utils.sliding_window_stats( data, 5, stat)
+    out2 = utils.sliding_window_stats( data, 5, stat, sliding_window_stride=2)
     
-    assert std2.shape == std.shape
-    assert mean2.shape == mean.shape
+    assert out.shape == out2.shape
     
     # Check the padded columns
-    for arr in std, mean, std2, mean2:
+    for arr in out, out2:
         np.testing.assert_array_equal(arr[0], arr[3])
         np.testing.assert_array_equal(arr[1], arr[3])
         np.testing.assert_array_equal(arr[-2], arr[-3])
@@ -495,31 +494,28 @@ def test_sliding_window_stride_2():
         np.testing.assert_array_equal(arr[:, -1], arr[:, -3])
     
     # Trim off the padded columns
-    std = std[2:-2, 2:-2]
-    std2 = std2[2:-2, 2:-2]
-    mean = mean[2:-2, 2:-2]
-    mean2 = mean2[2:-2, 2:-2]
+    out = out[2:-2, 2:-2]
+    out2 = out2[2:-2, 2:-2]
     
-    for arr, arr2 in zip((std, mean), (std2, mean2)):
-        np.testing.assert_array_equal(arr[::2, ::2], arr2[::2, ::2])
-        np.testing.assert_array_equal(arr2[::2], arr2[1::2])
-        np.testing.assert_array_equal(arr2[:, ::2], arr2[:, 1::2])
+    np.testing.assert_array_equal(out[::2, ::2], out2[::2, ::2])
+    np.testing.assert_array_equal(out2[::2], out2[1::2])
+    np.testing.assert_array_equal(out2[:, ::2], out2[:, 1::2])
 
 
-def test_sliding_window_stride_3():
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+def test_sliding_window_stride_3(stat):
     data1 = np.ones((15, 31))
     data2 = np.full((15, 31), 10)
     data = np.vstack((data1, data2))
     
-    std, mean = utils.sliding_window_stats(data, 5, ['std', 'mean'])
-    std2, mean2 = utils.sliding_window_stats(data, 5, ['std', 'mean'],
+    out = utils.sliding_window_stats(data, 5, stat)
+    out2 = utils.sliding_window_stats(data, 5, stat,
             sliding_window_stride=3)
     
-    assert std2.shape == std.shape
-    assert mean2.shape == mean.shape
+    assert out.shape == out2.shape
     
     # Check the padded columns
-    for arr in std, mean, std2, mean2:
+    for arr in out, out2:
         np.testing.assert_array_equal(arr[0], arr[3])
         np.testing.assert_array_equal(arr[1], arr[3])
         np.testing.assert_array_equal(arr[-2], arr[-3])
@@ -530,39 +526,32 @@ def test_sliding_window_stride_3():
         np.testing.assert_array_equal(arr[:, -1], arr[:, -3])
     
     # Trim off the padded columns
-    std = std[2:-2, 2:-2]
-    std2 = std2[2:-2, 2:-2]
-    mean = mean[2:-2, 2:-2]
-    mean2 = mean2[2:-2, 2:-2]
+    out = out[2:-2, 2:-2]
+    out2 = out2[2:-2, 2:-2]
     
-    for arr, arr2 in zip((std, mean), (std2, mean2)):
-        np.testing.assert_array_equal(arr[::3, ::3], arr2[::3, ::3])
-        np.testing.assert_array_equal(arr2[::3], arr2[1::3])
-        np.testing.assert_array_equal(arr2[1:-1:3], arr2[2::3])
-        np.testing.assert_array_equal(arr2[:, ::3], arr2[:, 1::3])
-        np.testing.assert_array_equal(arr2[:, ::3], arr2[:, 2::3])
+    np.testing.assert_array_equal(out[::3, ::3], out2[::3, ::3])
+    np.testing.assert_array_equal(out2[::3], out2[1::3])
+    np.testing.assert_array_equal(out2[1:-1:3], out2[2::3])
+    np.testing.assert_array_equal(out2[:, ::3], out2[:, 1::3])
+    np.testing.assert_array_equal(out2[:, ::3], out2[:, 2::3])
 
 
-def test_sliding_window_nans():
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+def test_sliding_window_nans(stat):
     data = np.ones((15, 15))
     data[2, 2] = np.nan
     
-    mean_with_nan = utils.sliding_window_stats(data, 5, 'mean',
-            check_nans=False)
-    mean_wo_nan = utils.sliding_window_stats(data, 5, 'mean',
-            check_nans=True)
+    with_nan = utils.sliding_window_stats(data, 5, stat, check_nans=False)
+    wo_nan = utils.sliding_window_stats(data, 5, stat, check_nans=True)
     
-    np.testing.assert_array_equal(mean_wo_nan, 1)
-    np.testing.assert_allclose(mean_with_nan[:5, :5], np.nan, equal_nan=True)
-    np.testing.assert_array_equal(mean_with_nan[5:, 5:], 1)
-
-
-@pytest.mark.array_compare
-def test_sliding_window_edges():
-    np.random.seed(20)
-    data = np.random.random(900).reshape((30, 30))
-    med = utils.sliding_window_stats(data, 6, ['median'])
-    return med[0]
+    expected = 0 if stat == 'std' else 1
+    np.testing.assert_array_equal(wo_nan, expected)
+    if stat == 'median':
+        np.testing.assert_allclose(with_nan[:5, :5], np.nan, equal_nan=True)
+        np.testing.assert_array_equal(with_nan[5:], expected)
+        np.testing.assert_array_equal(with_nan[:, 5:], expected)
+    else:
+        np.testing.assert_allclose(with_nan, np.nan, equal_nan=True)
 
 
 @pytest.mark.array_compare
@@ -573,36 +562,116 @@ def test_sliding_window_trim():
     return med[0]
 
 
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
 @pytest.mark.array_compare
-def test_sliding_window_1D():
+def test_sliding_window_1D(stat):
     np.random.seed(40)
     data = np.random.random(40)
     
-    mean = utils.sliding_window_stats(data, 5, 'mean')
-    mean_strided = utils.sliding_window_stats(data, 5, 'mean',
+    out = utils.sliding_window_stats(data, 5, stat)
+    out_strided = utils.sliding_window_stats(data, 5, stat,
             sliding_window_stride=2)
-    mean_trimmed = utils.sliding_window_stats(data, 5, 'mean', trim=(3, 4))
+    out_trimmed = utils.sliding_window_stats(data, 5, stat, trim=(3, 4))
     
-    return np.vstack((mean, mean_strided, mean_trimmed))
+    return np.vstack((out, out_strided, out_trimmed))
 
 
-def test_sliding_window_where():
-    data = np.ones((15, 15))
-    data[::2, ::2] = 2
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+def test_sliding_window_4D(stat):
+    data = np.full((6, 5, 7, 6), 10)
     
-    mean = utils.sliding_window_stats(data, 5, ['mean'], where=(data == 1))[0]
+    out = utils.sliding_window_stats(data, 2, stat)
     
-    np.testing.assert_array_equal(mean, 1)
+    expected = 0 if stat == 'std' else 10
+    
+    np.testing.assert_array_equal(out, expected)
 
 
-def test_sliding_window_asymmetric_window():
+@pytest.mark.parametrize('stat', ['mean', 'std'])
+@pytest.mark.parametrize('stride', [1,2,3])
+def test_sliding_window_where(stat, stride):
+    data = np.ones((30, 30))
+    
+    data[15:17] = 2
+    data[:, 15:17] = 2
+    
+    where = data == 1
+    
+    out = utils.sliding_window_stats(data, 5, stat, where=where,
+            sliding_window_stride=stride)
+    
+    expected = 0 if stat == 'std' else 1
+    
+    np.testing.assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize('stat', ['mean', 'median', 'std'])
+def test_sliding_window_asymmetric_window(stat):
     data = np.ones((15, 15))
     data[::2] = 2
     
-    mean = utils.sliding_window_stats(data, (1, 5), 'mean')
+    out = utils.sliding_window_stats(data, (1, 5), stat)
     
-    assert mean.shape == data.shape
+    assert out.shape == data.shape
     
-    np.testing.assert_array_equal(mean[::2], 2)
-    np.testing.assert_array_equal(mean[1::2], 1)
+    if stat == 'std':
+        expected1 = 0
+        expected2 = 0
+    else:
+        expected1 = 1
+        expected2 = 2
+    np.testing.assert_array_equal(out[::2], expected2)
+    np.testing.assert_array_equal(out[1::2], expected1)
+
+
+@pytest.mark.parametrize('stat', ['mean', 'std'])
+@pytest.mark.parametrize('stride', [1,2,3])
+def test_sliding_window_where(stat, stride):
+    data = np.ones((30, 30))
+    
+    data[15:17] = 2
+    data[:, 15:17] = 2
+    
+    where = data == 1
+    
+    out = utils.sliding_window_stats(data, 5, stat, where=where,
+            sliding_window_stride=stride)
+    
+    expected = 0 if stat == 'std' else 1
+    
+    np.testing.assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+def test_sliding_window_empty_strips(stat):
+    np.random.seed(2)
+    data = np.random.random((30, 30))
+    
+    # Create strips of NaNs so that the rolling calculations experience steps
+    # where no pixels are added or none are removed. Ensure that doesn't make
+    # the calculations wacky.
+    data[15:17] = np.nan
+    data[:, 15:17] = np.nan
+    # To stress it further, don't provide any data for the initial window
+    # position, and ensure the calculations still go on.
+    data[:6, :6] = np.nan
+    
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action='ignore',
+                message=".*All-NaN slice.*")
+        out = utils.sliding_window_stats(data, 5, stat, check_nans=True)
+    
+    if stat == 'mean':
+        fcn = np.nanmean
+    elif stat == 'std':
+        fcn = np.nanstd
+    elif stat == 'median':
+        fcn = np.nanmedian
+    
+    for i in range(2, data.shape[0]-2):
+        for j in range(2, data.shape[1]-2):
+            if i <= 3 and j <= 3:
+                assert np.isnan(out[i, j])
+            else:
+                assert out[i, j] == pytest.approx(fcn(data[i-2:i+3, j-2:j+3]))
 

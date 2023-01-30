@@ -7,6 +7,7 @@ import warnings
 
 from astropy.io import fits
 from astropy.wcs import WCS
+import numba
 import numpy as np
 import scipy.signal
 
@@ -372,6 +373,15 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     check_nans : boolean
         Whether to use the NaN-handling calculation functions, which does slow
         things down.
+    
+    Note
+    ----
+    When calculating the mean or standard deviation, if the input array has <=
+    3 dimensions, an optimized routine is used that calculates rolling
+    statistics, which may introduce some floating-point error (e.g. regions
+    with the same exact input values may have different outputs at the
+    floating-point-error level). Otherwise, the statistic is computed from
+    scratch at each location in the array.
     """
     if where is not None and 'median' in stats:
         raise ValueError("'where' parameter not supported for medians")
@@ -379,16 +389,23 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     stats_orig = stats
     if isinstance(stats, str):
         stats = [stats]
+    
     if trim is None:
         trim = [0, 0] * len(data.shape)
+    
+    if type(window_width) is int:
+        window_width = [window_width] * len(data.shape)
+    
+    for i in range(len(data.shape)):
+        if trim[2*i] + trim[2*i+1] + window_width[i] > data.shape[i]:
+            raise ValueError(f"Trim and window do not fit along dimension {i}")
     
     cut = []
     for i in range(len(data.shape)):
         cut.append(slice(trim[2*i], data.shape[i] - trim[2*i + 1]))
     data_trimmed = data[tuple(cut)]
-    
-    if type(window_width) is int:
-        window_width = [window_width] * len(data.shape)
+    if where is not None:
+        where_trimmed = where[tuple(cut)]
     
     sliding_window = np.lib.stride_tricks.sliding_window_view(
             data_trimmed, window_width)
@@ -396,19 +413,49 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     sliding_window = sliding_window[tuple(cut)]
     if where is not None:
         sliding_where = np.lib.stride_tricks.sliding_window_view(
-                where, window_width)
+                where_trimmed, window_width)
         sliding_where = sliding_where[tuple(cut)]
     else:
         # The actual default value these functions use
         sliding_where = True
     
-    outputs = []
     name_to_fcn = {
-            'mean': np.nanmean if check_nans else np.mean,
-            'std': np.nanstd if check_nans else np.std,
+            'mean': np.mean if check_nans else np.mean,
+            'std': np.std if check_nans else np.std,
             'median': np.nanmedian if check_nans else np.median,
         }
     
+    if ('mean' in stats or 'std' in stats) and data.ndim <= 3:
+        # We have an optimized function to compute these stats in a rolling
+        # window, though it only supports exactly three dimensions. We'll have
+        # to adjust some arguments to make it work.
+        d = data_trimmed
+        ww = np.asarray(window_width).copy()
+        if where is None:
+            # The optimized function requires a one-element array when there's
+            # no actual 'where' array
+            w = np.ones([1] * data.ndim)
+        else:
+            w = where_trimmed
+        while d.ndim < 3:
+            # Add dummy dimensions as needed
+            d = np.expand_dims(d, 0)
+            w = np.expand_dims(w, 0)
+            ww = np.insert(ww, 0, 1)
+        
+        means, stds = _sliding_window_mean_std_optimized(
+                d, ww, 'mean' in stats, 'std' in stats,
+                w, check_nans, sliding_window_stride)
+        if 'mean' in stats:
+            while means.ndim > data.ndim:
+                means = means[0]
+            name_to_fcn['mean'] = lambda *args, **kwargs: means
+        if 'std' in stats:
+            while stds.ndim > data.ndim:
+                stds = stds[0]
+            name_to_fcn['std'] = lambda *args, **kwargs: stds
+    
+    outputs = []
     with warnings.catch_warnings():
         warnings.filterwarnings(action='ignore',
                 message=".*empty slice.*")
@@ -455,3 +502,250 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         return outputs[0]
     return outputs
 
+
+@numba.njit(cache=True)
+def _sliding_window_mean_std_optimized(data, window_width, mean, std, where,
+        check_nans, stride):
+    """
+    Computes the mean and/or standard deviation in a rolling window.
+    
+    Uses accumulation variables that are updated with only the values
+    added/removed at each step, to avoid re-computing the statistics from
+    scratch for each rolling window position.
+    
+    That's easy for the mean---just store a sum and N.
+    
+    For incremental updates to the variance:
+    
+    Variance = Sigma (x_i - mu)^2 / N
+    
+    Expanding the square:
+    Variance = (Sigma x_i^2 + Sigma mu^2 - 2 mu Sigma x_i) / N
+             = (Sigma x_i^2 + N mu^2     - 2 mu Sigma x_i) / N
+             
+    Sigma x_i / N = mu, so
+             
+    Variance = Sigma x_i^2 / N + mu^2 - 2 mu * mu
+             = Sigma x_i^2 / N - mu^2
+    
+    If we have points
+        x1, ..., xl, x_{l+1}, ..., xm, x_{m+1}, ..., xn
+        |--remove--| |-----keep-----|  |------add-----|
+    and in our step we're removing the A points x1...xl and adding the B points
+    x_{m+1}...xn, the difference between the old and new variance is
+    
+    dvar = Var(x_{l+1}...xm) - Var(x1...xm)
+         = 1/A Sigma_{l+1}^n (xi - mu_new)^2  - 1/B Sigma_1^m (xi - mu_old)^2
+         = 1/A Sigma_{l+1}^n x_i^2 - mu_new^2 - 1/B Sigma_1^m x_i^2 + mu_old^2
+           |--------------------------------|   |----------------------------|
+             only involving the new mu and      only involving the old mu and
+             the new sum-of-squares, after      the old sum-of-squares, before
+             all new points are added           any old points are removed
+    
+    Thus, if we track the variance and the sum-of-squares in our window, we can
+    incrementally update the variance as we move the window.
+    """
+    
+    out_shape = (
+            int(np.ceil((data.shape[0] - window_width[0] + 1) / stride)),
+            int(np.ceil((data.shape[1] - window_width[1] + 1) / stride)),
+            int(np.ceil((data.shape[2] - window_width[2] + 1) / stride)))
+    out_shape = (
+            max(1, out_shape[0]),
+            max(1, out_shape[1]),
+            max(1, out_shape[2]))
+    output_mean = np.empty(out_shape, dtype=np.float64) if mean else None
+    output_std = np.empty(out_shape, dtype=np.float64) if std else None
+
+    directions = np.full(3, stride, dtype=np.int64)
+    pos = np.array((0, 0, 0))
+    window_bounds = np.empty((3, 2), dtype=np.int64)
+    window_bounds[:, 0] = 0
+    window_bounds[:, 1] = window_width
+    
+    # Accumulate all the valid points in the starting window.
+    # Note this is more than just filling the accumulation variables---we're
+    # also collecting all the valid values to compute the starting variance.
+    sum, sum_of_squares, N = 0, 0, 0
+    start_data = np.empty((window_width[0] * window_width[1] * window_width[2]))
+    for i in range(window_bounds[0, 0], window_bounds[0, 1]):
+        for j in range(window_bounds[1, 0], window_bounds[1, 1]):
+            for k in range(window_bounds[2, 0], window_bounds[2, 1]):
+                if check_nans and np.isnan(data[i, j, k]):
+                    continue
+                if where.size > 1 and not where[i, j, k]:
+                    continue
+                start_data[N] = data[i, j, k]
+                sum += data[i, j, k]
+                sum_of_squares += data[i, j, k]**2
+                N += 1
+    
+    start_data = start_data[:N]
+    # n.b. it sounds like, even though we're updating the variance by hand as
+    # we iterate, the initial calculation should be from a dedicated variance
+    # function, as those are often designed to avoid numeric pitfalls.
+    variance = np.var(start_data) if start_data.size else 0
+
+    while True:
+        # Store mean and/or std for the current position
+        mean_val = (sum / N) if N > 0 else np.nan
+        if mean:
+            output_mean[pos[0], pos[1], pos[2]] = mean_val
+        if std:
+            if N > 0:
+                output_std[pos[0], pos[1], pos[2]] = np.sqrt(variance)
+                # The increment we apply to the variance next time around
+                # includes two terms involving the "old" values.
+                delta_variance = (mean_val**2 - sum_of_squares / N)
+            else:
+                output_std[pos[0], pos[1], pos[2]] = np.nan
+                delta_variance = 0
+        
+        # Check if we've hit the end along dimension -1
+        if (pos[-1] + np.sign(directions[-1]) >= out_shape[-1]
+            or pos[-1] + np.sign(directions[-1]) < 0
+        ):
+            # We've hit the end along dimension -1. Are we also at the end of
+            # dimension -2?
+            if (pos[-2] + np.sign(directions[-2]) >= out_shape[-2]
+                or pos[-2] + np.sign(directions[-2]) < 0
+            ):
+                # We've hit the end along dimension -2. Are we also at the end
+                # of dimension -3?
+                if (pos[-3] + np.sign(directions[-3]) >= out_shape[-3]
+                    or pos[-3] + np.sign(directions[-3]) < 0
+                ):
+                    # We've reached the end of the whole array!
+                    break
+                else:
+                    # We need to advance along dimension -3
+                    dsum, dsum_of_squares, dn = _sliding_window_advance(
+                            directions, window_bounds, pos, stride, data,
+                            check_nans, where, -3)
+                    sum += dsum
+                    sum_of_squares += dsum_of_squares
+                    N += dn
+            else:
+                # We need to advance along dimension -2
+                dsum, dsum_of_squares, dn = _sliding_window_advance(
+                        directions, window_bounds, pos, stride, data,
+                        check_nans, where, -2)
+                sum += dsum
+                sum_of_squares += dsum_of_squares
+                N += dn
+        else:
+            # We need to advance along dimension -1
+            dsum, dsum_of_squares, dn = _sliding_window_advance(
+                    directions, window_bounds, pos, stride, data,
+                    check_nans, where, -1)
+            sum += dsum
+            sum_of_squares += dsum_of_squares
+            N += dn
+        
+        if std:
+            # The increment we apply to the variance includes two terms
+            # involving the "new" values.
+            if N > 0:
+                delta_variance += -(sum / N)**2 + sum_of_squares / N
+            variance += delta_variance
+    
+    return output_mean, output_std
+
+
+@numba.njit(cache=True)
+def _sliding_window_advance(directions, window_bounds, pos, stride, data,
+        check_nans, where, axis):
+    """
+    Utility function to handle advancing our window along a certain axis.
+    Returns increments to the accumulation variables due to the step.
+    """
+    # We need to advance along dimension N
+    # First remove old values. Identify the bounds of the removed region.
+    if directions[axis] > 0:
+        x = window_bounds[axis, 0]
+        x2 = x + stride
+    else:
+        x2 = window_bounds[axis, 1]
+        x = x2 - stride
+    
+    i, i2 = window_bounds[-3, 0], window_bounds[-3, 1]
+    j, j2 = window_bounds[-2, 0], window_bounds[-2, 1]
+    k, k2 = window_bounds[-1, 0], window_bounds[-1, 1]
+    
+    # Assign the removed-region bounds to the appropriate axis
+    if axis == -3:
+        i, i2 = x, x2
+    elif axis == -2:
+        j, j2 = x, x2
+    elif axis == -1:
+        k, k2 = x, x2
+    
+    dsum, dsum_of_squares, dn = _sliding_window_sum_range(
+            data, check_nans, where, i, i2, j, j2, k, k2)
+    
+    sum_update = -dsum
+    sum_of_squares_update = -dsum_of_squares
+    N_update = -dn
+    
+    # Now advance the window. Advance the window by the full stride. It has
+    # already been checked that we can move this far.
+    window_bounds[axis] += directions[axis]
+    # And advance our position in the output arrays by +/- 1
+    pos[axis] += np.sign(directions[axis])
+    
+    # Flip our movement direction for the other dimensions if appropriate.
+    # For the last dimension, this isn't necessary, but for the other
+    # dimensions, we only advance when we've reached the end along the lower
+    # dimensions.
+    if axis != -1:
+        directions[axis+1:] *= -1
+    
+    # Now add the new values. Identify the bounds of the added region.
+    if directions[axis] > 0:
+        x2 = window_bounds[axis, 1]
+        x = x2 - stride
+    else:
+        x = window_bounds[axis, 0]
+        x2 = x + stride
+    
+    i, i2 = window_bounds[-3, 0], window_bounds[-3, 1]
+    j, j2 = window_bounds[-2, 0], window_bounds[-2, 1]
+    k, k2 = window_bounds[-1, 0], window_bounds[-1, 1]
+    
+    # Assign the added-region bounds to the appropriate axis
+    if axis == -3:
+        i, i2 = x, x2
+    elif axis == -2:
+        j, j2 = x, x2
+    elif axis == -1:
+        k, k2 = x, x2
+    
+    dsum, dsum_of_squares, dn = _sliding_window_sum_range(
+            data, check_nans, where, i, i2, j, j2, k, k2)
+    sum_update += dsum
+    sum_of_squares_update += dsum_of_squares
+    N_update += dn
+    
+    return sum_update, sum_of_squares_update, N_update
+
+
+@numba.njit(cache=True)
+def _sliding_window_sum_range(data, check_nans, where, i1, i2, j1, j2, k1, k2):
+    """
+    Utility function to collect all the values within a certain range, handle
+    NaNs and `where`, and returns updates to the accumulation variables.
+    """
+    sum = 0
+    sum_of_squares = 0
+    n = 0
+    for i in range(i1, i2):
+        for j in range(j1, j2):
+            for k in range(k1, k2):
+                if check_nans and np.isnan(data[i, j, k]):
+                    continue
+                if where.size > 1 and not where[i, j, k]:
+                    continue
+                sum_of_squares += data[i, j, k] ** 2
+                sum += data[i, j, k]
+                n += 1
+    return sum, sum_of_squares, n

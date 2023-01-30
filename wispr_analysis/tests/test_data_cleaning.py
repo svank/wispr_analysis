@@ -153,7 +153,7 @@ def test_dust_streak_filter_significance_peak(random_data, headers):
     img2[streak] = larger[streak] + mean[streak] + 2 * std[streak]
     
     # Add one bright peak
-    img2[50, 50] = larger[50, 50] + mean[50, 50] + 5 * std[50, 50]
+    img2[50, 50] = larger[50, 50] + mean[50, 50] + 5.01 * std[50, 50]
     
     filtered, mask = data_cleaning.dust_streak_filter(
             (img1, h1), (img2, h2), (img3, h3), radec=False,
@@ -296,7 +296,7 @@ def test_gen_diffs_distribution(window_width):
     np.testing.assert_equal(mean, expected)
     
     # And that makes the standard deviation constant throughout the image
-    np.testing.assert_equal(std, np.std(np.arange(window_width) - edge))
+    np.testing.assert_allclose(std, np.std(np.arange(window_width) - edge))
     
 
 def test_gen_diffs_distribution_stride():
@@ -322,7 +322,7 @@ def test_gen_diffs_distribution_stride():
     np.testing.assert_equal(mean[1:-1:2, 1:-1:2], expected[1:-1:2, 1:-1:2])
     
     # And that makes the standard deviation constant throughout the image
-    np.testing.assert_equal(std, np.std([-1, 0, 1]))
+    np.testing.assert_allclose(std, np.std([-1, 0, 1]))
     
 
 def test_gen_diffs_distribution_stride_2():
