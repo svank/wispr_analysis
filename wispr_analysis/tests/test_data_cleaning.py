@@ -299,46 +299,6 @@ def test_gen_diffs_distribution(window_width):
     np.testing.assert_allclose(std, np.std(np.arange(window_width) - edge))
     
 
-def test_gen_diffs_distribution_stride():
-    img1 = np.arange(10)
-    img1 = np.vstack([img1] * 10)
-    
-    img3 = np.zeros_like(img1)
-    
-    mean, std = data_cleaning.gen_diffs_distribution(img1, img3,
-            (0, 0, 0, 0), sliding_window_stride=2, window_width=3)
-    
-    # Alternating rows should be equal (and, in fact, all rows should be equal
-    # for this setup)
-    np.testing.assert_equal(mean[::2], mean[1::2])
-    # Outside the padded edges, alternating columns should be equal
-    np.testing.assert_equal(mean[:, 2::2], mean[:, 1:-1:2])
-    
-    # Outside of the edges, the mean differences should be the same as the
-    # input values for every other row, since the averaging will be over
-    # something like (x-1, x, x+1)
-    expected = img1[1:-1, 1:-1]
-    expected = np.pad(expected, 1, mode='edge')
-    np.testing.assert_equal(mean[1:-1:2, 1:-1:2], expected[1:-1:2, 1:-1:2])
-    
-    # And that makes the standard deviation constant throughout the image
-    np.testing.assert_allclose(std, np.std([-1, 0, 1]))
-    
-
-def test_gen_diffs_distribution_stride_2():
-    img1 = np.arange(100).reshape((10, 10))
-    
-    img3 = np.zeros_like(img1)
-    
-    mean, std = data_cleaning.gen_diffs_distribution(img1, img3,
-            (0, 0, 0, 0), sliding_window_stride=2, window_width=3)
-    
-    # Outside the padded edges, alternating rows should be equal
-    np.testing.assert_equal(mean[2::2], mean[1:-1:2])
-    # Outside the padded edges, alternating columns should be equal
-    np.testing.assert_equal(mean[:, 2::2], mean[:, 1:-1:2])
-
-
 def test_find_mask():
     path = os.path.dirname(__file__)
     path = os.path.join(path, 'test_data', 'WISPR_files_headers_only')

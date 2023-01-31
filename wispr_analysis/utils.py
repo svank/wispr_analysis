@@ -366,7 +366,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     sliding_window_stride : int
         Set this to a value N > 1 to compute the sliding window only for every
         N pixels along each dimension. The computed values will then be
-        replicated into the skipped pixels.
+        interpolated into the skipped pixels.
     where : ``ndarray``
         An optinal binary mask indicating which pixels to include in the
         calculations. Cannot be used when calculating medians.
@@ -477,17 +477,35 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
             ))
     
     if sliding_window_stride > 1:
-        # Duplicate rows/columns to account for the stride
-        for i in range(len(outputs)):
-            for j in range(len(data.shape)):
-                outputs[i] = np.repeat(outputs[i], sliding_window_stride,
-                        axis=j)
-            # If the data size wasn't evenly divisible by the stride, we've
-            # expanded it too much. Trim it down to the size it should have.
-            slices = [
-                    slice(data.shape[j] - window_width[j] + 1)
-                    for j in range(len(data.shape))]
-            outputs[i] = outputs[i][tuple(slices)]
+        # Fill in the skipped rows/columns
+        full_outputs = []
+        # Get the coordinates of the computed rows/columns in the input array
+        strided_coords = tuple(
+                np.arange(
+                    0,
+                    data_trimmed.shape[i] - window_width[i] + 1,
+                    sliding_window_stride)
+                for i in range(data.ndim))
+        
+        # Get the coordinates in the input array of all the pixels that should
+        # be computed (including those that we're about to fill in)
+        coords = [np.arange(sc[-1]+1, dtype=np.uint32) for sc in strided_coords]
+        # Pad out at the end of each dimension, where we can't interpolate, so
+        # the right number of pixels come out.
+        for i in range(data.ndim):
+            target_size = data_trimmed.shape[i] - window_width[i] + 1
+            if coords[i].size < target_size:
+                coords[i] = np.concatenate(
+                    [coords[i]] + [coords[i][-1:]] * (target_size - coords[i].size))
+        
+        coords = np.meshgrid(*coords, indexing='ij')
+        coords = np.stack(coords, axis=-1)
+        
+        for j, output in enumerate(outputs):
+            # Interpolate to get the missing pixels. (The actually-computed
+            # pixels appear to be returned unmodified.)
+            outputs[j] = scipy.interpolate.interpn(strided_coords, output, coords,
+                    method='linear', bounds_error=True)
     
     # Pad the edges, since the sliding window can't go all the way to the edge.
     padding = []
