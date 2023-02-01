@@ -410,6 +410,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         if trim[2*i] + trim[2*i+1] + window_width[i] > data.shape[i]:
             raise ValueError(f"Trim and window do not fit along dimension {i}")
     
+    # Impose the `trim` parameter
     cut = []
     for i in range(len(data.shape)):
         cut.append(slice(trim[2*i], data.shape[i] - trim[2*i + 1]))
@@ -417,9 +418,24 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     if where is not None:
         where_trimmed = where[tuple(cut)]
     
+    # For an (x, y) input array with window sizes (wx, wy), this produces a
+    # view (ox, oy, wx, wy), where for any valid coordinate (ox, oy) in the
+    # output array, the last two dimensions will span the portion of the input
+    # array that corresponds to the window position for this output pixel.
     sliding_window = np.lib.stride_tricks.sliding_window_view(
             data_trimmed, window_width)
-    cut = [slice(None, None, sliding_window_stride)] * len(data.shape)
+    
+    # Impose the window stride, if any. Note that for a stride of N, we want to
+    # sample every Nth point starting at N/2---not at zero---so that when we
+    # fill in the skipped values, the computed values are centered in their
+    # replication region.
+    cut = []
+    start_coords = []
+    for i in range(data.ndim):
+        start = min((
+            sliding_window_stride - 1) // 2, data_trimmed.shape[i] // 2)
+        start_coords.append(start)
+        cut.append(slice(start, None, sliding_window_stride))
     sliding_window = sliding_window[tuple(cut)]
     if where is not None:
         sliding_where = np.lib.stride_tricks.sliding_window_view(
@@ -441,6 +457,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         # to adjust some arguments to make it work.
         d = data_trimmed
         ww = np.asarray(window_width).copy()
+        sc = np.array(start_coords)
         if where is None:
             # The optimized function requires a one-element array when there's
             # no actual 'where' array
@@ -452,10 +469,11 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
             d = np.expand_dims(d, 0)
             w = np.expand_dims(w, 0)
             ww = np.insert(ww, 0, 1)
+            sc = np.insert(sc, 0, 0)
         
         means, stds = _sliding_window_mean_std_optimized(
                 d, ww, 'mean' in stats, 'std' in stats,
-                w, check_nans, sliding_window_stride)
+                w, check_nans, sliding_window_stride, sc)
         if 'mean' in stats:
             while means.ndim > data.ndim:
                 means = means[0]
@@ -477,7 +495,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
             # In the sliding window, the first N dimensions are the dimensions
             # of the input array, and the second N dimensions are the
             # dimensions of the window. E.g. for a 5x5 window over a 25x25
-            # array, the sliding window ix 23x23x5x5.
+            # array, the sliding window ix 21x21x5x5.
             kwargs = {}
             if stat != 'median':
                 kwargs['where'] = sliding_where
@@ -500,24 +518,29 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
                         for j in range(len(data.shape))]
                 outputs[i] = outputs[i][tuple(slices)]
         elif 'interp' in stride_fill.lower():
-            # Get the coordinates of the computed rows/columns in the input array
+            # Get the coordinates of the computed rows/columns in the input
+            # array
             strided_coords = tuple(
                     np.arange(
-                        0,
+                        start_coords[i],
                         data_trimmed.shape[i] - window_width[i] + 1,
                         sliding_window_stride)
                     for i in range(data.ndim))
             
-            # Get the coordinates in the input array of all the pixels that should
-            # be computed (including those that we're about to fill in)
-            coords = [np.arange(sc[-1]+1, dtype=np.uint32) for sc in strided_coords]
-            # Pad out at the end of each dimension, where we can't interpolate, so
+            # Get the coordinates in the input array of all the pixels that
+            # should be computed (including those that we're about to fill in)
+            coords = [np.arange(sc[0], sc[-1]+1, dtype=np.uint32)
+                    for sc in strided_coords]
+            # Pad out each dimension, where we can't interpolate, so
             # the right number of pixels come out.
             for i in range(data.ndim):
                 target_size = data_trimmed.shape[i] - window_width[i] + 1
                 if coords[i].size < target_size:
+                    n_to_add = target_size - coords[i].size - coords[i][0]
                     coords[i] = np.concatenate(
-                        [coords[i]] + [coords[i][-1:]] * (target_size - coords[i].size))
+                            [coords[i][:1]] * coords[i][0]
+                            + [coords[i]]
+                            + [coords[i][-1:]] * n_to_add)
             
             coords = np.meshgrid(*coords, indexing='ij')
             coords = np.stack(coords, axis=-1)
@@ -525,8 +548,8 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
             for j, output in enumerate(outputs):
                 # Interpolate to get the missing pixels. (The actually-computed
                 # pixels appear to be returned unmodified.)
-                outputs[j] = scipy.interpolate.interpn(strided_coords, output, coords,
-                        method='linear', bounds_error=True)
+                outputs[j] = scipy.interpolate.interpn(strided_coords, output,
+                        coords, method='linear', bounds_error=True)
         else:
             raise ValueError(f"Invalid value {stride_fill} for 'stride_fill'")
     
@@ -546,7 +569,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
 
 @numba.njit(cache=True)
 def _sliding_window_mean_std_optimized(data, window_width, mean, std, where,
-        check_nans, stride):
+        check_nans, stride, start_coords):
     """
     Computes the mean and/or standard deviation in a rolling window.
     
@@ -586,11 +609,16 @@ def _sliding_window_mean_std_optimized(data, window_width, mean, std, where,
     Thus, if we track the variance and the sum-of-squares in our window, we can
     incrementally update the variance as we move the window.
     """
-    
+    # For each dimension, find the number of valid sliding window positions
     out_shape = (
-            int(np.ceil((data.shape[0] - window_width[0] + 1) / stride)),
-            int(np.ceil((data.shape[1] - window_width[1] + 1) / stride)),
-            int(np.ceil((data.shape[2] - window_width[2] + 1) / stride)))
+            int(np.ceil((data.shape[0] - window_width[0] + 1 - start_coords[0])
+                / stride)),
+            int(np.ceil((data.shape[1] - window_width[1] + 1 - start_coords[1])
+                / stride)),
+            int(np.ceil((data.shape[2] - window_width[2] + 1 - start_coords[2])
+                / stride)))
+    # If we have a size-one dimension, ensure we keep size 1 in the output
+    # (important if we're striding)
     out_shape = (
             max(1, out_shape[0]),
             max(1, out_shape[1]),
@@ -599,10 +627,12 @@ def _sliding_window_mean_std_optimized(data, window_width, mean, std, where,
     output_std = np.empty(out_shape, dtype=np.float64) if std else None
 
     directions = np.full(3, stride, dtype=np.int64)
+    # This marks the location in the output arary we should store stats
     pos = np.array((0, 0, 0))
+    # This marks the corresponding location of the window in the data array
     window_bounds = np.empty((3, 2), dtype=np.int64)
-    window_bounds[:, 0] = 0
-    window_bounds[:, 1] = window_width
+    window_bounds[:, 0] = start_coords
+    window_bounds[:, 1] = start_coords + window_width
     
     # Accumulate all the valid points in the starting window.
     # Note this is more than just filling the accumulation variables---we're

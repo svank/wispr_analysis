@@ -548,15 +548,16 @@ def test_sliding_window_stride_3(stat, fill):
     out2 = out2[2:-2, 2:-2]
     
     # Check that the computed pixels are the same
-    np.testing.assert_allclose(out[::3, ::3], out2[::3, ::3])
+    np.testing.assert_allclose(out[1::3, 1::3], out2[1::3, 1::3])
     
     if fill == 'interp':
-        # Check that the final, duplicated rows are right, and then remove them
-        np.testing.assert_array_equal(out2[-1], out2[-2])
-        np.testing.assert_array_equal(out2[:, -1], out2[:, -3])
-        np.testing.assert_array_equal(out2[:, -2], out2[:, -3])
-        out = out[:-1, :-2]
-        out2 = out2[:-1, :-2]
+        # Check that the initial/final duplicated rows are right, and then
+        # remove them
+        np.testing.assert_array_equal(out2[0], out2[1])
+        np.testing.assert_array_equal(out2[:, -1], out2[:, -2])
+        np.testing.assert_array_equal(out2[:, 0], out2[:, 1])
+        out = out[1:, 1:-1]
+        out2 = out2[1:, 1:-1]
         
         # Check that the interpolated pixels are interpolated (making sure that
         # for each dimension, we check only those pixels interpolated along
@@ -720,3 +721,25 @@ def test_sliding_window_empty_strips(stat):
             else:
                 assert out[i, j] == pytest.approx(fcn(data[i-2:i+3, j-2:j+3]))
 
+
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+@pytest.mark.parametrize('stride', [1, 2, 3, 4, 5])
+def test_sliding_window_validity(stat, stride):
+    """Manually check that each value we get out is correct"""
+    np.random.seed(2)
+    data = np.random.random((30, 31))
+    
+    out = utils.sliding_window_stats(data, 5, stat, check_nans=False,
+            sliding_window_stride=stride, stride_fill='interp')
+    
+    if stat == 'mean':
+        fcn = np.mean
+    elif stat == 'std':
+        fcn = np.std
+    elif stat == 'median':
+        fcn = np.median
+    
+    stride_offset = int((stride - 1) // 2)
+    for i in range(2 + stride_offset, data.shape[0]-2, stride):
+        for j in range(2 + stride_offset, data.shape[1]-2, stride):
+            assert out[i, j] == pytest.approx(fcn(data[i-2:i+3, j-2:j+3]))
