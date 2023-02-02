@@ -631,6 +631,115 @@ def test_sliding_window_stride_5(stat):
 
 
 @pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+@pytest.mark.parametrize('fill', ['repeat', 'interp'])
+def test_sliding_window_stride_partial(stat, fill):
+    """ Only stride in one dimension """
+    np.random.seed(4321)
+    data = np.random.random((30, 31))
+    
+    out = utils.sliding_window_stats(data, 5, stat)
+    out2 = utils.sliding_window_stats(data, 5, stat,
+            sliding_window_stride=(2, 0), stride_fill=fill)
+    
+    assert out.shape == out2.shape
+    
+    # Check the padded columns
+    for arr in out, out2:
+        np.testing.assert_array_equal(arr[0], arr[2])
+        np.testing.assert_array_equal(arr[1], arr[2])
+        np.testing.assert_array_equal(arr[-2], arr[-3])
+        np.testing.assert_array_equal(arr[-1], arr[-3])
+        np.testing.assert_array_equal(arr[:, 0], arr[:, 2])
+        np.testing.assert_array_equal(arr[:, 1], arr[:, 2])
+        np.testing.assert_array_equal(arr[:, -2], arr[:, -3])
+        np.testing.assert_array_equal(arr[:, -1], arr[:, -3])
+    
+    # Trim off the padded columns
+    out = out[2:-2, 2:-2]
+    out2 = out2[2:-2, 2:-2]
+    
+    # Check that the computed pixels are the same
+    np.testing.assert_allclose(out[::2], out2[::2])
+    
+    if fill == 'interp':
+        # Check that the initial/final duplicated rows are right, and then
+        # remove them
+        np.testing.assert_array_equal(out2[-1], out2[-2])
+        out = out[:-1]
+        out2 = out2[:-1]
+        
+        # Check that the interpolated pixels are interpolated (making sure that
+        # for each dimension, we check only those pixels interpolated along
+        # that dimension)
+        np.testing.assert_allclose(
+                (out[:-2:2] + out[2::2]) / 2,
+                out2[1:-1:2])
+    else:
+        # Check that the repeat data is right
+        np.testing.assert_array_equal(out2[::2], out2[1::2])
+
+
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+@pytest.mark.parametrize('fill', ['repeat', 'interp'])
+def test_sliding_window_stride_varied(stat, fill):
+    """ Different strides in each dimension """
+    np.random.seed(4321)
+    data = np.random.random((30, 31))
+    
+    out = utils.sliding_window_stats(data, 5, stat)
+    out2 = utils.sliding_window_stats(data, 5, stat,
+            sliding_window_stride=(2, 3), stride_fill=fill)
+    
+    assert out.shape == out2.shape
+    
+    # Check the padded columns
+    for arr in out, out2:
+        np.testing.assert_array_equal(arr[0], arr[2])
+        np.testing.assert_array_equal(arr[1], arr[2])
+        np.testing.assert_array_equal(arr[-2], arr[-3])
+        np.testing.assert_array_equal(arr[-1], arr[-3])
+        np.testing.assert_array_equal(arr[:, 0], arr[:, 2])
+        np.testing.assert_array_equal(arr[:, 1], arr[:, 2])
+        np.testing.assert_array_equal(arr[:, -2], arr[:, -3])
+        np.testing.assert_array_equal(arr[:, -1], arr[:, -3])
+    
+    # Trim off the padded columns
+    out = out[2:-2, 2:-2]
+    out2 = out2[2:-2, 2:-2]
+    
+    # Check that the computed pixels are the same
+    np.testing.assert_allclose(out[::2, 1::3], out2[::2, 1::3])
+    
+    if fill == 'interp':
+        # Check that the initial/final duplicated rows are right, and then
+        # remove them
+        np.testing.assert_array_equal(out2[-1], out2[-2])
+        np.testing.assert_array_equal(out2[:, -1], out2[:, -2])
+        np.testing.assert_array_equal(out2[:, 0], out2[:, 1])
+        out = out[:-1, 1:-1]
+        out2 = out2[:-1, 1:-1]
+        
+        # Check that the interpolated pixels are interpolated (making sure that
+        # for each dimension, we check only those pixels interpolated along
+        # that dimension)
+        np.testing.assert_allclose(
+                (out[:-2:2, ::3] + out[2::2, ::3]) / 2,
+                out2[1:-1:2, ::3])
+        
+        np.testing.assert_allclose(
+                (2/3*out[::2, :-3:3] + 1/3*out[::2, 3::3]),
+                out2[::2, 1:-1:3])
+        np.testing.assert_allclose(
+                (1/3*out[::2, :-3:3] + 2/3*out[::2, 3::3]),
+                out2[::2, 2:-1:3])
+    else:
+        # Check that the repeat data is right
+        np.testing.assert_array_equal(out2[::2], out2[1::2])
+        np.testing.assert_array_equal(out2[:, ::3], out2[:, 1::3])
+        np.testing.assert_array_equal(out2[:, ::3], out2[:, 2::3])
+
+
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
 def test_sliding_window_nans(stat):
     data = np.ones((15, 15))
     data[2, 2] = np.nan

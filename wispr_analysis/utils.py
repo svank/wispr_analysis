@@ -352,7 +352,8 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     data : ``ndarray``
         The input array. Can have any dimensionality.
     window_width : int or tuple
-        The size of the sliding window. If an integer, is applied to all axes.
+        The size of the sliding window. If an integer, it is applied to all
+        axes.
     stats : str or list of str
         The statistics to compute. Multiple stats can be specified. Supported
         options are 'mean', 'std', and 'median'. For each, ``NaN`` values within
@@ -364,10 +365,11 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         pixels will be replicated that many additional times so the output and
         input arrays have the same shape. The order is
         ``(begin1, end1, begin2, end2, ...)``.
-    sliding_window_stride : int
+    sliding_window_stride : int or tuple
         Set this to a value N > 1 to compute the sliding window only for every
         N pixels along each dimension. The computed values will then be
-        interpolated into the skipped pixels.
+        interpolated into the skipped pixels. If an integer, it is applied to
+        all axes.
     where : ``ndarray``
         An optinal binary mask indicating which pixels to include in the
         calculations. Cannot be used when calculating medians.
@@ -401,10 +403,17 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         stats = [stats]
     
     if trim is None:
-        trim = [0, 0] * len(data.shape)
+        trim = [0, 0] * data.ndim
     
     if type(window_width) is int:
-        window_width = [window_width] * len(data.shape)
+        window_width = [window_width] * data.ndim
+    
+    if type(sliding_window_stride) is int:
+        sliding_window_stride = np.full(
+                data.ndim, sliding_window_stride, dtype=int)
+    else:
+        sliding_window_stride = np.asarray(sliding_window_stride, dtype=int)
+    sliding_window_stride[sliding_window_stride < 1] = 1
     
     for i in range(len(data.shape)):
         if trim[2*i] + trim[2*i+1] + window_width[i] > data.shape[i]:
@@ -433,9 +442,9 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     start_coords = []
     for i in range(data.ndim):
         start = min((
-            sliding_window_stride - 1) // 2, data_trimmed.shape[i] // 2)
+            sliding_window_stride[i] - 1) // 2, data_trimmed.shape[i] // 2)
         start_coords.append(start)
-        cut.append(slice(start, None, sliding_window_stride))
+        cut.append(slice(start, None, sliding_window_stride[i]))
     sliding_window = sliding_window[tuple(cut)]
     if where is not None:
         sliding_where = np.lib.stride_tricks.sliding_window_view(
@@ -458,6 +467,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         d = data_trimmed
         ww = np.asarray(window_width).copy()
         sc = np.array(start_coords)
+        st = sliding_window_stride.copy()
         if where is None:
             # The optimized function requires a one-element array when there's
             # no actual 'where' array
@@ -470,10 +480,11 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
             w = np.expand_dims(w, 0)
             ww = np.insert(ww, 0, 1)
             sc = np.insert(sc, 0, 0)
+            st = np.insert(st, 0, 1)
         
         means, stds = _sliding_window_mean_std_optimized(
                 d, ww, 'mean' in stats, 'std' in stats,
-                w, check_nans, sliding_window_stride, sc)
+                w, check_nans, st, sc)
         if 'mean' in stats:
             while means.ndim > data.ndim:
                 means = means[0]
@@ -504,13 +515,15 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
                 **kwargs
             ))
     
-    if sliding_window_stride > 1:
+    if np.any(sliding_window_stride > 1):
         # Fill in the skipped rows/columns
         if stride_fill.lower() == 'repeat':
             for i in range(len(outputs)):
                 for j in range(len(data.shape)):
+                    if sliding_window_stride[j] == 1:
+                        continue
                     repeats = np.full(
-                            outputs[i].shape[j], sliding_window_stride)
+                            outputs[i].shape[j], sliding_window_stride[j])
                     # The last few rows/columns that we're supposed to create
                     # may be in the zone of influence centered on a spot that
                     # doesn't exist, so we need to repeat the last computed
@@ -518,7 +531,8 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
                     # repeating the last element too many times, and this will
                     # clamp that down.
                     repeats[-1] = (data_trimmed.shape[j] - window_width[j] + 1
-                            - (outputs[i].shape[j] - 1) * sliding_window_stride)
+                            - (outputs[i].shape[j] - 1)
+                                * sliding_window_stride[j])
                     outputs[i] = np.repeat(outputs[i], repeats,
                             axis=j)
         elif 'interp' in stride_fill.lower():
@@ -528,7 +542,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
                     np.arange(
                         start_coords[i],
                         data_trimmed.shape[i] - window_width[i] + 1,
-                        sliding_window_stride)
+                        sliding_window_stride[i])
                     for i in range(data.ndim))
             
             # Get the coordinates in the input array of all the pixels that
@@ -616,11 +630,11 @@ def _sliding_window_mean_std_optimized(data, window_width, mean, std, where,
     # For each dimension, find the number of valid sliding window positions
     out_shape = (
             int(np.ceil((data.shape[0] - window_width[0] + 1 - start_coords[0])
-                / stride)),
+                / stride[0])),
             int(np.ceil((data.shape[1] - window_width[1] + 1 - start_coords[1])
-                / stride)),
+                / stride[1])),
             int(np.ceil((data.shape[2] - window_width[2] + 1 - start_coords[2])
-                / stride)))
+                / stride[2])))
     # If we have a size-one dimension, ensure we keep size 1 in the output
     # (important if we're striding)
     out_shape = (
@@ -630,7 +644,7 @@ def _sliding_window_mean_std_optimized(data, window_width, mean, std, where,
     output_mean = np.empty(out_shape, dtype=np.float64) if mean else None
     output_std = np.empty(out_shape, dtype=np.float64) if std else None
 
-    directions = np.full(3, stride, dtype=np.int64)
+    directions = stride.copy()
     # This marks the location in the output arary we should store stats
     pos = np.array((0, 0, 0))
     # This marks the corresponding location of the window in the data array
@@ -738,10 +752,10 @@ def _sliding_window_advance(directions, window_bounds, pos, stride, data,
     # First remove old values. Identify the bounds of the removed region.
     if directions[axis] > 0:
         x = window_bounds[axis, 0]
-        x2 = x + stride
+        x2 = x + stride[axis]
     else:
         x2 = window_bounds[axis, 1]
-        x = x2 - stride
+        x = x2 - stride[axis]
     
     i, i2 = window_bounds[-3, 0], window_bounds[-3, 1]
     j, j2 = window_bounds[-2, 0], window_bounds[-2, 1]
@@ -778,10 +792,10 @@ def _sliding_window_advance(directions, window_bounds, pos, stride, data,
     # Now add the new values. Identify the bounds of the added region.
     if directions[axis] > 0:
         x2 = window_bounds[axis, 1]
-        x = x2 - stride
+        x = x2 - stride[axis]
     else:
         x = window_bounds[axis, 0]
-        x2 = x + stride
+        x2 = x + stride[axis]
     
     i, i2 = window_bounds[-3, 0], window_bounds[-3, 1]
     j, j2 = window_bounds[-2, 0], window_bounds[-2, 1]
