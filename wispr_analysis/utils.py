@@ -509,14 +509,18 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         if stride_fill.lower() == 'repeat':
             for i in range(len(outputs)):
                 for j in range(len(data.shape)):
-                    outputs[i] = np.repeat(outputs[i], sliding_window_stride,
+                    repeats = np.full(
+                            outputs[i].shape[j], sliding_window_stride)
+                    # The last few rows/columns that we're supposed to create
+                    # may be in the zone of influence centered on a spot that
+                    # doesn't exist, so we need to repeat the last computed
+                    # element a few more times. Alternatively, we may end up
+                    # repeating the last element too many times, and this will
+                    # clamp that down.
+                    repeats[-1] = (data_trimmed.shape[j] - window_width[j] + 1
+                            - (outputs[i].shape[j] - 1) * sliding_window_stride)
+                    outputs[i] = np.repeat(outputs[i], repeats,
                             axis=j)
-                # If the data size wasn't evenly divisible by the stride, we've
-                # expanded it too much. Trim it down to the size it should have.
-                slices = [
-                        slice(data.shape[j] - window_width[j] + 1)
-                        for j in range(len(data.shape))]
-                outputs[i] = outputs[i][tuple(slices)]
         elif 'interp' in stride_fill.lower():
             # Get the coordinates of the computed rows/columns in the input
             # array

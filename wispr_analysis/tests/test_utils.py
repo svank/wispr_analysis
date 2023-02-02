@@ -583,6 +583,54 @@ def test_sliding_window_stride_3(stat, fill):
 
 
 @pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
+def test_sliding_window_stride_5(stat):
+    """
+    Regression test---sometimes the duplicated values were offset from where
+    they should be, depending on the stride size and data array size. Wasn't
+    ever visible with a stride of <= 3
+    """
+    np.random.seed(4321)
+    data = np.random.random((30, 31))
+    
+    out = utils.sliding_window_stats(data, 5, stat)
+    out2 = utils.sliding_window_stats(data, 5, stat,
+            sliding_window_stride=5, stride_fill='repeat')
+    
+    assert out.shape == out2.shape
+    
+    # Check the padded columns
+    for arr in out, out2:
+        for i in range(2):
+            np.testing.assert_array_equal(arr[i], arr[2])
+            np.testing.assert_array_equal(arr[-i-1], arr[-3])
+            np.testing.assert_array_equal(arr[:, i], arr[:, 2])
+            np.testing.assert_array_equal(arr[:, -i-1], arr[:, -3])
+    
+    # Trim off the padded columns
+    out = out[2:-2, 2:-2]
+    out2 = out2[2:-2, 2:-2]
+    
+    # Check that the computed pixels are the same
+    np.testing.assert_allclose(out[2::5, 2::5], out2[2::5, 2::5])
+    
+    # There should be a few extra repeated rows/columns at the end
+    np.testing.assert_array_equal(out2[-1], out2[-2])
+    out = out[:-1]
+    out2 = out2[:-1]
+    np.testing.assert_array_equal(out2[:, -2], out2[:, -3])
+    np.testing.assert_array_equal(out2[:, -1], out2[:, -3])
+    out = out[:, :-2]
+    out2 = out2[:, :-2]
+    
+    # Check that the repeated values are right
+    for i in [1, 2]:
+        np.testing.assert_array_equal(out2[2 - i::5], out2[2::5])
+        np.testing.assert_array_equal(out2[2 + i::5], out2[2::5])
+        np.testing.assert_array_equal(out2[:, 2 - i::5], out2[:, 2::5])
+        np.testing.assert_array_equal(out2[:, 2 + i::5], out2[:, 2::5])
+
+
+@pytest.mark.parametrize('stat', ['mean', 'std', 'median'])
 def test_sliding_window_nans(stat):
     data = np.ones((15, 15))
     data[2, 2] = np.nan
