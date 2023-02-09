@@ -11,6 +11,10 @@ Contents
 .. automodapi:: wispr_analysis.composites
    :no-inheritance-diagram:
 
+.. automodapi:: wispr_analysis.data_wrangling
+   :no-inheritance-diagram:
+   :skip: process_map
+  
 .. automodapi:: wispr_analysis.data_cleaning
    :no-inheritance-diagram:
    :skip: ceil
