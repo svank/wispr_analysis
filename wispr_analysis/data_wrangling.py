@@ -157,6 +157,8 @@ def collect_region_all_frames(coord, data_dir, r=5, target_wcs=None,
             if x is not None]
     else:
         data = [x for x in map(_extract_from_frame, iterable) if x is not None]
+    if len(data) == 0:
+        return None, None, None, None
     data, fnames, ts, px_coords = zip(*data)
     data = np.stack(data)
     return data, fnames, ts, px_coords
