@@ -728,16 +728,16 @@ def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
 
 
 def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
-                                    also_shear=False, n_extra_params=0):
-    os.makedirs(out_dir, exist_ok=True)
-    
+                                    also_shear=False, n_extra_params=0,
+                                    do_print=True):
     wcses = []
     all_ras = []
     all_decs = []
     all_xs_true = []
     all_ys_true = []
     
-    print("Reading files...")
+    if do_print:
+        print("Reading files...")
     with utils.ignore_fits_warnings():
         for fname in file_list:
             t = utils.to_timestamp(fname)
@@ -751,11 +751,14 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
                       f"{fname}---skipping")
                 continue
 
-            ras, decs, xs, ys, _ = zip(*series_data)
-            xs = np.array(xs)
-            ys = np.array(ys)
+            if len(series_data[0]) == 4:
+                ras, decs, xs, ys = zip(*series_data)
+            else:
+                ras, decs, xs, ys, _ = zip(*series_data)
             ras = np.array(ras)
             decs = np.array(decs)
+            xs = np.array(xs)
+            ys = np.array(ys)
 
             xs_comp, ys_comp = np.array(wcs.all_world2pix(ras, decs, 0))
             dx = xs_comp - xs
@@ -782,7 +785,8 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
             
             wcses.append(wcs)
     
-    print("Doing iteration...")
+    if do_print:
+        print("Doing iteration...")
     pv_orig = wcses[0].wcs.get_pv()
     def f(pv_perts):
         if also_shear:
@@ -831,7 +835,6 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
     else:
         shear_x, shear_y = 0, 0
     
-    print("Writing out updated files...")
     with utils.ignore_fits_warnings():
         header = fits.getheader(file_list[0])
     
@@ -844,20 +847,25 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
             else:
                 update_dict[key] = pert
     
-    with utils.ignore_fits_warnings():
-        for fname in file_list:
-            with fits.open(fname) as hdul:
-                hdul[0].header.update(update_dict)
-                if also_shear:
-                    for wcs_key in ('A', ' '):
-                        w = WCS(hdul[0].header, key=wcs_key)
-                        w.wcs.pc = shear @ w.wcs.pc
-                        update = w.to_header(key=wcs_key)
-                        for k in update:
-                            if k.startswith("PC"):
-                                hdul[0].header[k] = update[k]
-                hdul.writeto(os.path.join(out_dir, os.path.basename(fname)),
-                             overwrite=True)
+    if out_dir is not None:
+        if do_print:
+            print("Writing out updated files...")
+        os.makedirs(out_dir, exist_ok=True)
+        with utils.ignore_fits_warnings():
+            for fname in file_list:
+                with fits.open(fname) as hdul:
+                    hdul[0].header.update(update_dict)
+                    if also_shear:
+                        for wcs_key in ('A', ' '):
+                            w = WCS(hdul[0].header, key=wcs_key)
+                            w.wcs.pc = shear @ w.wcs.pc
+                            update = w.to_header(key=wcs_key)
+                            for k in update:
+                                if k.startswith("PC"):
+                                    hdul[0].header[k] = update[k]
+                    hdul.writeto(os.path.join(out_dir,
+                                 os.path.basename(fname)),
+                                 overwrite=True)
     return update_dict, pv_orig, shear_x, shear_y
 
 
