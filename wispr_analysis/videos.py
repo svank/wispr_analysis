@@ -24,6 +24,7 @@ from tqdm.contrib.concurrent import process_map
 
 from . import composites
 from . import data_cleaning
+from . import planets
 from . import plot_utils
 from . import projections
 from . import utils
@@ -35,7 +36,8 @@ cmap.set_bad('black')
 
 def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
-        remove_debris=True, overlay_celest=False, save_location=None):
+        remove_debris=True, overlay_celest=False, save_location=None,
+        mark_planets=False):
     """
     Renders a video of a WISPR data sequence, in a composite field of view.
     
@@ -84,7 +86,14 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     save_location : str
         If given, a file path at which to save the video. Otherwise, it is
         displayed in the Jupyter environment.
+    mark_planets : boolean
+        Whether to label planets in the field of view. Requires SPICE kernels
+        to be loadable. Call `planets.load_kernels` to provide a location for
+        the kernels.
     """
+    if mark_planets:
+        # Is a no-op if kernels are already loaded
+        planets.load_kernels()
     i_files, o_files = utils.collect_files(
             data_dir, separate_detectors=True, include_sortkey=True,
             include_headers=True, between=between)
@@ -181,7 +190,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                     path_times=path_times, ifile=None, next_ifile=None,
                     prev_ifile=None, ihdr=None, ofile=None, next_ofile=None,
                     prev_ofile=None, ohdr=None, fallback_ifile=i_files[0][1],
-                    fallback_ofile=o_files[0][1])
+                    fallback_ofile=o_files[0][1], mark_planets=mark_planets)
                 if i is not None:
                     args['ifile'] = i_files[i][1]
                     if 0 < i < len(i_files) - 1:
@@ -245,6 +254,7 @@ def draw_WISPR_video_frame(data):
     else:
         input_o = data['ofile']
     
+    image_trim = [[20, 25, 1, 1], [33, 40, 42, 39]]
     c, wcs_plot = composites.gen_composite(
         # Even if we're blanking one of the images, a header is still
         # needed (for now...)
@@ -252,7 +262,8 @@ def draw_WISPR_video_frame(data):
         input_o if input_o is not None else data['fallback_ofile'],
         bounds=data['bounds'],
         wcsh=data['wcsh'], naxis1=data['naxis1'], naxis2=data['naxis2'],
-        blank_i=(input_i is None), blank_o=(input_o is None))
+        blank_i=(input_i is None), blank_o=(input_o is None),
+        image_trim=image_trim)
     
     if data['overlay_celest']:
         # Determine which input image is closest in time
@@ -270,6 +281,24 @@ def draw_WISPR_video_frame(data):
             hdr = data['ohdr']
         wcs_ra = projections.produce_radec_for_hp_wcs(wcs_plot, ref_hdr=hdr)
     
+    if data['mark_planets']:
+        with utils.ignore_fits_warnings():
+            if data['ihdr'] is not None:
+                planet_poses_i = planets.locate_planets(data['ihdr'])
+                wcs_i = WCS(data['ihdr'])
+                wcs_i = wcs_i[
+                        image_trim[0][2]:-image_trim[0][3],
+                        image_trim[0][0]:-image_trim[0][1]]
+            else:
+                planet_poses_i = [None] * 8
+            if data['ohdr'] is not None:
+                planet_poses_o = planets.locate_planets(data['ohdr'])
+                wcs_o = WCS(data['ohdr'])
+                wcs_o = wcs_o[
+                        image_trim[1][2]:-image_trim[1][3],
+                        image_trim[1][0]:-image_trim[1][1]]
+            else:
+                planet_poses_o = [None] * 8
     with matplotlib.style.context('dark_background'):
         for t in data['timesteps']:
             fig = matplotlib.figure.Figure(
@@ -310,8 +339,36 @@ def draw_WISPR_video_frame(data):
                     left=0.05, right=0.95)
             
             ax_orbit = fig.add_axes((.13, .13, .12, .12))
-            draw_overhead_map(ax_orbit, t, data['path_positions'], data['path_times'])
+            draw_overhead_map(ax_orbit, t, data['path_positions'],
+                    data['path_times'])
             
+            if data['mark_planets']:
+                for planet_name, pos_i, pos_o in zip(
+                        planets.planets, planet_poses_i, planet_poses_o):
+                    if pos_i is None:
+                        xi, yi = -1, -1
+                    else:
+                        xi, yi = wcs_i.world_to_pixel(pos_i)
+                    if pos_o is None:
+                        xo, yo = -1, -1
+                    else:
+                        xo, yo = wcs_o.world_to_pixel(pos_o)
+                    pos = None
+                    if (0 < xi < wcs_i.pixel_shape[0]
+                            and 0 < yi < wcs_i.pixel_shape[1]):
+                        pos = pos_i
+                    elif (0 < xo < wcs_o.pixel_shape[0]
+                            and 0 < yo < wcs_o.pixel_shape[1]):
+                        pos = pos_o
+                    if pos is not None:
+                        x, y = wcs_plot.world_to_pixel(pos)
+                        # Just in case the composite is being cut off
+                        if 0 < x < c.shape[1] and 0 < y < c.shape[0]:
+                            ax.annotate(planet_name, (x+7, y),
+                                    (x+60, y+10), color='.9',
+                                    arrowprops=dict(
+                                        edgecolor='.7', arrowstyle='->'))
+
             fig.savefig(f"{data['tmpdir']}/{t:035.20f}.png")
 
 
