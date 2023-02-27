@@ -36,8 +36,8 @@ cmap.set_bad('black')
 
 def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
-        remove_debris=True, overlay_celest=False, save_location=None,
-        mark_planets=False):
+        remove_debris=True, overlay_coords=True, overlay_celest=False,
+        save_location=None, mark_planets=False, align=True):
     """
     Renders a video of a WISPR data sequence, in a composite field of view.
     
@@ -76,11 +76,14 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     vmin, vmax : float
         Colorbar ranges can be set explicitly to override the defaults
     duration : float
-        Duration of the output video in seconds
+        Duration of the output video in seconds. If None, each (inner-FOV)
+        frame is shown for an equal amount of time.
     fps : float
         Number of frames per second in the video
     remove_debris : boolean
         Whether to enable the debris streak removal algorithm
+    overlay_coords : boolean
+        Whether to show a helioprojective coordinate grid
     overlay_celest : boolean
         Whether to show an RA/Dec grid as well as an HP grid
     save_location : str
@@ -90,13 +93,21 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         Whether to label planets in the field of view. Requires SPICE kernels
         to be loadable. Call `planets.load_kernels` to provide a location for
         the kernels.
+    align : boolean
+        Whether to reproject the images into a common frame. If False, it is
+        assumed that all images are from the same detector.
     """
     if mark_planets:
         # Is a no-op if kernels are already loaded
         planets.load_kernels()
-    i_files, o_files = utils.collect_files(
-            data_dir, separate_detectors=True, include_sortkey=True,
+    files = utils.collect_files(
+            data_dir, separate_detectors=align, include_sortkey=True,
             include_headers=True, between=between)
+    if align:
+        i_files, o_files = files
+    else:
+        i_files = files
+        o_files = []
     i_files = [(utils.to_timestamp(f[0]), f[1], f[2]) for f in i_files]
     o_files = [(utils.to_timestamp(f[0]), f[1], f[2]) for f in o_files]
     i_tstamps = [f[0] for f in i_files]
@@ -105,8 +116,15 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     
     # Do this before setting the time range, so the full s/c trajectory is
     # visible in the inset plot
-    path_times, path_positions, _ = utils.get_PSP_path_from_headers(
-                    [v[-1] for v in sorted(itertools.chain(i_files, o_files))])
+    try:
+        path_times, path_positions, _ = utils.get_PSP_path_from_headers(
+                [v[-1] for v in sorted(itertools.chain(i_files, o_files))])
+    except KeyError as e:
+        if "Keyword 'DATE-AVG' not found" in str(e):
+            warnings.warn("Could not load orbital path")
+            path_times, path_positions = None, None
+        else:
+            raise
     
     if trim_threshold is not None:
         # Set our time range by computing delta-ts and keeping the middle
@@ -135,13 +153,19 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     # Remove the stale `tstamps` data
     del tstamps
     
-    wcsh, naxis1, naxis2 = composites.gen_header(
-            i_files[len(i_files)//2][2], o_files[len(o_files)//2][2])
-    bounds = composites.find_collective_bounds(
-            ([v[-1] for v in i_files[::3]], [v[-1] for v in o_files[::3]]),
-            wcsh, ((33, 40, 42, 39), (20, 25, 26, 31)))
+    if align:
+        wcsh, naxis1, naxis2 = composites.gen_header(
+                i_files[len(i_files)//2][2], o_files[len(o_files)//2][2])
+        bounds = composites.find_collective_bounds(
+                ([v[-1] for v in i_files[::3]], [v[-1] for v in o_files[::3]]),
+                wcsh, ((33, 40, 42, 39), (20, 25, 26, 31)))
+    else:
+        wcsh, naxis1, naxis2, bounds = None, None, None, None
     
-    frames = np.linspace(t_start, t_end, fps*duration)
+    if duration is None:
+        frames = np.asarray(i_tstamps)
+    else:
+        frames = np.linspace(t_start, t_end, fps*duration)
     
     images = []
     # Determine the correct pair of images for each timestep
@@ -177,7 +201,8 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     if vmax is None:
         vmax = max(*[d[1] for d in colorbar_data.values()])
     
-    save_location = os.path.expanduser(save_location)
+    if save_location is not None:
+        save_location = os.path.expanduser(save_location)
     
     with tempfile.TemporaryDirectory() as tmpdir:
         def arguments():
@@ -185,12 +210,15 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                 args = dict(
                     timesteps=timesteps, remove_debris=remove_debris,
                     bounds=bounds, wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
+                    overlay_coords=overlay_coords, align=align,
                     overlay_celest=overlay_celest, save_location=save_location,
                     tmpdir=tmpdir, vmax=vmax, path_positions=path_positions,
                     path_times=path_times, ifile=None, next_ifile=None,
                     prev_ifile=None, ihdr=None, ofile=None, next_ofile=None,
-                    prev_ofile=None, ohdr=None, fallback_ifile=i_files[0][1],
-                    fallback_ofile=o_files[0][1], mark_planets=mark_planets)
+                    prev_ofile=None, ohdr=None,
+                    fallback_ifile=i_files[0][1] if align else None,
+                    fallback_ofile=o_files[0][1] if align else None,
+                    mark_planets=mark_planets)
                 if i is not None:
                     args['ifile'] = i_files[i][1]
                     if 0 < i < len(i_files) - 1:
@@ -254,16 +282,23 @@ def draw_WISPR_video_frame(data):
     else:
         input_o = data['ofile']
     
-    image_trim = [[20, 25, 1, 1], [33, 40, 42, 39]]
-    c, wcs_plot = composites.gen_composite(
-        # Even if we're blanking one of the images, a header is still
-        # needed (for now...)
-        input_i if input_i is not None else data['fallback_ifile'],
-        input_o if input_o is not None else data['fallback_ofile'],
-        bounds=data['bounds'],
-        wcsh=data['wcsh'], naxis1=data['naxis1'], naxis2=data['naxis2'],
-        blank_i=(input_i is None), blank_o=(input_o is None),
-        image_trim=image_trim)
+    if data['align']:
+        image_trim = [[20, 25, 1, 1], [33, 40, 42, 39]]
+        c, wcs_plot = composites.gen_composite(
+            # Even if we're blanking one of the images, a header is still
+            # needed (for now...)
+            input_i if input_i is not None else data['fallback_ifile'],
+            input_o if input_o is not None else data['fallback_ofile'],
+            bounds=data['bounds'],
+            wcsh=data['wcsh'], naxis1=data['naxis1'], naxis2=data['naxis2'],
+            blank_i=(input_i is None), blank_o=(input_o is None),
+            image_trim=image_trim)
+    else:
+        if isinstance(input_i, tuple):
+            c = input_i[0]
+        else:
+            with utils.ignore_fits_warnings():
+                c = fits.getdata(input_i)
     
     if data['overlay_celest']:
         # Determine which input image is closest in time
@@ -304,7 +339,13 @@ def draw_WISPR_video_frame(data):
             fig = matplotlib.figure.Figure(
                 figsize=(10, 7.5),
                 dpi=250 if data['save_location'] else 150)
-            ax = fig.add_subplot(111, projection=wcs_plot)
+            if data['overlay_coords']:
+                ax = fig.add_subplot(111, projection=wcs_plot)
+                plot_utils.setup_WCS_axes(ax)
+                ax.set_xlabel("Helioprojective Longitude")
+                ax.set_ylabel("Helioprojective Latitude")
+            else:
+                ax = fig.add_subplot(111)
 
             ax.imshow(c, cmap=cmap, origin='lower',
                       norm=matplotlib.colors.PowerNorm(
@@ -317,9 +358,6 @@ def draw_WISPR_video_frame(data):
             fig.subplots_adjust(
                 top=0.96, bottom=0.10,
                 left=0.05, right=0.98)
-            plot_utils.setup_WCS_axes(ax)
-            ax.set_xlabel("Helioprojective Longitude")
-            ax.set_ylabel("Helioprojective Latitude")
             
             if data['overlay_celest']:
                 ax.coords[0].set_ticks_position('b')
@@ -338,9 +376,10 @@ def draw_WISPR_video_frame(data):
                     top=0.90, bottom=0.10,
                     left=0.05, right=0.95)
             
-            ax_orbit = fig.add_axes((.13, .13, .12, .12))
-            draw_overhead_map(ax_orbit, t, data['path_positions'],
-                    data['path_times'])
+            if data['path_positions'] is not None:
+                ax_orbit = fig.add_axes((.13, .13, .12, .12))
+                draw_overhead_map(ax_orbit, t, data['path_positions'],
+                        data['path_times'])
             
             if data['mark_planets']:
                 for planet_name, pos_i, pos_o in zip(
