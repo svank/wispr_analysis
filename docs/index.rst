@@ -36,6 +36,9 @@ Contents
    :no-inheritance-diagram:
    :skip: display
 
+.. automodapi:: wispr_analysis.planets
+   :no-inheritance-diagram:
+
 .. automodapi:: wispr_analysis.projections
    :no-inheritance-diagram:
    :skip: WCS

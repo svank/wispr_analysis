@@ -90,9 +90,9 @@ release = package.__version__
 # global configuration are listed below, commented out.
 
 html_theme_options = {
-    'logotext1': 're',  # white,  semi-bold
-    'logotext2': 'project',  # orange, light
-    'logotext3': ':docs'   # white,  light
+    'logotext1': '',  # white,  semi-bold
+    'logotext2': '',  # orange, light
+    'logotext3': 'wispr_analysis',   # white,  light
     }
 
 # Add any paths that contain custom themes here, relative to this directory.

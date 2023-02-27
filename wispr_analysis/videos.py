@@ -91,7 +91,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         displayed in the Jupyter environment.
     mark_planets : boolean
         Whether to label planets in the field of view. Requires SPICE kernels
-        to be loadable. Call `planets.load_kernels` to provide a location for
+        to be loadable. Call ``planets.load_kernels`` to provide a location for
         the kernels.
     align : boolean
         Whether to reproject the images into a common frame. If False, it is
