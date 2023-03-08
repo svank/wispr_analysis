@@ -170,6 +170,9 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     im = ax.imshow(data, cmap=cmap,
             norm=matplotlib.colors.PowerNorm(gamma=gamma, vmin=vmin, vmax=vmax),
             **kwargs)
+    # Set this image to be the one found by plt.colorbar, for instance
+    plt.sca(ax)
+    plt.sci(im)
     return im
 
 
