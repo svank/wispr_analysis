@@ -338,12 +338,12 @@ def clean_fits_files(input_dir, output_dir=None, plot_dir=None,
     input_dir = os.path.expanduser(input_dir)
     if not input_dir.endswith(os.sep):
         input_dir = input_dir + os.sep
-    if output_dir is not None:
+    if output_dir is not None and save_masks:
         output_dir = os.path.expanduser(output_dir)
         os.makedirs(output_dir, exist_ok=True)
         if not output_dir.endswith(os.sep):
             output_dir = output_dir + os.sep
-    if plot_dir is not None:
+    if plot_dir is not None and save_plots:
         plot_dir = os.path.expanduser(plot_dir)
         os.makedirs(plot_dir, exist_ok=True)
         if not plot_dir.endswith(os.sep):
