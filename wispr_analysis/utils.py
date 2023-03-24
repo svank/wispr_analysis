@@ -15,6 +15,10 @@ import scipy.signal
 def to_timestamp(datestring, as_datetime=False):
     if isinstance(datestring, Iterable) and not isinstance(datestring, str):
         return [to_timestamp(x, as_datetime=as_datetime) for x in datestring]
+    if isinstance(datestring, (float, int)):
+        if as_datetime:
+            return datetime.fromtimestamp(datestring, timezone.utc)
+        return datestring
     # Check if we got a filename
     if datestring.endswith('.fits'):
         # Grab just the filename if it's a full path

@@ -25,6 +25,9 @@ def test_to_timestamp():
     assert isinstance(utils.to_timestamp(
         'path/psp_L3_wispr_20210111T083017_V1_1221.fits', as_datetime=True),
             datetime)
+    assert (utils.to_timestamp('2021-02-03T12:13:14.5')
+            == utils.to_timestamp(utils.to_timestamp('2021-02-03T12:13:14.5')))
+    assert utils.to_timestamp(11223344) == 11223344
 
 
 def test_to_timestamp_list():
