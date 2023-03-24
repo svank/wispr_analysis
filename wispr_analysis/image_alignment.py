@@ -333,6 +333,13 @@ def prep_frame_for_star_finding(fname, dim_cutoff=DIM_CUTOFF,
 
 
 class StarBins:
+    """
+    Class to allow efficient access to stars within an RA/Dec range
+    
+    Works by dividing RA/Dec space into bins and placing stars within a bin.
+    Querying an RA/Dec range can then access only the relevant bins, cutting
+    down the search space.
+    """
     def __init__(self, RA_bin_size, dec_bin_size):
         
         self.n_RA_bins = int(ceil(360 / RA_bin_size))
@@ -361,6 +368,16 @@ class StarBins:
         return self.get_ra_bin(ra), self.get_dec_bin(dec)
     
     def add_star(self, ra, dec, data):
+        """
+        Add a star to the bins
+        
+        Parameters
+        ----------
+        ra, dec : float
+            The coordinates of the star
+        data
+            Any arbitrary object to be stored for this star
+        """
         ra_bin, dec_bin = self.get_bin(ra, dec)
         
         self.bins[ra_bin][dec_bin].append(data)
@@ -371,6 +388,23 @@ class StarBins:
         return self.bins[ra_bin][dec_bin]
     
     def stars_between(self, ra_segments, dec_min, dec_max):
+        """
+        Generator to access stars within an RA/Dec range
+        
+        As a generator, it can be used like:
+        
+        for star_data in star_bins.stars_between(...):
+            ...
+        
+        Parameters
+        ----------
+        ra_segments : list of tuples
+            The segments in right ascension to access. To handle wrapping,
+            multiple segments are supported. Each tuple in this list consists
+            of (ra_start, ra_stop).
+        dec_min, dec_max : float
+            The declination range to search.
+        """
         ra_seqs = []
         for ra_seg in ra_segments:
             bin_start = self.get_ra_bin(ra_seg[0])
@@ -390,7 +424,7 @@ def load_stars():
     stars = StarBins(3, 3)
 
     catalog_path = os.path.join(
-            os.path.dirname(__file__), "hipparchos_catalog.tsv")
+            os.path.dirname(__file__), "data", "hipparchos_catalog.tsv")
     star_dat = open(catalog_path).readlines()
     for line in star_dat[43:-1]:
         try:
