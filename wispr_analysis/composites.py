@@ -22,9 +22,10 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
     
     Parameters
     ----------
-    hdr : astropy.io.fits.header.Header or str
+    hdr : astropy.io.fits.header.Header or str or tuple
         A FITS header describing an input image's size and coordinate system,
-        or the path to a FITS file whose header will be loaded.
+        or the path to a FITS file whose header will be loaded, or a tuple of a
+        Header and a WCS.
     wcs_target : astropy.io.fits.header.Header or astropy.wcs.WCS
         A WCS object describing an output coordinate system.
     trim : tuple
@@ -44,6 +45,8 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
             with fits.open(hdr) as hdul:
                 hdr = hdul[0].header
                 wcs = WCS(hdr, hdul, key=key)
+        elif isinstance(hdr, tuple):
+            hdr, wcs = hdr
         else:
             wcs = WCS(hdr, key=key)
         if not isinstance(wcs_target, WCS):
@@ -87,9 +90,10 @@ def find_bounds_wrap_aware(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
     
     Parameters
     ----------
-    hdr : astropy.io.fits.header.Header or str
+    hdr : astropy.io.fits.header.Header or str or tuple
         A FITS header describing an input image's size and coordinate system,
-        or the path to a FITS file whose header will be loaded.
+        or the path to a FITS file whose header will be loaded, or a tuple of a
+        Header and a WCS.
     wcs_target : astropy.io.fits.header.Header or astropy.wcs.WCS
         A WCS object describing an output coordinate system.
     trim : tuple
@@ -111,6 +115,8 @@ def find_bounds_wrap_aware(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
             with fits.open(hdr) as hdul:
                 hdr = hdul[0].header
                 wcs = WCS(hdr, hdul, key=key)
+        elif isinstance(hdr, tuple):
+            hdr, wcs = hdr
         else:
             wcs = WCS(hdr, key=key)
         if not isinstance(wcs_target, WCS):
