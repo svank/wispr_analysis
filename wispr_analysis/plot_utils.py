@@ -161,6 +161,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             plt.gcf().add_axes(ax)
             setup_WCS_axes(ax, grid=grid, lat_spacing=lat_spacing,
                     lon_spacing=lon_spacing)
+            plt.sca(ax)
     
     if cmap is None:
         cmap = wispr_cmap
