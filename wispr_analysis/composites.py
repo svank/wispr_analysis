@@ -12,7 +12,8 @@ import reproject
 from . import utils
 
 
-def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
+def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' ', wrap_aware=False,
+        world_coord_bounds=None):
     """Finds the pixel bounds of a FITS header in an output WCS.
     
     The edges of the input image are transformed to the coordinate system of
@@ -20,73 +21,9 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
     In other words, this finds the size of the output image that is required to
     bound the reprojected input image.
     
-    Parameters
-    ----------
-    hdr : astropy.io.fits.header.Header or str or tuple
-        A FITS header describing an input image's size and coordinate system,
-        or the path to a FITS file whose header will be loaded, or a tuple of a
-        Header and a WCS.
-    wcs_target : astropy.io.fits.header.Header or astropy.wcs.WCS
-        A WCS object describing an output coordinate system.
-    trim : tuple
-        How many rows/columns to ignore from the input image. In order,
-        (left, right, bottom, top).
-    hdr_key : str
-        The key argument passed to WCS, to select which of a header's
-        coordinate systems to use.
-    
-    Returns
-    -------
-    bounds : tuple
-        The bounding coordinates. In order, (left, right, bottom, top).
-    """
-    with utils.ignore_fits_warnings():
-        if isinstance(hdr, str):
-            with fits.open(hdr) as hdul:
-                hdr = hdul[0].header
-                wcs = WCS(hdr, hdul, key=key)
-        elif isinstance(hdr, tuple):
-            hdr, wcs = hdr
-        else:
-            wcs = WCS(hdr, key=key)
-        if not isinstance(wcs_target, WCS):
-            wcs_target = WCS(wcs_target)
-    left = 0 + trim[0]
-    right = hdr['naxis1'] - trim[1]
-    bottom = 0 + trim[2]
-    top = hdr['naxis2'] - trim[3]
-    xs = np.concatenate((
-        np.arange(left, right),
-        np.full(top-bottom, right - 1),
-        np.arange(right - 1, left - 1, -1),
-        np.full(top-bottom, left)))
-    ys = np.concatenate((
-        np.full(right - left, bottom),
-        np.arange(bottom, top),
-        np.full(right - left, top - 1),
-        np.arange(top - 1, bottom - 1, -1)))
-    
-    lon, lat = wcs.all_pix2world(xs, ys, 0)
-    assert not np.any(np.isnan(lon)) and not np.any(np.isnan(lat))
-    cx, cy = wcs_target.all_world2pix(lon, lat, 0)
-    
-    return (int(np.floor(np.min(cx))),
-            int(np.ceil(np.max(cx))),
-            int(np.floor(np.min(cy))),
-            int(np.ceil(np.max(cy))))
-
-
-def find_bounds_wrap_aware(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
-    """Finds the pixel bounds of a FITS header in an output WCS, handling wraps.
-    
-    The edges of the input image are transformed to the coordinate system of
-    ``wcs_target``, and the extrema of these transformed coordinates are found.
-    In other words, this finds the size of the output image that is required to
-    bound the reprojected input image.
-    
-    This version of the function handles the case that the x axis of the output
-    WCS is periodic and the input WCS straddles the wrap point. Two sets of
-    bounds are returned, for the two halves of the input WCS.
+    Optionall, handles the case that the x axis of the output WCS is periodic
+    and the input WCS straddles the wrap point. Two sets of bounds are
+    returned, for the two halves of the input WCS.
     
     Parameters
     ----------
@@ -102,6 +39,13 @@ def find_bounds_wrap_aware(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
     hdr_key : str
         The key argument passed to WCS, to select which of a header's
         coordinate systems to use.
+    wrap_aware : boolean
+        Whether to heuristically check for and handle the case that the image
+        straddles the wrap point of the periodic x axis.
+    world_coord_bounds : list
+        Edge pixels of the image that fall outside these world coordinates are
+        ignored. Must be a list of four values [xmin, xmax, ymin, ymax]. Any
+        value can be None to not provide a bound.
     
     Returns
     -------
@@ -138,7 +82,31 @@ def find_bounds_wrap_aware(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
     
     lon, lat = wcs.all_pix2world(xs, ys, 0)
     assert not np.any(np.isnan(lon)) and not np.any(np.isnan(lat))
+    if world_coord_bounds is not None:
+        assert len(world_coord_bounds) == 4
+        if world_coord_bounds[0] is None:
+            world_coord_bounds[0] = -np.inf
+        if world_coord_bounds[2] is None:
+            world_coord_bounds[2] = -np.inf
+        if world_coord_bounds[1] is None:
+            world_coord_bounds[1] = np.inf
+        if world_coord_bounds[3] is None:
+            world_coord_bounds[3] = np.inf
+        f = ( (world_coord_bounds[0] <= lon)
+            * (lon <= world_coord_bounds[1])
+            * (world_coord_bounds[2] <= lat)
+            * (lat <= world_coord_bounds[3]))
+        if not np.any(f):
+            return None
+        lon = lon[f]
+        lat = lat[f]
     cx, cy = wcs_target.all_world2pix(lon, lat, 0)
+    
+    if not wrap_aware:
+        return (int(np.floor(np.min(cx))),
+                int(np.ceil(np.max(cx))),
+                int(np.floor(np.min(cy))),
+                int(np.ceil(np.max(cy))))
     
     ranges = []
     
@@ -163,6 +131,43 @@ def find_bounds_wrap_aware(hdr, wcs_target, trim=(0, 0, 0, 0), key=' '):
             int(np.ceil(r[3])))
         ranges[i] = r
     return ranges
+
+
+def find_bounds_wrap_aware(*args, **kwargs):
+    """Finds the pixel bounds of a FITS header in an output WCS, handling wraps.
+    
+    The edges of the input image are transformed to the coordinate system of
+    ``wcs_target``, and the extrema of these transformed coordinates are found.
+    In other words, this finds the size of the output image that is required to
+    bound the reprojected input image.
+    
+    This version of the function handles the case that the x axis of the output
+    WCS is periodic and the input WCS straddles the wrap point. Two sets of
+    bounds are returned, for the two halves of the input WCS.
+    
+    Parameters
+    ----------
+    hdr : astropy.io.fits.header.Header or str or tuple
+        A FITS header describing an input image's size and coordinate system,
+        or the path to a FITS file whose header will be loaded, or a tuple of a
+        Header and a WCS.
+    wcs_target : astropy.io.fits.header.Header or astropy.wcs.WCS
+        A WCS object describing an output coordinate system.
+    trim : tuple
+        How many rows/columns to ignore from the input image. In order,
+        (left, right, bottom, top).
+    hdr_key : str
+        The key argument passed to WCS, to select which of a header's
+        coordinate systems to use.
+    
+    Returns
+    -------
+    bounds : list of tuples
+        The bounding coordinates. In order, (left, right, bottom, top). One or
+        two such tuples are returned, depending on whether the input WCS
+        straddles the output's wrap point.
+    """
+    return find_bounds(*args, **kwargs, wrap_aware=True)
 
 
 def find_collective_bounds(hdrs, wcs_target, trim=(0, 0, 0, 0), key=' '):
