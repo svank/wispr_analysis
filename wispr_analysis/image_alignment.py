@@ -453,7 +453,7 @@ stars = load_stars()
 
 
 def find_stars_in_frame(data):
-    fname, start_at_max = data
+    fname, start_at_max, include_shapes = data
     t = utils.to_timestamp(fname)
     try:
         (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
@@ -477,23 +477,26 @@ def find_stars_in_frame(data):
                 ret_more=False, binning=binning,
                 start_at_max=start_at_max)
 
+        results = (fx, fy)
+        if include_shapes:
+            results += (fxstd, fystd, theta)
         if len(err) == 0:
-            good.append((fx, fy))
-            mapping[(ra, dec)] = (fx, fy, t, vmag)
+            good.append(results)
+            mapping[(ra, dec)] = (*results, t, vmag)
         elif 'Crowded frame' in err:
-            crowded_out.append((fx, fy))
+            crowded_out.append(results)
         else:
-            bad.append((fx, fy))
+            bad.append(results)
         for e in err:
             codes[e] = codes.get(e, 0) + 1
     return good, bad, crowded_out, codes, mapping
 
 
-def find_all_stars(ifiles, ret_all=False, start_at_max=True):
-    # res = map(find_stars_in_frame, tqdm(ifiles))
+def find_all_stars(ifiles, ret_all=False, start_at_max=True,
+        include_shapes=False):
     res = process_map(
             find_stars_in_frame,
-            zip(ifiles, repeat(start_at_max)),
+            zip(ifiles, repeat(start_at_max), repeat(include_shapes)),
             total=len(ifiles))
 
     good = []
@@ -519,9 +522,10 @@ def find_all_stars(ifiles, ret_all=False, start_at_max=True):
                     (*celest_coords, *star_data[:2], star_data[3]))
 
     # The `reshape` calls handle the case that the input list is empty
-    good_x, good_y = np.array(good).T.reshape((2, -1))
-    crowded_out_x, crowded_out_y = np.array(crowded_out).T.reshape((2, -1))
-    bad_x, bad_y = np.array(bad).T.reshape((2, -1))
+    n = 5 if include_shapes else 2
+    good_x, good_y = np.array(good).T.reshape((n, -1))[:2]
+    crowded_out_x, crowded_out_y = np.array(crowded_out).T.reshape((n, -1))[:2]
+    bad_x, bad_y = np.array(bad).T.reshape((n, -1))[:2]
     
     # Change the defaultdict to just a dict
     mapping = {k:v for k, v in mapping.items()}

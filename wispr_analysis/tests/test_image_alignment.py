@@ -64,32 +64,32 @@ def test_make_cutout_out_of_bounds():
             5, 8, data, 3)
 
 
-def test_fit_star():
-    x = np.arange(20)
-    y = np.arange(20)
-    xx, yy = np.meshgrid(x, y)
-    
+@pytest.mark.parametrize('theta', [0, 30, -30])
+def test_fit_star(theta):
     x_star = 13.2
     y_star = 9.1
-    sig_star = 0.8
+    sig_x = 0.8
+    sig_y = 0.5
+    theta *= np.pi / 180
     
-    data = 2 + .1 * xx - .2 * yy
-    data += 4 * np.exp(-( (xx - x_star)**2 + (yy - y_star)**2 )
-                        / 2 / sig_star**2)
+    data = image_alignment.model_fcn(
+            (20, x_star, y_star, sig_x, sig_y, theta, 2, .1, -.2),
+            np.empty((20, 20)))
     np.random.seed(1)
     data += np.random.random(data.shape)
     
     all_stars_x = [x_star, 20]
     all_stars_y = [y_star, 1]
     
-    fx, fy, xstd, ystd, theta, err = image_alignment.fit_star(10, 10, data,
+    fx, fy, xstd, ystd, ftheta, err = image_alignment.fit_star(10, 10, data,
             all_stars_x, all_stars_y)
     
     assert len(err) == 0
-    assert fx == pytest.approx(x_star, abs=.1)
-    assert fy == pytest.approx(y_star, abs=.1)
-    assert xstd == pytest.approx(sig_star, abs=.2)
-    assert ystd == pytest.approx(sig_star, abs=.2)
+    assert fx == pytest.approx(x_star, abs=.02)
+    assert fy == pytest.approx(y_star, abs=.02)
+    assert xstd == pytest.approx(sig_x, abs=.02)
+    assert ystd == pytest.approx(sig_y, abs=.02)
+    assert ftheta == pytest.approx(theta, abs=.04)
 
 
 @pytest.mark.parametrize('start_at_max', [True, False])
@@ -104,11 +104,12 @@ def test_fit_star_multiple_peaks(start_at_max):
     y_star_2 = 10.5
     sig_star = 0.8
     
-    data = 2 + .1 * xx - .2 * yy
-    data += 6 * np.exp(-( (xx - x_star)**2 + (yy - y_star)**2 )
-                        / 2 / sig_star**2)
-    data += 5 * np.exp(-( (xx - x_star_2)**2 + (yy - y_star_2)**2 )
-                        / 2 / sig_star**2)
+    data = image_alignment.model_fcn(
+            (6, x_star, y_star, sig_star, sig_star, 0, 2, .1, -.2),
+            np.empty((20, 20)))
+    data += image_alignment.model_fcn(
+            (5, x_star_2, y_star_2, sig_star, sig_star, 0, 0, 0, 0),
+            np.empty((20, 20)))
     np.random.seed(2)
     data += np.random.random(data.shape)
     
@@ -138,9 +139,9 @@ def test_fit_star_crowded():
     y_star = 9.1
     sig_star = 0.8
     
-    data = 2 + .1 * xx - .2 * yy
-    data += 4 * np.exp(-( (xx - x_star)**2 + (yy - y_star)**2 )
-                        / 2 / sig_star**2)
+    data = image_alignment.model_fcn(
+            (4, x_star, y_star, sig_star, sig_star, 0, 2, .1, -.2),
+            np.empty((20, 20)))
     
     second_star_x = [
             (6.49, False),
@@ -201,9 +202,9 @@ def test_fit_star_too_wide():
     y_star = 9.1
     sig_star = 2.8
     
-    data = 2 + .1 * xx - .2 * yy
-    data += 4 * np.exp(-( (xx - x_star)**2 + (yy - y_star)**2 )
-                        / 2 / sig_star**2)
+    data = image_alignment.model_fcn(
+            (4, x_star, y_star, sig_star, sig_star, 0, 2, .1, -.2),
+            np.empty((20, 20)))
     np.random.seed(1)
     data += np.random.random(data.shape)
     
@@ -225,9 +226,9 @@ def test_fit_star_too_narrow():
     y_star = 9.1
     sig_star = 0.1
     
-    data = 2 + .1 * xx - .2 * yy
-    data += 10 * np.exp(-( (xx - x_star)**2 + (yy - y_star)**2 )
-                        / 2 / sig_star**2)
+    data = image_alignment.model_fcn(
+            (10, x_star, y_star, sig_star, sig_star, 0, 2, .1, -.2),
+            np.empty((20, 20)))
     np.random.seed(1)
     data += np.random.random(data.shape)
     
@@ -260,9 +261,9 @@ def test_fit_star_too_close_to_edge():
             x_stars, y_stars):
         sig_star = 0.8
         
-        data = 2 + .1 * xx - .2 * yy
-        data += 10 * np.exp(-( (xx - x_star)**2 + (yy - y_star)**2 )
-                            / 2 / sig_star**2)
+        data = image_alignment.model_fcn(
+                (10, x_star, y_star, sig_star, sig_star, 0, 2, .1, -.2),
+                np.empty((20, 20)))
         
         all_stars_x = [x_star, 20]
         all_stars_y = [y_star, 1]
@@ -346,7 +347,7 @@ def test_find_stars_in_frame(mocker, binning):
     fname = 'psp_L3_wispr_20181101T210030_V3_2222.fits'
     t = utils.to_timestamp(fname)
     good, bad, crowded_out, codes, mapping = image_alignment.find_stars_in_frame(
-            (fname, True))
+            (fname, True, False))
     
     good_rounded = [(round(x), round(y)) for x, y in good]
     assert sorted(zip(good_stars_x, good_stars_y)) == sorted(good_rounded)
