@@ -161,7 +161,6 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             plt.gcf().add_axes(ax)
             setup_WCS_axes(ax, grid=grid, lat_spacing=lat_spacing,
                     lon_spacing=lon_spacing)
-            plt.sca(ax)
     
     if cmap is None:
         cmap = wispr_cmap
@@ -171,9 +170,11 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     im = ax.imshow(data, cmap=cmap,
             norm=matplotlib.colors.PowerNorm(gamma=gamma, vmin=vmin, vmax=vmax),
             **kwargs)
-    # Set this image to be the one found by plt.colorbar, for instance
-    plt.sca(ax)
-    plt.sci(im)
+    # Set this image to be the one found by plt.colorbar, for instance. But if
+    # this manager attribute is empty, pyplot won't accept it.
+    if ax.figure.canvas.manager:
+        plt.sca(ax)
+        plt.sci(im)
     return im
 
 
