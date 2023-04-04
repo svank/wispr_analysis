@@ -247,10 +247,14 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                 html_attributes="controls loop"))
 
 
-# We seem to get slowly-increasing memory usage when making a long-ish video
-# which becomes significant with 20 worker processes, and manually running
-# the GC seems to keep that in check.
 def wrap_with_gc(function):
+    """
+    Wraps a function and manually runs garbage collection after every execution
+
+    We seem to get slowly-increasing memory usage when making a long-ish video,
+    which becomes significant with 20 worker processes, and running the GC
+    after every frame seems to help keep that in check.
+    """
     @functools.wraps(function)
     def wrapped(*args, **kwargs):
         ret = function(*args, **kwargs)
@@ -638,3 +642,56 @@ def draw_overhead_map(ax_orbit, t, path_positions, path_times):
     ax_orbit.set_title("S/C position", fontdict={'fontsize': 9})
     for spine in ax_orbit.spines.values():
         spine.set_color('.4')
+
+
+def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20):
+    """
+    Helper function for generating a video and displaying it in Jupyter
+    
+    Calls a function repeatedly to render each frame, then uses ffmpeg to
+    combine the frames into a video, which is displayed in the current Jupyter
+    notebook.
+    
+    Note: In some cases (particularly when using the parallel mode with many
+    cores), it may be helpful to apply the `wrap_with_gc` decorator to the
+    frame-rendering runction.
+
+    Parameters
+    ----------
+    frame_renderer : function
+        Function than draws a single frame. Must accept as arguments a file
+        name to which the frame should be saved as a PNG file, and then all
+        other arguments provided in `arg_list`.
+    arg_list : Iterable
+        A list of arguments to be passed to `frame_renderer`. Each element can
+        be a single non-tuple item, or a tuple of arguments. The output
+        filename will be prepended to each tuple of arguments.
+    parallel : boolean
+        If `True`, frames will be rendered in parallel.
+    fps : int
+        The frames-per-second to use for the final video.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        def arguments(arg_list):
+            for i, args in enumerate(arg_list):
+                if not isinstance(args, tuple):
+                    args = (args,)
+                out_name = f"{tmpdir}/{i:0>10d}.png"
+                args = (out_name, *args)
+                yield args
+        if parallel:
+            process_map(
+                    frame_renderer, arguments(arg_list), total=len(arg_list))
+        else:
+            for args in arguments(tqdm(arg_list)):
+                frame_renderer(args)
+        video_file = os.path.join(tmpdir, 'out.mp4')
+        subprocess.call(
+                f"ffmpeg -loglevel error -r {fps} "
+                f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
+                 "-pix_fmt yuv420p -x264-params keyint=30 "
+                f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {video_file}",
+                shell=True)
+        display(Video(video_file, embed=True,
+            html_attributes="controls loop"))
+
