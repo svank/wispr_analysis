@@ -379,7 +379,8 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         calculations. Cannot be used when calculating medians.
     check_nans : boolean
         Whether to use the NaN-handling calculation functions, which does slow
-        things down.
+        things down. Note that for 'mean' and 'std', infinities are also
+        filtered if `check_nans` is `True`.
     stride_fill : str
         Sets the mode for filling in the skipped values when
         sliding_window_stride > 1. Allowed values are 'repeat' and 'interp',
@@ -664,7 +665,7 @@ def _sliding_window_mean_std_optimized(data, window_width, mean, std, where,
     for i in range(window_bounds[0, 0], window_bounds[0, 1]):
         for j in range(window_bounds[1, 0], window_bounds[1, 1]):
             for k in range(window_bounds[2, 0], window_bounds[2, 1]):
-                if check_nans and np.isnan(data[i, j, k]):
+                if check_nans and not np.isfinite(data[i, j, k]):
                     continue
                 if where.size > 1 and not where[i, j, k]:
                     continue
@@ -834,7 +835,7 @@ def _sliding_window_sum_range(data, check_nans, where, i1, i2, j1, j2, k1, k2):
     for i in range(i1, i2):
         for j in range(j1, j2):
             for k in range(k1, k2):
-                if check_nans and np.isnan(data[i, j, k]):
+                if check_nans and not np.isfinite(data[i, j, k]):
                     continue
                 if where.size > 1 and not where[i, j, k]:
                     continue
