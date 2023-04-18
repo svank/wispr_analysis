@@ -232,7 +232,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                         args['prev_ofile'] = o_files[j-1][1]
                     args['ohdr'] = o_files[j][2]
                 yield args
-        process_map(draw_WISPR_video_frame, arguments(), total=len(images))
+        process_map(_draw_WISPR_video_frame, arguments(), total=len(images))
         video_file = os.path.join(tmpdir, 'out.mp4')
         subprocess.call(
                 f"ffmpeg -loglevel error -r {fps} "
@@ -265,7 +265,7 @@ def wrap_with_gc(function):
 
 
 @wrap_with_gc
-def draw_WISPR_video_frame(data):
+def _draw_WISPR_video_frame(data):
     if data['ifile'] is None:
         input_i = None
     elif data['remove_debris'] and data['next_ifile']:
