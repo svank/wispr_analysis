@@ -12,8 +12,7 @@ pytest>=7.1
 # pytest-arraydiff>=0.5
 pytest-arraydiff @ git+https://github.com/svank/pytest-arraydiff@fix-atol
 pytest-mock>=3.7
-# reproject>=0.8
-reproject @ git+https://github.com/svank/reproject@everything
+reproject>=0.10
 scipy>=1.8
 spiceypy>=5.1
 sunpy>=3.1
