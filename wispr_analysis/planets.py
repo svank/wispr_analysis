@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 import os
+import pickle
 
 import astropy.coordinates
 import spiceypy as spice
@@ -48,25 +50,36 @@ def _to_hp(planet_pos, sc_pos, date):
     return c.transform_to(sunpy.coordinates.frames.Helioprojective)
 
 
-def locate_planets(date):
+def locate_planets(date, cache_dir=None):
     """
     Returns the helioprojective coordinates of planets as seen by PSP
     
     Parameters
     ----------
-    date : ``str`` or FITS header
+    date : ``str`` or FITS header or ``float``
         The date of the observation. If a FITS header, DATE-AVG is extracted
-        and used. If a string, must be in the format "YYYY-MM-DD HH:MM:SS.SSS"
+        and used. If a string, must be in the format "YYYY-MM-DD HH:MM:SS.SSS".
+        If a number, interpreted as a UTC timestamp. Note that the timestamp in
+        WISPR images is the beginning time, not the average time, so providing
+        the FITS header is preferred.
+    cache_dir : ``str``
+        An optional directory to search for cached positions, as saved by
+        `cache_planet_pos`.
     
     Returns
     -------
     planet_poses : list of ``SkyCoord``
         A Helioprojective SkyCoord for each of the eight planets, in order.
     """
+    date = format_date(date)
+    
+    if cache_dir is not None:
+        cache_path = os.path.join(cache_dir, str(date))
+        if os.path.exists(cache_path):
+            with open(cache_path, 'rb') as f:
+                return pickle.load(f)
+    
     load_kernels()
-    if not isinstance(date, str):
-        # Treat as FITS header
-        date = date['date-avg'].replace('T', ' ')
     et = spice.str2et(date)
     
     spacecraft_id = '-96'
@@ -80,3 +93,49 @@ def locate_planets(date):
         state, ltime = spice.spkezr(planet, et, 'HCI', 'None', 'Sun')
         planet_poses.append(_to_hp(state[:3], sc_pos, date))
     return planet_poses
+
+
+def cache_planet_pos(date, cache_dir):
+    """
+    Computes and caches planet positions
+    
+    Parameters
+    ----------
+    date : ``str`` or FITS header or ``float``
+        The date of the observation. If a FITS header, DATE-AVG is extracted
+        and used. If a string, must be in the format "YYYY-MM-DD HH:MM:SS.SSS".
+        If a number, interpreted as a UTC timestamp.
+    cache_dir : ``str``
+        The directory to in which to save cached positions.
+    """
+    date = format_date(date)
+    
+    planet_poses = locate_planets(date)
+    
+    with open(os.path.join(cache_dir, str(date)), 'wb') as f:
+        pickle.dump(planet_poses, f)
+
+
+def format_date(date):
+    """
+    Parses a date to the format required by SPICE
+    
+    Parameters
+    ----------
+    date : ``str`` or FITS header or ``float``
+        The date of the observation. If a FITS header, DATE-AVG is extracted
+        and used. If a string, passed through unaltered. If a number,
+        interpreted as a UTC timestamp.
+    Returns
+    -------
+    date : ``str``
+        The date in "YYYY-MM-DD HH:MM:SS.SSS" format
+    """
+    if isinstance(date, (int, float)):
+        date = datetime.fromtimestamp(
+            date, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    elif not isinstance(date, str):
+        # Treat as FITS header
+        date = date['date-avg'].replace('T', ' ')
+    return date
+
