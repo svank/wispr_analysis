@@ -162,3 +162,40 @@ def collect_region_all_frames(coord, data_dir, r=5, target_wcs=None,
     data, fnames, ts, px_coords = zip(*data)
     data = np.stack(data)
     return data, fnames, ts, px_coords
+
+
+def convert_to_compressed_hdul(hdul_in):
+    """
+    Converts an HDUList to store the data with compression
+    
+    Only the first HDU is compressed. The output HDUList will contain one more
+    HDU, as there must be an empty PrimaryHDU before the compressed HDU
+    
+    Any NaNs in the compressed data will be converted to zeros.
+    
+    Parameters
+    ----------
+    hdul_in : HDUList
+        An HDUList containing an arbitrary number of HDUs. The first is
+        compressed, and the rest are simply copied and passed through.
+    
+    Returns
+    -------
+    hdul_out : HDUList
+        An HDUList containing an empty PrimaryHDU, a CompressedImageHDU, and
+        then any other HDUs.
+    """
+    hdul_out = fits.HDUList()
+    # We need an empty PrimaryHDU at the beginning
+    hdul_out.append(fits.PrimaryHDU())
+    
+    data = hdul_in[0].data.copy()
+    data[np.isnan(data)] = 0
+    
+    # Compress the data---the defaults seem good
+    chdu = fits.CompImageHDU(data, hdul_in[0].header.copy())
+    hdul_out.append(chdu)
+    # Append any other HDUs (e.g. distortion lookup tables)
+    for hdu in hdul_in[1:]:
+        hdul_out.append(hdu.copy())
+    return hdul_out
