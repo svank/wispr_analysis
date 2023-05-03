@@ -73,9 +73,8 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     False to return only a single, sorted list. Returned items are full paths
     relative to the given directory.
     
-    Invalid files are omitted. The expected structure is that subdirectories
-    have names starting with "20" (i.e. for the year 20XX), and file names
-    should be in the standard formated provided by the WISPR team.
+    Invalid files are omitted. It is expected that file names are in the
+    standard formated provided by the WISPR team.
     
     Files are ordered by the value of the FITS header key provided as the
     ``order`` argument. Set ``order`` to None to sort by filename instead
@@ -135,18 +134,11 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     
     top_level_dir = os.path.expanduser(top_level_dir)
     # Find all valid subdirectories.
-    for fname in os.listdir(top_level_dir):
-        path = f"{top_level_dir}/{fname}"
-        if os.path.isdir(path) and fname.startswith('20'):
-            subdirs.append(path)
-    if len(subdirs) == 0:
-        subdirs.append(top_level_dir)
-
-    for dir in subdirs:
-        for file in os.listdir(dir):
+    for dirpath, _, fnames in os.walk(top_level_dir):
+        for file in fnames:
             if file[0:3] != 'psp' or file[-5:] != '.fits':
                 continue
-            fname = f"{dir}/{file}"
+            fname = os.path.join(dirpath, file)
             with ignore_fits_warnings():
                 if order is None:
                     key = file.split('_')[3]
