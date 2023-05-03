@@ -200,8 +200,9 @@ def ensure_data(input, header=True, wcs=False, wcs_key=' '):
     if isinstance(input, str):
         input = os.path.expanduser(input)
         with ignore_fits_warnings(), fits.open(input) as hdul:
-            data = hdul[0].data
-            hdr = hdul[0].header
+            hdu = 1 if hdul[0].data is None else 0
+            data = hdul[hdu].data
+            hdr = hdul[hdu].header
             w = WCS(hdr, hdul, key=wcs_key)
     elif isinstance(input, list) or isinstance(input, tuple):
         data = input[0]

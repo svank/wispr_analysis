@@ -57,7 +57,10 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' ', wrap_aware=False,
     with utils.ignore_fits_warnings():
         if isinstance(hdr, str):
             with fits.open(hdr) as hdul:
-                hdr = hdul[0].header
+                if hdul[0].data is None:
+                    hdr = hdul[1].header
+                else:
+                    hdr = hdul[0].header
                 wcs = WCS(hdr, hdul, key=key)
         elif isinstance(hdr, tuple):
             hdr, wcs = hdr
