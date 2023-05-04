@@ -411,6 +411,14 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
         if blank_i:
             o1 = np.full((naxis2, naxis1), np.nan)
         else:
+            # The input images have slightly different viewpoints. If
+            # sunpy.coordinates has been imported, astropy will know enough
+            # about HPC to say this is an invalid coordinate transformation.
+            # Here we censor information from the header to pacify Sunpy.
+            keys = [k for k in hdr_i if k.endswith("_OBS")
+                    or k.startswith('DATE-') or k.startswith('MJD-')]
+            for k in keys:
+                hdr_i.remove(k)
             o1 = reproject.reproject_adaptive(
                     (img_i, WCS(hdr_i, key=key)), wcsh, (naxis2, naxis1),
                     roundtrip_coords=False, return_footprint=False,
@@ -418,6 +426,10 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
         if blank_o:
             o2 = np.full((naxis2, naxis1), np.nan)
         else:
+            keys = [k for k in hdr_o if k.endswith("_OBS")
+                    or k.startswith('DATE-') or k.startswith('MJD-')]
+            for k in keys:
+                hdr_o.remove(k)
             o2 = reproject.reproject_adaptive(
                     (img_o, WCS(hdr_o, key=key)), wcsh, (naxis2, naxis1),
                     roundtrip_coords=False, return_footprint=False,
