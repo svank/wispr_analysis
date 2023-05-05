@@ -45,11 +45,12 @@ class Thing:
         if t != 0:
             other = other.at(t)
             self = self.at(t)
+        separation_vector = self - other
         angle = angle_between_vectors(
             other.vx,
             other.vy,
-            self.x - other.x,
-            self.y - other.y)
+            separation_vector.x,
+            separation_vector.y)
         return np.atleast_1d(np.abs(angle) < np.pi/2)
     
     @property
@@ -65,6 +66,20 @@ class Thing:
         Convenience access to sqrt(vx**2 + vy**2)
         """
         return np.sqrt(self.vx**2 + self.vy**2)
+    
+    def extend_position(self, extension):
+        """ Extends the position vector by an amount
+        
+        Parameters
+        ----------
+        extension : float
+            The distance by which to extend the position vector
+        """
+        r = self.r
+        px = self.x / r
+        py = self.y / r
+        self.x = self.x + extension * px
+        self.y = self.y + extension * py
     
     def __sub__(self, other):
         """Converts this object to another reference frame
@@ -175,8 +190,23 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         # the blob image onto the output image.
         # Is this overkill? Probably?
         parcel = p.at(t0)
+        
+        # We'll compute a scaling factor to reduce parcels' brightness as we
+        # fly though them, to try to reduce flashiness as that happens.
+        parcel_distance = (parcel - sc).r
+        inside_parcel_scaling = 1
+        if parcel_distance < parcel_width / 2:
+            inside_parcel_scaling = parcel_distance / (parcel_width / 2)
         if not parcel.in_front_of(sc):
-            continue
+            if parcel_distance > parcel_width / 2:
+                continue
+            inside_parcel_scaling = .5 * (1 - inside_parcel_scaling)
+        elif inside_parcel_scaling < 1:
+            inside_parcel_scaling = .5 + .5 * inside_parcel_scaling
+        # Square it just for a bit more flashiness suppression
+        inside_parcel_scaling = inside_parcel_scaling**2
+
+        
         # Compute the apparent angular size of the parcel
         parcel_angular_width = 2 * np.arctan(parcel_width / 2 / (sc - parcel).r)
         parcel_angular_width *= 180 / np.pi # degrees
@@ -195,7 +225,8 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
                 roundtrip_coords=False, return_footprint=False,
                 conserve_flux=True)
         # Scale the brightness of the reprojected blob
-        subimage = subimage / (sc - parcel).r**2 / parcel.r**2
+        subimage = subimage / parcel_distance**2 / parcel.r**2
+        subimage *= inside_parcel_scaling
         
         if psychadelic:
             # Add a dimension and assign a random color to the parcel. Ensure

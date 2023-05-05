@@ -125,6 +125,24 @@ def test_Thing_subtract():
     assert (t2-t1).at(1).y == 21
 
 
+def test_Thing_extend_position():
+    r1 = 30
+    extension = 5
+    r2 = r1 + extension
+    for angle in np.linspace(0, 360, 10):
+        angle *= np.pi / 180
+        t1 = sd.Thing(x=r1*np.cos(angle), y=r1*np.sin(angle))
+        t1.extend_position(extension)
+        t2 = sd.Thing(x=r2*np.cos(angle), y=r2*np.sin(angle))
+        
+        assert t1.x == approx(t2.x)
+        assert t1.y == approx(t2.y)
+        assert t1.vx == 0
+        assert t1.vy == 0
+        assert t2.vx == 0
+        assert t2.vy == 0
+
+
 def test_elongation_to_FOV():
     sc = sd.Thing(x=0, y=-1, vx=0, vy=1)
     # Elongation is FOV
@@ -148,7 +166,6 @@ def test_elongation_to_FOV():
     elongations = np.array([0, 0, 0])
     fovs = sd.elongation_to_FOV(sc, elongations)
     assert np.all(np.isclose([-np.pi/4, -np.pi/2, -np.pi/2 - np.pi/4], fovs))
-
 
 
 @pytest.mark.parametrize("sc_vx_sign", [-1, 1])
