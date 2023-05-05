@@ -12,7 +12,9 @@ import scipy.ndimage
 from . import plot_utils, utils
 
 
-def extract_flux(img_sequence, ra, dec, aperture_r=5, gap=2, annulus_thickness=3, ret_all=False, extra_backgrounds=None):
+def extract_flux(img_sequence, ra, dec, aperture_r=5, gap=2,
+        annulus_thickness=3, ret_all=False, extra_backgrounds=None,
+        coords_are_xy=False, skip_edge_stars=False):
     cutout_width = aperture_r + gap + annulus_thickness + 1
     if extra_backgrounds is None:
         extra_backgrounds = [None] * len(img_sequence)
@@ -25,14 +27,24 @@ def extract_flux(img_sequence, ra, dec, aperture_r=5, gap=2, annulus_thickness=3
                 wcs = WCS(hdul[0].header, hdul, key='A')
                 if extra_bg is not None:
                     img -= fits.getdata(extra_bg)
-        else:
+        elif isinstance(img, (tuple, list)):
             img, wcs = img
+        else:
+            if coords_are_xy and isinstance(img, np.ndarray):
+                pass
+            else:
+                raise ValueError("Invalid image input type")
         
-        x, y = wcs.world_to_pixel_values(ra, dec)
+        if coords_are_xy:
+            x, y = ra, dec
+        else:
+            x, y = wcs.world_to_pixel_values(ra, dec)
         x, y = int(np.round(x)), int(np.round(y))
         if (y - cutout_width < 0 or x - cutout_width < 0
                 or y + cutout_width + 1 > img.shape[0]
                 or x + cutout_width + 1 > img.shape[1]):
+            if skip_edge_stars:
+                continue
             raise ValueError("Does not fit!")
         cutout = img[y - cutout_width : y + cutout_width + 1,
                      x - cutout_width : x + cutout_width + 1]
@@ -54,10 +66,10 @@ def extract_flux(img_sequence, ra, dec, aperture_r=5, gap=2, annulus_thickness=3
         coords.append((x, y))
     
     fluxes = np.array(fluxes)
-    bgs = np.array(bgs)
-    cutouts = np.array(cutouts)
-    coords = np.array(coords)
     if ret_all:
+        bgs = np.array(bgs)
+        cutouts = np.array(cutouts)
+        coords = np.array(coords)
         return fluxes, bgs, cutouts, coords
     return fluxes
 
@@ -303,5 +315,7 @@ def find_expected_stars_in_frame(fname, dim_cutoff=DIM_CUTOFF,
     stars_ra = stars_ra[filter]
     stars_dec = stars_dec[filter]
     
+    stars_x -= trim[0]
+    stars_y -= trim[2]
     return (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
             all_stars_x, all_stars_y)

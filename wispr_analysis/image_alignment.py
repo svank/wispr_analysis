@@ -267,7 +267,7 @@ def prep_frame_for_star_finding(fname, dim_cutoff=DIM_CUTOFF,
                     (hdr, w), trim=trim, dim_cutoff=dim_cutoff,
                     bright_cutoff=bright_cutoff)
     
-    return (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
+    return (stars_x + trim[0], stars_y + trim[2], stars_vmag, stars_ra, stars_dec,
             all_stars_x, all_stars_y, data, binning)
 
 def find_stars_in_frame(data):
