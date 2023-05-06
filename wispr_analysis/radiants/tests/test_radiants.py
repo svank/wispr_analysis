@@ -6,7 +6,7 @@ from .. import radiants, synthetic_data as sd
 
 def generate_strips():
    # A cloud of parcels
-    sc = sd.Thing(x=-6, y=-100, vx=3)
+    sc = sd.LinearThing(x=-6, y=-100, vx=3)
     ts = np.linspace(0, 6, 50)
 
     parcels = []
@@ -21,7 +21,7 @@ def generate_strips():
         r = np.sqrt(x**2 + y**2)
         vx = x / r * v
         vy = y / r * v
-        parcels.append(sd.Thing(x=x, y=y, vy=vy, vx=vx))
+        parcels.append(sd.LinearThing(x=x, y=y, vy=vy, vx=vx))
         
     fov = 120
     strips = []
