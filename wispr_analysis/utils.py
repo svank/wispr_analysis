@@ -12,20 +12,44 @@ import numpy as np
 import scipy.signal
 
 
-def to_timestamp(datestring, as_datetime=False):
+def to_timestamp(datestring, as_datetime=False, read_headers=False):
+    """
+    Converts to a standard number-of-seconds POSIX timestamp
+    
+    Parameters
+    ----------
+    datestring: ``str``, float, int, or Iterable
+        If a ``str`` ending in ``.fits``, a filename from which the timestamp
+        should be extracted (but see the ``read_headers`` option). If otherwise
+        a ``str``, a timestamp as stored in WISPR headers. If a ``float`` or
+        ``int``, a POSIX timestamp. If an iterable, multiple of the preceeding
+        types.
+    as_datetime : ``bool``
+        If ``True``, timestamps are returned as `datetime` instances, rather
+        than numeric timestamps.
+    read_headers : ``bool``
+        If True, when filenames are provided, read ``DATE-AVG`` from the
+        headers, rather than using the filename timestamp (which is
+        ``DATE-BEG``).
+    """
     if isinstance(datestring, Iterable) and not isinstance(datestring, str):
-        return [to_timestamp(x, as_datetime=as_datetime) for x in datestring]
+        return [to_timestamp(
+                    x, as_datetime=as_datetime, read_headers=read_headers)
+                for x in datestring]
     if isinstance(datestring, (float, int)):
         if as_datetime:
             return datetime.fromtimestamp(datestring, timezone.utc)
         return datestring
     # Check if we got a filename
     if datestring.endswith('.fits'):
-        # Grab just the filename if it's a full path
-        if '/' in datestring:
-            datestring = datestring.split('/')[-1]
-        # Extract the timestamp part of the standard WISPR filename
-        datestring = datestring.split('_')[3]
+        if read_headers:
+            with ignore_fits_warnings():
+                datestring = fits.getheader(datestring)['date-avg']
+        else:
+            # Grab just the filename if it's a full path
+            datestring = os.path.basename(datestring)
+            # Extract the timestamp part of the standard WISPR filename
+            datestring = datestring.split('_')[3]
     try:
         dt = datetime.strptime(
                 datestring, "%Y%m%dT%H%M%S")

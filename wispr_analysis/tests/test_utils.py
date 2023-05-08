@@ -16,19 +16,33 @@ def test_to_timestamp():
     assert (utils.to_timestamp('2021-02-03T12:13:14.5')
             == datetime(
                 2021, 2, 3, 12, 13, 14, 500000, timezone.utc).timestamp())
+    
     assert (utils.to_timestamp('20210203T121314')
             == datetime(2021, 2, 3, 12, 13, 14, 0, timezone.utc).timestamp())
+    
     assert (utils.to_timestamp('path/psp_L3_wispr_20210111T083017_V1_1221.fits')
             == datetime(2021, 1, 11, 8, 30, 17, 0, timezone.utc).timestamp())
+    
     assert (utils.to_timestamp(
         'path/psp_L3_wispr_20210111T083017_V1_1221.fits', as_datetime=True)
             == datetime(2021, 1, 11, 8, 30, 17, 0, timezone.utc))
+    
     assert isinstance(utils.to_timestamp(
         'path/psp_L3_wispr_20210111T083017_V1_1221.fits', as_datetime=True),
             datetime)
+    
     assert (utils.to_timestamp('2021-02-03T12:13:14.5')
             == utils.to_timestamp(utils.to_timestamp('2021-02-03T12:13:14.5')))
+    
     assert utils.to_timestamp(11223344) == 11223344
+    
+    test_data_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only', '20181101')
+    test_file = os.path.join(
+            test_data_path, 'psp_L3_wispr_20181101T004548_V3_1221.fits')
+    assert (utils.to_timestamp(
+        test_file, as_datetime=True, read_headers=True)
+            == datetime(2018, 11, 1, 0, 47, 1, 880000, timezone.utc))
 
 
 def test_to_timestamp_list():
@@ -46,6 +60,14 @@ def test_to_timestamp_list():
     
     assert (utils.to_timestamp(timestamps)
             == [utils.to_timestamp(x) for x in timestamps])
+    
+    test_data_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only', '20181101')
+    test_file = os.path.join(
+            test_data_path, 'psp_L3_wispr_20181101T004548_V3_1221.fits')
+    assert (utils.to_timestamp(
+        [test_file] * 2, as_datetime=True, read_headers=True)
+            == [datetime(2018, 11, 1, 0, 47, 1, 880000, timezone.utc)] * 2)
 
 
 def test_get_PSP_path():
