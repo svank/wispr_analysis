@@ -862,20 +862,29 @@ def _sliding_window_sum_range(data, check_nans, where, i1, i2, j1, j2, k1, k2):
     return sum, sum_of_squares, n
 
 
-def to_orbital_plane_xy(x, y, z):
+def to_orbital_plane_rtheta(x, y, z):
     """ Converts (x,y,z) coordinates of the s/c to in-orbit-plane (x,y) """
     x = np.asarray(x)
     y = np.asarray(y)
     z = np.asarray(z)
     r = np.sqrt(x**2 + y**2 + z**2)
-    theta = np.arccos(z / r)
     phi = np.sign(y) * np.arccos(x / np.sqrt(x**2 + y**2))
     
-    return r * np.cos(phi), r * np.sin(phi)
+    return r, phi
 
 
 def load_orbit_plane_xy(files):
     """ Returns the in-orbit-plane (x,y) path of the s/c from these files """
+    r, theta = load_orbit_plane_rtheta(files)
+    return r * np.cos(theta), r * np.sin(theta)
+
+
+def load_orbit_plane_rtheta(files):
+    """
+    Returns the in-orbit-plane (r, theta) path of the s/c from these files
+    """
+    if isinstance(files, str):
+        files = [files]
     xs = []
     ys = []
     zs = []
@@ -885,7 +894,7 @@ def load_orbit_plane_xy(files):
             xs.append(h['hcix_obs'])
             ys.append(h['hciy_obs'])
             zs.append(h['hciz_obs'])
-    return to_orbital_plane_xy(xs, ys, zs)
+    return to_orbital_plane_rtheta(xs, ys, zs)
 
 
 def find_closest_file(target, files, key=None, headers=None):

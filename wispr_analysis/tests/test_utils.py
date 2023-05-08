@@ -928,19 +928,21 @@ def test_sliding_window_validity(stat, stride):
             assert out[i, j] == pytest.approx(fcn(data[i-2:i+3, j-2:j+3]))
 
 
-def test_to_orbital_plane_xy():
+def test_to_orbital_plane_rtheta():
     r = 3
-    for phi in np.linspace(0, 360, 17):
+    for phi_orig in np.linspace(0, 360, 17):
         for theta in np.linspace(80, 100, 3):
-            phi *= np.pi / 180
+            phi = phi_orig * np.pi / 180
             theta *= np.pi / 180
             x = r * np.cos(phi) * np.sin(theta)
             y = r * np.sin(phi) * np.sin(theta)
             z = r * np.cos(theta)
             
-            xp, yp = utils.to_orbital_plane_xy(x, y, z)
-            assert xp == approx(r * np.cos(phi))
-            assert yp == approx(r * np.sin(phi))
+            rp, thetap = utils.to_orbital_plane_rtheta(x, y, z)
+            assert rp == approx(r)
+            if phi_orig == 360:
+                phi = 0
+            assert (thetap % (2*np.pi)) == approx(phi)
 
 
 def test_load_orbit_plane_xy():
@@ -951,6 +953,7 @@ def test_load_orbit_plane_xy():
     
     np.testing.assert_allclose(x, [3.55559774e+10, 3.55569597e+10])
     np.testing.assert_allclose(y, [-2.31010195e+09, -2.31211317e+09])
+
 
 def test_find_closest_file():
     test_data_path = os.path.join(os.path.dirname(__file__),
