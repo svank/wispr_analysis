@@ -8,6 +8,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 import numpy as np
 import pytest
+from pytest import approx
 import warnings
 
 
@@ -903,3 +904,29 @@ def test_sliding_window_validity(stat, stride):
     for i in range(2 + stride_offset, data.shape[0]-2, stride):
         for j in range(2 + stride_offset, data.shape[1]-2, stride):
             assert out[i, j] == pytest.approx(fcn(data[i-2:i+3, j-2:j+3]))
+
+
+def test_to_orbital_plane_xy():
+    r = 3
+    for phi in np.linspace(0, 360, 17):
+        for theta in np.linspace(80, 100, 3):
+            phi *= np.pi / 180
+            theta *= np.pi / 180
+            x = r * np.cos(phi) * np.sin(theta)
+            y = r * np.sin(phi) * np.sin(theta)
+            z = r * np.cos(theta)
+            
+            xp, yp = utils.to_orbital_plane_xy(x, y, z)
+            assert xp == approx(r * np.cos(phi))
+            assert yp == approx(r * np.sin(phi))
+
+
+def test_load_orbit_plane_xy():
+    dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_with_data_half_size')
+    files = utils.collect_files(dir_path, separate_detectors=False)
+    x, y = utils.load_orbit_plane_xy(files)
+    
+    np.testing.assert_allclose(x, [3.55559774e+10, 3.55569597e+10])
+    np.testing.assert_allclose(y, [-2.31010195e+09, -2.31211317e+09])
+
