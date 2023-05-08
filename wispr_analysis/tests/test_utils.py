@@ -70,15 +70,15 @@ def test_collect_files():
     
     for file_list in (files, files_avg):
         assert len(file_list) == 2
-        assert len(file_list[0]) == 100
-        assert len(file_list[1]) == 80
+        assert len(file_list[0]) == 42
+        assert len(file_list[1]) == 35
         for file in file_list[0]:
             assert 'V3_1' in file
         for file in file_list[1]:
             assert 'V3_2' in file
     
     for file_list in (files_together, files_together_avg):
-        assert len(file_list) == 180
+        assert len(file_list) == 77
     
     for file_list, key in (
             (files[0], 'DATE-BEG'),
@@ -101,14 +101,14 @@ def test_collect_files_with_headers():
                 'test_data', 'WISPR_files_headers_only')
     file_list = utils.collect_files(os.path.join(dir_path, '20181101'),
             include_headers=True, separate_detectors=False)
-    assert len(file_list) == 58
+    assert len(file_list) == 32
     assert len(file_list[0]) == 2
     assert isinstance(file_list[0][1], fits.Header)
     
     file_list = utils.collect_files(os.path.join(dir_path, '20181101'),
             include_headers=True, include_sortkey=True,
             separate_detectors=False, order='date-avg')
-    assert len(file_list) == 58
+    assert len(file_list) == 32
     assert len(file_list[0]) == 3
     assert isinstance(file_list[0][2], fits.Header)
     for sortkey, file, header in file_list:
@@ -120,15 +120,15 @@ def test_collect_files_between():
                 'test_data', 'WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181102T000000', None))
-    assert len(file_list) == 122
+    assert len(file_list) == 45
     
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=(None, '20181102T000000'))
-    assert len(file_list) == 58
+    assert len(file_list) == 32
     
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181101T103000', '20181102T000000'))
-    assert len(file_list) == 34
+    assert len(file_list) == 8
 
 
 def test_collect_files_between_timestamp_parsing():
@@ -136,15 +136,15 @@ def test_collect_files_between_timestamp_parsing():
                 'test_data', 'WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181102T000000', None), order='DATE-AVG')
-    assert len(file_list) == 122
+    assert len(file_list) == 45
     
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=(None, '20181102T000000'), order='DATE-AVG')
-    assert len(file_list) == 58
+    assert len(file_list) == 32
     
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181101T103000', '20181102T000000'), order='DATE-AVG')
-    assert len(file_list) == 34
+    assert len(file_list) == 8
 
 
 def test_collect_files_filters():
