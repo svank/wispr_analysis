@@ -887,3 +887,44 @@ def load_orbit_plane_xy(files):
             zs.append(h['hciz_obs'])
     return to_orbital_plane_xy(xs, ys, zs)
 
+
+def find_closest_file(target, files, key=None, headers=None):
+    """
+    From a list of files, find the one closest to a target value
+    
+    Parameters
+    ----------
+    target : ``float`` or ``str``
+        The target value that the output file should be closest to. If a
+        string, treated as a filename, and its value of ``key`` is used as
+        ``target``.
+    files : ``list``
+        The list of files to choose from.
+    key : ``str`` or ``list``
+        The header key indicating the value to get closest to. If not provided,
+        the timestamps in the file names are used. The header values must be
+        convertible to ``float``. If a ``list``, it is taken as the value for
+        each file that should be compared to ``target``.
+    headers : ``astropy.io.fits.Header``
+        A list of Headers corresponding to each file. If not provided, the
+        headers are read in.
+    """
+    if key is None:
+        if isinstance(target, str):
+            target = to_timestamp(target)
+        file_values = np.array(to_timestamp(files))
+    elif isinstance(key, str):
+        if isinstance(target, str):
+            with ignore_fits_warnings():
+                target = fits.getheader(target)
+            target = float(target[key])
+        
+        if headers is None:
+            with ignore_fits_warnings():
+                headers = [fits.getheader(f) for f in files]
+        file_values = np.array([float(h[key]) for h in headers])
+    else:
+        file_values = np.asarray(key)
+    i = np.argmin(np.abs(file_values - target))
+    return files[i]
+

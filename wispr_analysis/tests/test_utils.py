@@ -952,3 +952,36 @@ def test_load_orbit_plane_xy():
     np.testing.assert_allclose(x, [3.55559774e+10, 3.55569597e+10])
     np.testing.assert_allclose(y, [-2.31010195e+09, -2.31211317e+09])
 
+def test_find_closest_file():
+    test_data_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
+    files = utils.collect_files(test_data_path, separate_detectors=False)
+    
+    # Test providing a header value directly
+    target_filename = 'psp_L3_wispr_20181101T081530_V3_2222.fits'
+    result = utils.find_closest_file(8891809671.48, files, 'HAEX_OBS')
+    assert os.path.basename(result) == target_filename
+    
+    # Now test providing all the headers (by reversing the order of the
+    # provided headers)
+    headers = [fits.getheader(f) for f in files]
+    target_i = files.index(result)
+    result = utils.find_closest_file(
+            8891809671.48, files, 'HAEX_OBS', headers=headers[::-1])
+    assert result == files[-target_i-1]
+    
+    # Now test loading the reference value from a file
+    result = utils.find_closest_file(
+            files[20], files, 'HAEX_OBS', headers=headers)
+    assert result == files[20]
+    
+    # Test providing comparison values directly for each file
+    result = utils.find_closest_file(
+            2.3, files, range(len(files)))
+    assert result == files[2]
+    
+    # Now test using filename timestamps
+    result = utils.find_closest_file(
+            utils.to_timestamp(files[30]) + 3, files)
+    assert result == files[30]
+
