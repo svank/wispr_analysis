@@ -988,3 +988,18 @@ def test_find_closest_file():
             utils.to_timestamp(files[30]) + 3, files)
     assert result == files[30]
 
+
+def test_time_window_savgol_filter():
+    # Create an unevenly-spaced polynomial
+    t = np.arange(50, dtype=float)
+    np.random.seed(22)
+    t += 0.9 * np.random.random(t.size)
+    
+    y = 3*t**2 + 2*t + 1
+    
+    # Filter with an poly order that should capture & reproduce the polynomial
+    # (easy testing)
+    ys = utils.time_window_savgol_filter(t, y, 7, 2)
+    
+    np.testing.assert_allclose(y[5:-5], ys[5:-5])
+

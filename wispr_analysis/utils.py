@@ -937,3 +937,75 @@ def find_closest_file(target, files, key=None, headers=None):
     i = np.argmin(np.abs(file_values - target))
     return files[i]
 
+
+@numba.njit(cache=True)
+def time_window_savgol_filter(xdata, ydata, window_size, poly_order):
+    output = np.zeros_like(ydata)
+    r = window_size // 2
+    # Ainv_by_cadence = dict()
+    should_do_beginning = True
+    should_do_end = False
+    for i in range(0, len(xdata)):
+        istart = i
+        while xdata[i] - xdata[istart] <= window_size / 2:
+            istart -= 1
+            if istart < 0:
+                istart = None
+                break
+        if istart is None:
+            # Keep stepping out until we can fit the full window
+            continue
+        if should_do_beginning:
+            istart = 0
+        else:
+            istart += 1
+        istop = i
+        while xdata[istop-1] - xdata[i] <= window_size / 2:
+            istop += 1
+            if istop == len(xdata):
+                should_do_end = True
+                break
+        if should_do_end:
+            istop = len(xdata)
+        else:
+            istop -= 1
+        window_x = xdata[istart:istop] - xdata[i]
+        window_x /= np.max(np.abs(window_x))
+        window_y = ydata[istart:istop]
+        cadences = np.diff(window_x)
+        mean_cadence = np.mean(cadences)
+        # This was an attempt to cache values when the data spacing is the same for
+        # several windows, but it didn't seem to actually speed things up much.
+        # deviation = np.abs(cadences / mean_cadence - 1)
+        # cadence_varies = np.any(deviation > .05)
+        # cadence_varies = True
+        # Ainv_key = (np.round(mean_cadence), istop-istart)
+        # Ainv = Ainv_by_cadence.get(Ainv_key, None)
+        # if Ainv is None or cadence_varies:
+            # The cadence varies enough that we should handle it, or it's pretty
+            # constant but we haven't seen it yet.
+            # We'll have to compute smoothing coefficients. See
+            # https://dsp.stackexchange.com/a/9494
+            # for how this works
+        A = np.empty((len(window_x), poly_order + 1))
+        for j in range(poly_order + 1):
+            A[:, j] = window_x ** j
+        Ainv = np.linalg.pinv(A)
+        # if not cadence_varies:
+        #     Ainv_by_cadence[Ainv_key] = Ainv
+        if should_do_beginning:
+            coeffs = np.dot(Ainv, window_y)
+            for j in range(0, i+1):
+                for p in range(poly_order + 1):
+                    output[j] += coeffs[p] * window_x[j]**p
+            should_do_beginning = False
+        elif should_do_end:
+            coeffs = np.dot(Ainv, window_y)
+            for j in range(i, istop):
+                for p in range(poly_order + 1):
+                    output[j] += coeffs[p] * window_x[j - istart]**p
+            break
+        else:
+            # We just need the interpolated value at our window center
+            output[i] = np.dot(Ainv, window_y)[0]
+    return output
