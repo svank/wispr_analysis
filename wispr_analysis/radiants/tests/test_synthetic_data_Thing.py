@@ -217,3 +217,28 @@ def test_subtract(type1, type2):
     assert diff.at(1).x == 1
     assert diff.at(1).y == 21
 
+def test_tbounds():
+    thing1 = sd.LinearThing(t_min=-2, t_max=2)
+    thing2 = sd.ArrayThing([-20, 20], t_min=-2, t_max=2)
+    
+    for thing in [thing1, thing2]:
+        for t in [-2.1, 2.1]:
+            assert np.isnan(thing.at(t).x)
+            assert np.isnan(thing.at(t).y)
+            assert np.isnan(thing.at(t).vx)
+            assert np.isnan(thing.at(t).vx)
+        
+        for t in [-1.9, 0, 1.9]:
+            assert not np.isnan(thing.at(t).x)
+            assert not np.isnan(thing.at(t).y)
+            assert not np.isnan(thing.at(t).vx)
+            assert not np.isnan(thing.at(t).vx)
+        
+        t = np.array([-2.1, -1.9, 0, 1.9, 2.1])
+        for result in [thing.at(t).x,
+                       thing.at(t).y,
+                       thing.at(t).vx,
+                       thing.at(t).vy]:
+            assert np.isnan(result[0])
+            assert np.isnan(result[-1])
+            assert not np.any(np.isnan(result[1:-1]))

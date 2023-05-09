@@ -16,6 +16,30 @@ class Thing:
     how those attributes are computed
     """
     t: float = 0
+    t_min: float = None
+    t_max: float = None
+    
+    def get_bad_t(self):
+        t = np.atleast_1d(self.t)
+        bad_t = np.zeros(len(t), dtype=bool)
+        if self.t_min is not None:
+            bad_t[t < self.t_min] = True
+        if self.t_max is not None:
+            bad_t[t > self.t_max] = True
+        return bad_t
+    
+    def process_t_bounds(self, quantity):
+        bad_t = self.get_bad_t()
+        if isinstance(self.t, (int, float)):
+            if bad_t:
+                return np.nan
+            return quantity
+        if np.any(bad_t):
+            quantity = np.asarray(quantity, dtype=float)
+            if len(quantity.shape) == 0:
+                quantity = np.full(bad_t.size, quantity)
+            quantity[bad_t] = np.nan
+        return quantity
     
     def is_same_time(self, other):
         """ Returns True if the two objects are set to the same time """
@@ -101,7 +125,7 @@ class LinearThing(Thing):
     vx_t0: float = 0
     vy_t0: float = 0
     
-    def __init__(self, x=0, y=0, vx=0, vy=0, t=0):
+    def __init__(self, x=0, y=0, vx=0, vy=0, t=0, t_min=None, t_max=None):
         """
         Accepts physical parameters, as well as the corresponding time
         
@@ -115,18 +139,26 @@ class LinearThing(Thing):
         
         self.x_t0 = x - vx * t
         self.y_t0 = y - vy * t
+        
+        self.t_min = t_min
+        self.t_max = t_max
     
     @property
     def x(self):
-        return self.x_t0 + self.vx_t0 * self.t
+        x = self.x_t0 + self.vx_t0 * self.t
+        x = self.process_t_bounds(x)
+        return x
     
     @property
     def y(self):
-        return self.y_t0 + self.vy_t0 * self.t
+        y = self.y_t0 + self.vy_t0 * self.t
+        y = self.process_t_bounds(y)
+        return y
     
     @property
     def vx(self):
-        return self.vx_t0
+        vx = self.process_t_bounds(self.vx_t0)
+        return vx
     
     @vx.setter
     def vx(self, value):
@@ -134,7 +166,8 @@ class LinearThing(Thing):
     
     @property
     def vy(self):
-        return self.vy_t0
+        vy = self.process_t_bounds(self.vy_t0)
+        return vy
     
     @vy.setter
     def vy(self, value):
@@ -160,7 +193,7 @@ class ArrayThing(Thing):
     ylist: np.ndarray = 0
     tlist: np.ndarray = 0
     
-    def __init__(self, tlist, xlist=0, ylist=0, t=0):
+    def __init__(self, tlist, xlist=0, ylist=0, t=0, t_min=None, t_max=None):
         """
         Parameters
         ----------
@@ -194,26 +227,37 @@ class ArrayThing(Thing):
         self.ylist = ylist
         self.tlist = tlist
         self.t = t
+        
+        self.t_min = t_min
+        self.t_max = t_max
     
     @property
     def x(self):
-        return scipy.interpolate.interp1d(self.tlist, self.xlist)(self.t)
+        x = scipy.interpolate.interp1d(self.tlist, self.xlist)(self.t)
+        x = self.process_t_bounds(x)
+        return x
     
     @property
     def y(self):
-        return scipy.interpolate.interp1d(self.tlist, self.ylist)(self.t)
+        y = scipy.interpolate.interp1d(self.tlist, self.ylist)(self.t)
+        y = self.process_t_bounds(y)
+        return y
     
     @property
     def vx(self):
         interpolator = scipy.interpolate.interp1d(self.tlist, self.xlist)
         dt = .0001
-        return self._finite_difference(interpolator, dt)
+        vx = self._finite_difference(interpolator, dt)
+        vx = self.process_t_bounds(vx)
+        return vx
     
     @property
     def vy(self):
         interpolator = scipy.interpolate.interp1d(self.tlist, self.ylist)
         dt = .0001
-        return self._finite_difference(interpolator, dt)
+        vy = self._finite_difference(interpolator, dt)
+        vy = self.process_t_bounds(vy)
+        return vy
     
     def _finite_difference(self, interpolator, dt):
         try:
@@ -368,6 +412,8 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
         # the blob image onto the output image.
         # Is this overkill? Probably?
         parcel = p.at(t0)
+        if np.isnan(parcel.x):
+            continue
         
         # We'll compute a scaling factor to reduce parcels' brightness as we
         # fly though them, to try to reduce flashiness as that happens.

@@ -126,9 +126,15 @@ def test_synthesize_image():
     sc = sd.LinearThing(x=-10, y=-10, vx=1, vy=0.2)
     p = sd.LinearThing(x=-5, y=-12, vx=-.5, vy=-.5)
     p2 = sd.LinearThing(x=5, y=-8, vx=.5, vy=.5)
+    
+    # Ensure a "behind" parcel doesn't show up
     p3 = sd.LinearThing(x=-20, y=-20, vx=.5, vy=.5)
     
-    image, wcs = sd.synthesize_image(sc, [p, p2], 1, fov=140)
+    # Ensure nan positions are handled correctly
+    p4 = p2.copy()
+    p4.t_max = -99999
+    
+    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4], 1, fov=140)
     
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1, projection=wcs)
