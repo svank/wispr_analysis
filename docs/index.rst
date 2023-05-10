@@ -11,14 +11,14 @@ Contents
 .. automodapi:: wispr_analysis.composites
    :no-inheritance-diagram:
 
-.. automodapi:: wispr_analysis.data_wrangling
-   :no-inheritance-diagram:
-   :skip: process_map
-  
 .. automodapi:: wispr_analysis.data_cleaning
    :no-inheritance-diagram:
    :skip: ceil
 
+.. automodapi:: wispr_analysis.data_wrangling
+   :no-inheritance-diagram:
+   :skip: process_map
+  
 .. automodapi:: wispr_analysis.image_alignment
    :no-inheritance-diagram:
    :skip: repeat
@@ -32,16 +32,24 @@ Contents
    :skip: tqdm
    :skip: njit
 
+.. automodapi:: wispr_analysis.planets
+   :no-inheritance-diagram:
+
 .. automodapi:: wispr_analysis.plot_utils
    :no-inheritance-diagram:
    :skip: display
 
-.. automodapi:: wispr_analysis.planets
-   :no-inheritance-diagram:
-
 .. automodapi:: wispr_analysis.projections
    :no-inheritance-diagram:
    :skip: WCS
+
+.. automodapi:: wispr_analysis.star_tools
+   :no-inheritance-diagram:
+   :skip: ceil
+   :skip: floor
+   :skip: WCS
+   :skip: chain
+   :skip: interactive
 
 .. automodapi:: wispr_analysis.utils
    :no-inheritance-diagram:

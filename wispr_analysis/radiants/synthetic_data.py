@@ -11,9 +11,9 @@ import scipy
 class Thing:
     """Represents a generic object with a position and a velocity in 2-space
     
-    Subclasses have `x`, `y`, `vx`, and `vy` attributes which provide those
-    quantities. Instances can be set to a specific time, which then determines
-    how those attributes are computed
+    Subclasses have ``x``, ``y``, ``vx``, and ``vy`` attributes which provide
+    those quantities. Instances can be set to a specific time, which then
+    determines how those attributes are computed
     """
     t: float = 0
     t_min: float = None
@@ -129,7 +129,7 @@ class LinearThing(Thing):
         """
         Accepts physical parameters, as well as the corresponding time
         
-        That is, `x`, `y`, etc. need not be specified for `t=0` if the
+        That is, ``x``, ``y``, etc. need not be specified for ``t=0`` if the
         appropriate time is provided.
         
         """

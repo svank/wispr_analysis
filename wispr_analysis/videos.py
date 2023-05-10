@@ -661,9 +661,9 @@ def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20):
     frame_renderer : function
         Function than draws a single frame. Must accept as arguments a file
         name to which the frame should be saved as a PNG file, and then all
-        other arguments provided in `arg_list`.
+        other arguments provided in ``arg_list``.
     arg_list : Iterable
-        A list of arguments to be passed to `frame_renderer`. Each element can
+        A list of arguments to be passed to ``frame_renderer``. Each element can
         be a single non-tuple item, or a tuple of arguments. The output
         filename will be prepended to each tuple of arguments.
     parallel : boolean

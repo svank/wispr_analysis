@@ -397,7 +397,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     check_nans : boolean
         Whether to use the NaN-handling calculation functions, which does slow
         things down. Note that for 'mean' and 'std', infinities are also
-        filtered if `check_nans` is `True`.
+        filtered if ``check_nans`` is ``True``.
     stride_fill : str
         Sets the mode for filling in the skipped values when
         sliding_window_stride > 1. Allowed values are 'repeat' and 'interp',
