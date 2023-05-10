@@ -366,7 +366,7 @@ def calc_FOV_pos(sc, p, t=0):
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
-        psychadelic=False):
+        psychadelic=False, celestial_wcs=False):
     sc = sc.at(t0)
     
     # Build output image WCS
@@ -468,6 +468,16 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         # Build up the output image by adding together all the reprojected blobs
         output_image += subimage
     
+    if celestial_wcs:
+        image_wcs.wcs.ctype = f"RA---{projection}", f"DEC--{projection}"
+        to_sun_x = -sc.x
+        to_sun_y = -sc.y
+        to_sun_theta = np.arctan2(to_sun_y, to_sun_x) * 180 / np.pi
+        fov_center = to_sun_theta - 61
+        image_wcs.wcs.crval = fov_center, 0
+        cdelt = image_wcs.wcs.cdelt[0]
+        image_wcs.wcs.cdelt = -cdelt, cdelt
+        
     return output_image, image_wcs
 
 
