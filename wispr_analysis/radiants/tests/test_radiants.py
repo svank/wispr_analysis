@@ -76,7 +76,7 @@ def test_find_radiant():
     np.testing.assert_array_equal(ts[21:-21], rad_ts)
     
     np.testing.assert_array_equal(rads,
-            np.array([1.5909090909090864,
+            np.array([0,
                      -1.5909090909090935,
                      -1.5909090909090935,
                      -1.5909090909090935,

@@ -334,23 +334,29 @@ def angle_between_vectors(x1, y1, x2, y2):
     return np.abs(signed_angle_between_vectors(x1, y1, x2, y2))
 
 
-def calc_epsilon(sc, p, t=0):
+def calc_epsilon(sc, p, t=None, signed=False):
     """
     Calculates (unsigned) elongation angle epsilon for spacecraft and parcel positions
     """
-    t = np.atleast_1d(t)
-    if len(t) > 1 or t != 0:
+    if t is not None:
         sc = sc.at(t)
         p = p.at(t)
-    # First find distances between objects
-    d_sc_sun = sc.r
-    d_p_sun = p.r
-    d_sc_p = (sc - p).r
-    with np.errstate(invalid='ignore', divide='ignore'):
-        # Law of cosines:
-        # d_p_sun^2 = d_sc_sun^2 + d_sc_p^2 - 2*d_sc_sun*d_sc_p*cos(epsilon)
-        return np.arccos((d_p_sun**2 - d_sc_sun**2 - d_sc_p**2)
-                / (-2 * d_sc_sun * d_sc_p))
+    # Angular position of Sun relative to s/c
+    theta_sun = np.arctan2(-sc.y, -sc.x)
+    # Angular position of Sun relative to s/c
+    diff = p - sc
+    theta_parcel = np.arctan2(diff.y, diff.x)
+    
+    angle = theta_sun - theta_parcel
+    angle = np.atleast_1d(angle)
+    if not signed:
+        angle = np.abs(angle)
+        f = angle > np.pi
+        angle[f] = 2*np.pi - angle[f]
+    else:
+        f = angle > np.pi
+        angle[f] -= 2*np.pi
+    return angle
 
 
 def calc_FOV_pos(sc, p, t=0):
@@ -394,6 +400,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.ctype = f"HPLN-{projection}", f"HPLT-{projection}"
         image_wcs.wcs.cunit = "deg", "deg"
     
+    fov_start = image_wcs.wcs.crval[0] - fov/2
+    fov_stop = image_wcs.wcs.crval[0] + fov/2
+    
     # Build a "blob" image on a small canvas
     parcel_amp = 1
     parcel_res = 21
@@ -424,18 +433,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         # We'll compute a scaling factor to reduce parcels' brightness as we
         # fly though them, to try to reduce flashiness as that happens.
         parcel_distance = (parcel - sc).r
-        inside_parcel_scaling = 1
         if parcel_distance < parcel_width / 2:
-            inside_parcel_scaling = parcel_distance / (parcel_width / 2)
-        if not parcel.in_front_of(sc):
-            if parcel_distance > parcel_width / 2:
-                continue
-            inside_parcel_scaling = .5 * (1 - inside_parcel_scaling)
-        elif inside_parcel_scaling < 1:
-            inside_parcel_scaling = .5 + .5 * inside_parcel_scaling
-        # Square it just for a bit more flashiness suppression
-        inside_parcel_scaling = inside_parcel_scaling**2
-
+            continue
         
         # Compute the apparent angular size of the parcel
         parcel_angular_width = 2 * np.arctan(parcel_width / 2 / (sc - parcel).r)
@@ -446,7 +445,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         except TypeError:
             pass
         parcel_wcs.wcs.cdelt = cdelt, cdelt
-        horiz_pos = calc_epsilon(sc, parcel) * 180 / np.pi
+        horiz_pos = calc_epsilon(sc, parcel, signed=True) * 180 / np.pi
+        if not fov_start - 10 < horiz_pos < fov_stop + 10:
+            continue
         vert_pos = 0
         parcel_wcs.wcs.crval = horiz_pos[0], vert_pos
         subimage = reproject.reproject_adaptive(
@@ -456,7 +457,6 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
                 conserve_flux=True)
         # Scale the brightness of the reprojected blob
         subimage = subimage / parcel_distance**2 / parcel.r**2
-        subimage *= inside_parcel_scaling
         
         if psychadelic:
             # Add a dimension and assign a random color to the parcel. Ensure

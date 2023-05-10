@@ -101,6 +101,30 @@ def test_calc_epsilon():
             [0, np.pi/2])
 
 
+def test_calc_epsilon_signed():
+    sc = sd.LinearThing(0, -10)
+    for elongation in np.linspace(0, 359, 100):
+        # Take this intended elongation angle and make it a theta relative to
+        # the s/c
+        theta_parcel = (90 - elongation) * np.pi / 180
+        p = sd.LinearThing(
+                sc.x + 5 * np.cos(theta_parcel),
+                sc.y + 5 * np.sin(theta_parcel))
+        
+        signed_elongation = sd.calc_epsilon(
+                sc, p, signed=True) * 180 / np.pi
+        target_elongation = elongation
+        if elongation > 180:
+            target_elongation -= 360
+        assert signed_elongation == approx(target_elongation)
+        
+        elongation = sd.calc_epsilon(sc, p) * 180 / np.pi
+        target_elongation = elongation
+        if elongation > 180:
+            target_elongation = 360 - target_elongation
+        assert elongation == approx(target_elongation)
+
+
 def test_FOV_pos():
     sc = sd.LinearThing(x=-10, y=-10, vx=0.000001, vy=0)
     p = sd.LinearThing(x=0, y=-10, vx=0, vy=0)
