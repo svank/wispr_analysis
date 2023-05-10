@@ -148,7 +148,7 @@ def test_synthesize_image():
     ax.coords.grid(color='white', alpha=0.7, ls='-')
     
     # Check that the range of values is right
-    assert image.max() == approx(0.000456832948092)
+    assert image.max() == approx(0.0004477736610888776)
     assert image.min() == approx(0)
     
     return fig

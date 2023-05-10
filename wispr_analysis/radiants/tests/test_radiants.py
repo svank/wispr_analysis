@@ -10,7 +10,7 @@ def generate_strips():
     ts = np.linspace(0, 6, 50)
 
     parcels = []
-    np.random.seed(1)
+    np.random.seed(4)
     n_parcels = 30
     for dx, dy in zip(np.random.random(n_parcels), np.random.random(n_parcels)):
         dx = (dx - .5) * 2 * 17.5
@@ -23,10 +23,10 @@ def generate_strips():
         vy = y / r * v
         parcels.append(sd.LinearThing(x=x, y=y, vy=vy, vx=vx))
         
-    fov = 120
+    fov = 70
     strips = []
     for t in ts:
-        strip, _ = sd.synthesize_image(sc, parcels, t, output_size_x=60,
+        strip, _ = sd.synthesize_image(sc, parcels, t, output_size_x=45,
                 output_size_y=1, projection='CAR', fov=fov)
         strips.append(strip)
     strips = np.vstack(strips)
@@ -76,11 +76,11 @@ def test_find_radiant():
     np.testing.assert_array_equal(ts[21:-21], rad_ts)
     
     np.testing.assert_array_equal(rads,
-            np.array([-1.0169491525423737,
-                      -1.0169491525423737,
-                      -1.0169491525423737,
-                      -1.0169491525423737,
-                      -1.0169491525423737,
-                      1.0169491525423666,
-                      1.0169491525423666,
-                      -1.0169491525423737]))
+            np.array([1.5909090909090864,
+                     -1.5909090909090935,
+                     -1.5909090909090935,
+                     -1.5909090909090935,
+                     -1.5909090909090935,
+                     -1.5909090909090935,
+                     -1.5909090909090935,
+                     -1.5909090909090935]))

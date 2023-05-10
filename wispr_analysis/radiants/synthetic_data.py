@@ -364,7 +364,7 @@ def calc_FOV_pos(sc, p, t=0):
     return -signed_angle_between_vectors(sc.vx, sc.vy, offset.x, offset.y)
 
 
-def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
+def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
         psychadelic=False):
     sc = sc.at(t0)
@@ -372,13 +372,19 @@ def synthesize_image(sc, parcels, t0, fov=90, projection='ARC',
     # Build output image WCS
     if image_wcs is None:
         image_wcs = WCS(naxis=2)
-        # Find elongation of s/c forward direction by computing the angle
-        # between it and the sunward direction
-        forward_elongation = angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
-        # Set the reference pixel coordiantes as the forward-direction
-        # elongation for longitude, and zero latitude (assume s/c is in
-        # ecliptic plane)
-        image_wcs.wcs.crval = forward_elongation[0] * 180 / np.pi, 0
+        ## Find elongation of s/c forward direction by computing the angle
+        ## between it and the sunward direction
+        #forward_elongation = angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
+        ## Set the reference pixel coordiantes as the forward-direction
+        ## elongation for longitude, and zero latitude (assume s/c is in
+        ## ecliptic plane)
+        #image_wcs.wcs.crval = forward_elongation[0] * 180 / np.pi, 0
+        
+        # Set the reference pixel coordiantes as 61 degress HPC, which is the
+        # center of WISPR's compositve FOV (as detailed in the in-flight
+        # calibration paper)
+        image_wcs.wcs.crval = 61, 0
+        
         # Set the reference pixel to be the central pixel of the image
         image_wcs.wcs.crpix = output_size_x/2 + .5, output_size_y/2 + .5
         # Set the degrees/pixel value so that our specified FOV fits in the
