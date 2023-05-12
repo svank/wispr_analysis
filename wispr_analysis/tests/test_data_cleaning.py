@@ -299,7 +299,8 @@ def test_gen_diffs_distribution(window_width):
     np.testing.assert_allclose(std, np.std(np.arange(window_width) - edge))
     
 
-def test_find_mask():
+@pytest.mark.parametrize('compressed', [True, False])
+def test_find_mask(compressed, mocker):
     path = os.path.dirname(__file__)
     path = os.path.join(path, 'test_data', 'WISPR_files_headers_only')
     
@@ -307,11 +308,24 @@ def test_find_mask():
     
     # For testing purposes, we'll pass the data directory as the mask
     # directory---it's all just filenames anyway.
-    f = files[1]
-    assert data_cleaning.find_mask(path, f) == f
+    if compressed:
+        masks = [f+'.gz' for f in files]
+        mocker.patch(
+                (data_cleaning.__name__
+                    +'.utils.collect_files'),
+                return_value=masks)
     
-    f = files[1:4]
-    assert data_cleaning.find_mask(path, f) == f
+    image = files[1]
+    target = image
+    if compressed:
+        target += '.gz'
+    assert data_cleaning.find_mask(path, image) == target
+    
+    images = files[1:4]
+    target = images
+    if compressed:
+        target = [t + '.gz' for t in target]
+    assert data_cleaning.find_mask(path, images) == target
 
 
 @pytest.mark.parametrize('theta', [-80, -20, 0, 30, 70])

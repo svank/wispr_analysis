@@ -41,7 +41,7 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
             return datetime.fromtimestamp(datestring, timezone.utc)
         return datestring
     # Check if we got a filename
-    if datestring.endswith('.fits'):
+    if datestring.endswith('.fits') or datestring.endswith('.fits.gz'):
         if read_headers:
             with ignore_fits_warnings():
                 datestring = fits.getheader(datestring)['date-avg']
@@ -160,7 +160,8 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
     # Find all valid subdirectories.
     for dirpath, _, fnames in os.walk(top_level_dir):
         for file in fnames:
-            if file[0:3] != 'psp' or file[-5:] != '.fits':
+            if (file[0:3] != 'psp'
+                    or (file[-5:] != '.fits' and file[-8:] != 'fits.gz')):
                 continue
             fname = os.path.join(dirpath, file)
             with ignore_fits_warnings():

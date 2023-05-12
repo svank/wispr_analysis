@@ -301,6 +301,8 @@ def clean_file(data):
     with utils.ignore_fits_warnings():
         if save_masks:
             output = mask.astype(np.int8)
+            # Streak mask files compress *really* well
+            fname += '.gz'
         else:
             output = cleaned.astype(np.float32)
         fits.writeto(fname, output, hdr, overwrite=overwrite)
