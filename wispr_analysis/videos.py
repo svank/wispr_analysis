@@ -644,13 +644,14 @@ def draw_overhead_map(ax_orbit, t, path_positions, path_times):
         spine.set_color('.4')
 
 
-def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20):
+def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20,
+        save_to=None):
     """
-    Helper function for generating a video and displaying it in Jupyter
+    Helper function for generating a video
     
     Calls a function repeatedly to render each frame, then uses ffmpeg to
     combine the frames into a video, which is displayed in the current Jupyter
-    notebook.
+    notebook or saved to disk.
     
     Note: In some cases (particularly when using the parallel mode with many
     cores), it may be helpful to apply the `wrap_with_gc` decorator to the
@@ -670,6 +671,9 @@ def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20):
         If `True`, frames will be rendered in parallel.
     fps : int
         The frames-per-second to use for the final video.
+    save_to : str
+        An output path where the video should be saved. If None, the video is
+        displayed in Jupyter.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         def arguments(arg_list):
@@ -692,6 +696,9 @@ def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20):
                  "-pix_fmt yuv420p -x264-params keyint=30 "
                 f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {video_file}",
                 shell=True)
-        display(Video(video_file, embed=True,
-            html_attributes="controls loop"))
+        if save_to is None:
+            display(Video(video_file, embed=True,
+                html_attributes="controls loop"))
+        else:
+            shutil.move(video_file, os.path.expanduser(save_to))
 
