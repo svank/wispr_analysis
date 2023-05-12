@@ -36,6 +36,13 @@ def test_to_timestamp():
     
     assert utils.to_timestamp(11223344) == 11223344
     
+    target_datetime = utils.to_timestamp(
+        'path/psp_L3_wispr_20210111T083017_V1_1221.fits', as_datetime=True)
+    input_timestamp = utils.to_timestamp(
+        'path/psp_L3_wispr_20210111T083017_V1_1221.fits')
+    assert utils.to_timestamp(
+            input_timestamp, as_datetime=True) == target_datetime
+    
     test_data_path = os.path.join(os.path.dirname(__file__),
                 'test_data', 'WISPR_files_headers_only', '20181101')
     test_file = os.path.join(
