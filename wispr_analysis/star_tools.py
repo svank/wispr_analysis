@@ -14,7 +14,7 @@ from . import plot_utils, utils
 
 def extract_flux(img_sequence, ra, dec, aperture_r=5, gap=2,
         annulus_thickness=3, ret_all=False, extra_backgrounds=None,
-        coords_are_xy=False, skip_edge_stars=False):
+        coords_are_xy=False, skip_edge_stars=False, sum_flux=True):
     cutout_width = aperture_r + gap + annulus_thickness + 1
     if extra_backgrounds is None:
         extra_backgrounds = [None] * len(img_sequence)
@@ -55,13 +55,17 @@ def extract_flux(img_sequence, ra, dec, aperture_r=5, gap=2,
         xs, ys = np.meshgrid(xs, ys)
         r = np.sqrt(xs**2 + ys**2)
         
-        bgs.append(np.nanmedian(
+        bg_value = np.nanmedian(
             cutout[(r > aperture_r + gap)
-                   * (r <= aperture_r + gap + annulus_thickness)]))
+                   * (r <= aperture_r + gap + annulus_thickness)])
+        bgs.append(bg_value)
         
         center = (r <= aperture_r)
-        central_flux = np.sum(cutout[center])
-        fluxes.append(central_flux - bgs[-1] * np.sum(center))
+        central_flux = cutout[center]
+        if sum_flux:
+            central_flux = np.sum(central_flux)
+            bg_value *= np.sum(center)
+        fluxes.append(central_flux - bg_value)
         cutouts.append(cutout)
         coords.append((x, y))
     
