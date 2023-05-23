@@ -157,11 +157,10 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
         filters = [filters]
     
     top_level_dir = os.path.expanduser(top_level_dir)
-    # Find all valid subdirectories.
     for dirpath, _, fnames in os.walk(top_level_dir):
         for file in fnames:
             if (file[0:3] != 'psp'
-                    or (file[-5:] != '.fits' and file[-8:] != 'fits.gz')):
+                    or (file[-5:] != '.fits' and file[-8:] != '.fits.gz')):
                 continue
             fname = os.path.join(dirpath, file)
             with ignore_fits_warnings():

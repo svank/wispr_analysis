@@ -3,6 +3,7 @@ from .. import utils
 from datetime import datetime, timezone
 import os
 import tempfile
+import shutil
 
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -123,6 +124,25 @@ def test_collect_files():
                     header[key], "%Y-%m-%dT%H:%M:%S.%f").timestamp()
             assert timestamp > last_timestamp
             last_timestamp = timestamp
+
+
+def test_collect_files_comrpessed(tmp_path):
+    test_data_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_headers_only')
+    for dirpath, _, filenames in os.walk(test_data_path):
+        os.makedirs(tmp_path / dirpath, exist_ok=True)
+        for fname in filenames:
+            shutil.copyfile(
+                    os.path.join(dirpath, fname),
+                    os.path.join(tmp_path, fname + '.gz'))
+    
+    files_i, files_o = utils.collect_files(
+            test_data_path, separate_detectors=True)
+    cfiles_i, cfiles_o = utils.collect_files(
+            str(tmp_path), separate_detectors=True)
+    for files, cfiles in [(files_i, cfiles_i), (files_o, cfiles_o)]:
+        for file, cfile in zip(files, cfiles):
+            assert os.path.basename(file) + '.gz' == os.path.basename(cfile)
 
 
 def test_collect_files_with_headers():
