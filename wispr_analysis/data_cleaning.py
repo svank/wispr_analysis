@@ -20,7 +20,7 @@ from . import image_alignment, plot_utils, utils
 def dust_streak_filter(img1, img2, img3, radec=True,
         greatest_allowed_gap=2.5*60*60,
         window_width=9, return_mask=False, return_header=False,
-        sliding_window_stride=1):
+        sliding_window_stride=1, precomputed_mask=None):
     if window_width % 2 != 1:
         raise ValueError("`window_width` should be odd")
     
@@ -108,6 +108,36 @@ def dust_streak_filter(img1, img2, img3, radec=True,
         img3_r = img3
         img_fill = np.mean((img1, img3), axis=0)
     
+    if precomputed_mask is None:
+        filter = _compute_debris_mask(
+                img1_r, img2_r, img3_r, img2, hdr2, sliding_window_stride,
+                window_width)
+    else:
+        filter = fits.getdata(precomputed_mask)
+    
+    filtered = np.where(filter, img_fill, img2)
+    
+    ret = [filtered]
+    if return_mask:
+        if return_mask == 'also':
+            ret.append(filter)
+        else:
+            ret[0] = filter
+    if return_header:
+        ret.append(hdr2)
+    if len(ret) == 1:
+        ret = ret[0]
+    return ret
+
+
+def gen_diffs_distribution(img1_r, img3_r, trim, sliding_window_stride, window_width):
+    diffs = np.abs(img3_r - img1_r)
+    return utils.sliding_window_stats(diffs, window_width, ['mean', 'std'],
+            trim=trim, sliding_window_stride=sliding_window_stride)
+
+
+def _compute_debris_mask(img1_r, img2_r, img3_r, img2, hdr2,
+        sliding_window_stride, window_width):
     bad_px = np.isnan(img2) + (img2 < 0)
     rows_filter = np.sum(bad_px, axis=1)
     cols_filter = np.sum(bad_px, axis=0)
@@ -126,22 +156,11 @@ def dust_streak_filter(img1, img2, img3, radec=True,
     if np.any(np.array(trim) > threshold):
         warnings.warn(f"File {hdr2['filename']} appears to have very large"
                       f" margins. Skipping...")
-        ret = [img2]
-        if return_mask:
-            mask = np.zeros_like(img2, dtype=bool)
-            if return_mask == 'also':
-                ret.append(mask)
-            else:
-                ret[0] = mask
-        if return_header:
-            hdr2.add_history(
-                    "Dust streak removal skipped; image appears to have very"
-                    " large margins.")
-            ret.append(hdr2)
-        if len(ret) == 1:
-            ret = ret[0]
-        return ret
-
+        hdr2.add_history(
+                "Dust streak removal skipped; image appears to have very"
+                " large margins.")
+        return np.zeros_like(img2, dtype=bool)
+    
     mean_diffs, std_diffs = gen_diffs_distribution(
             img1_r, img3_r, trim, sliding_window_stride, window_width)
     
@@ -212,25 +231,8 @@ def dust_streak_filter(img1, img2, img3, radec=True,
                 np.arange(1, n_labels+1), remove_small_features, float, 0,
                 pass_positions=True);
     
-    filtered = np.where(filter, img_fill, img2)
+    return filter
     
-    ret = [filtered]
-    if return_mask:
-        if return_mask == 'also':
-            ret.append(filter)
-        else:
-            ret[0] = filter
-    if return_header:
-        ret.append(hdr2)
-    if len(ret) == 1:
-        ret = ret[0]
-    return ret
-
-
-def gen_diffs_distribution(img1_r, img3_r, trim, sliding_window_stride, window_width):
-    diffs = np.abs(img3_r - img1_r)
-    return utils.sliding_window_stats(diffs, window_width, ['mean', 'std'],
-            trim=trim, sliding_window_stride=sliding_window_stride)
 
 
 def median_filter(img1, img2, img3, radec=True, greatest_allowed_gap=2.5*60*60):

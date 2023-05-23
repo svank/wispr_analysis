@@ -884,14 +884,17 @@ def load_orbit_plane_rtheta(files):
     """
     Returns the in-orbit-plane (r, theta) path of the s/c from these files
     """
-    if isinstance(files, str):
+    if isinstance(files, (str, fits.Header)):
         files = [files]
     xs = []
     ys = []
     zs = []
     with ignore_fits_warnings():
         for f in files:
-            h = fits.getheader(f)
+            if isinstance(f, str):
+                h = fits.getheader(f)
+            else:
+                h = f
             xs.append(h['hcix_obs'])
             ys.append(h['hciy_obs'])
             zs.append(h['hciz_obs'])

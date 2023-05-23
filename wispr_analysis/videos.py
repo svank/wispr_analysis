@@ -13,6 +13,7 @@ import tempfile
 import warnings
 
 from astropy.io import fits
+from astropy import constants
 import astropy.units as u
 from astropy.wcs import WCS
 from IPython.display import display, Video
@@ -36,8 +37,9 @@ cmap.set_bad('black')
 
 def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
-        remove_debris=True, overlay_coords=True, overlay_celest=False,
-        save_location=None, mark_planets=False, align=True):
+        remove_debris=True, debris_mask_dir=None, overlay_coords=True,
+        overlay_celest=False, save_location=None, mark_planets=False,
+        align=True):
     """
     Renders a video of a WISPR data sequence, in a composite field of view.
     
@@ -82,6 +84,10 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         Number of frames per second in the video
     remove_debris : boolean
         Whether to enable the debris streak removal algorithm
+    debris_mask_dir : str
+        Path to a directory containing pre-computed debris streak masks. If not
+        provided and ``remove_debris`` is ``True``, streak detection will be
+        run.
     overlay_coords : boolean
         Whether to show a helioprojective coordinate grid
     overlay_celest : boolean
@@ -204,6 +210,15 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
     if save_location is not None:
         save_location = os.path.expanduser(save_location)
     
+    if remove_debris and debris_mask_dir is not None:
+        masks_i = data_cleaning.find_mask(
+                debris_mask_dir, [f[1] for f in i_files])
+        masks_o = data_cleaning.find_mask(
+                debris_mask_dir, [f[1] for f in o_files])
+    else:
+        masks_i = [None] * len(i_files)
+        masks_o = [None] * len(o_files)
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         def arguments():
             for (i, j), timesteps in images:
@@ -215,7 +230,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                     tmpdir=tmpdir, vmax=vmax, path_positions=path_positions,
                     path_times=path_times, ifile=None, next_ifile=None,
                     prev_ifile=None, ihdr=None, ofile=None, next_ofile=None,
-                    prev_ofile=None, ohdr=None,
+                    prev_ofile=None, ohdr=None, imask=None, omask=None,
                     fallback_ifile=i_files[0][1] if align else None,
                     fallback_ofile=o_files[0][1] if align else None,
                     mark_planets=mark_planets)
@@ -225,12 +240,14 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                         args['next_ifile'] = i_files[i+1][1]
                         args['prev_ifile'] = i_files[i-1][1]
                     args['ihdr'] = i_files[i][2]
+                    args['imask'] = masks_i[i]
                 if j is not None:
                     args['ofile'] = o_files[j][1]
                     if 0 < j < len(o_files) - 1:
                         args['next_ofile'] = o_files[j+1][1]
                         args['prev_ofile'] = o_files[j-1][1]
                     args['ohdr'] = o_files[j][2]
+                    args['omask'] = masks_o[j]
                 yield args
         process_map(_draw_WISPR_video_frame, arguments(), total=len(images))
         video_file = os.path.join(tmpdir, 'out.mp4')
@@ -271,7 +288,8 @@ def _draw_WISPR_video_frame(data):
     elif data['remove_debris'] and data['next_ifile']:
         input_i = data_cleaning.dust_streak_filter(
                 data['prev_ifile'], data['ifile'], data['next_ifile'],
-                sliding_window_stride=3)
+                sliding_window_stride=3, precomputed_mask=data['imask'],
+                radec=False)
         input_i = (input_i, data['ihdr'])
     else:
         input_i = data['ifile']
@@ -281,7 +299,8 @@ def _draw_WISPR_video_frame(data):
     elif data['remove_debris'] and data['next_ofile']:
         input_o = data_cleaning.dust_streak_filter(
                 data['prev_ofile'], data['ofile'], data['next_ofile'],
-                sliding_window_stride=3)
+                sliding_window_stride=3, precomputed_mask=data['omask'],
+                radec=False)
         input_o = (input_o, data['ohdr'])
     else:
         input_o = data['ofile']
@@ -340,6 +359,22 @@ def _draw_WISPR_video_frame(data):
                 planet_poses_o = [None] * 8
     with matplotlib.style.context('dark_background'):
         for t in data['timesteps']:
+            # Determine which input image is closest in time
+            if data['ifile'] is None:
+                dt_i = np.inf
+            else:
+                dt_i = np.abs(t - utils.to_timestamp(data['ifile']))
+            if data['ofile'] is None:
+                dt_o = np.inf
+            else:
+                dt_o = np.abs(t - utils.to_timestamp(data['ofile']))
+            if dt_i < dt_o:
+                hdr = data['ihdr']
+            else:
+                hdr = data['ohdr']
+            r, theta = utils.load_orbit_plane_rtheta(hdr)
+            r = r[0]; theta = theta[0]
+            
             fig = matplotlib.figure.Figure(
                 figsize=(10, 7.5),
                 dpi=250 if data['save_location'] else 150)
@@ -380,10 +415,38 @@ def _draw_WISPR_video_frame(data):
                     top=0.90, bottom=0.10,
                     left=0.05, right=0.95)
             
+            main_ax_pos = ax.get_position()
             if data['path_positions'] is not None:
-                ax_orbit = fig.add_axes((.13, .13, .12, .12))
+                ax_orbit = fig.add_axes(
+                        (.01 + main_ax_pos.xmin,
+                         .04 + main_ax_pos.ymin, .12, .12))
                 draw_overhead_map(ax_orbit, t, data['path_positions'],
                         data['path_times'])
+            
+            fig.text(main_ax_pos.xmin + .13,
+                     main_ax_pos.ymin + .065,
+                     f"r = {(r*u.m / constants.R_sun).si.value:.1f}",
+                     color='white')
+            fig.text(main_ax_pos.xmin + .19,
+                     main_ax_pos.ymin + .065,
+                     f"R$_\odot$",
+                     color='white')
+            fig.text(main_ax_pos.xmin + .13,
+                     main_ax_pos.ymin + .04,
+                     f"      {(r * u.m).to(u.AU).value:.2f}",
+                     color='white')
+            fig.text(main_ax_pos.xmin + .19,
+                     main_ax_pos.ymin + .04,
+                     f"AU",
+                     color='white')
+            fig.text(main_ax_pos.xmin + .13,
+                     main_ax_pos.ymin + .095,
+                     f"$\\theta$ = {(theta * 180 / np.pi) % 360:.1f}",
+                     color='white')
+            fig.text(main_ax_pos.xmin + .196,
+                     main_ax_pos.ymin + .095,
+                     f"$^\circ$",
+                     color='white')
             
             if data['mark_planets']:
                 for planet_name, pos_i, pos_o in zip(
@@ -408,9 +471,12 @@ def _draw_WISPR_video_frame(data):
                         # Just in case the composite is being cut off
                         if 0 < x < c.shape[1] and 0 < y < c.shape[0]:
                             ax.annotate(planet_name, (x+7, y),
-                                    (x+60, y+10), color='.9',
+                                    (x+50, y+10), color='.9',
+                                    fontsize='x-small',
                                     arrowprops=dict(
-                                        edgecolor='.7', arrowstyle='->'))
+                                        edgecolor='.7',
+                                        arrowstyle='->',
+                                        mutation_scale=5))
 
             fig.savefig(f"{data['tmpdir']}/{t:035.20f}.png")
 
