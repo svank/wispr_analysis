@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from math import ceil
 import os
+import re
 import warnings
 
 from astropy.io import fits
@@ -1012,3 +1013,14 @@ def time_window_savgol_filter(xdata, ydata, window_size, poly_order):
             # We just need the interpolated value at our window center
             output[i] = np.dot(Ainv, window_y)[0]
     return output
+
+
+def extract_encounter_number(path):
+    """
+    Extracts the encounter number from a data path
+    """
+    m = re.search(r'_ENC(\d{2})_', path)
+    if m is None:
+        return None
+    return m.group(1)
+

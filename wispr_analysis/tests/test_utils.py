@@ -1030,3 +1030,11 @@ def test_time_window_savgol_filter():
     
     np.testing.assert_allclose(y[5:-5], ys[5:-5])
 
+
+def test_extract_encounter_number():
+    assert utils.extract_encounter_number('str_ENC01_str') == '01'
+    assert utils.extract_encounter_number('str_ENC12_str') == '12'
+    assert utils.extract_encounter_number('str_ENC2_str') is None
+    assert utils.extract_encounter_number('str_ENC20str') is None
+    assert utils.extract_encounter_number('strENC20_str') is None
+    assert utils.extract_encounter_number('str_enc20_str') is None
