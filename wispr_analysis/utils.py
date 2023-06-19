@@ -169,8 +169,13 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
                     key = file.split('_')[3]
                     if include_headers or len(filters):
                         header = fits.getheader(fname)
+                        if (header['naxis'] == 0
+                                and header.get('extend', False)):
+                            header = fits.getheader(fname, 1)
                 else:
                     header = fits.getheader(fname)
+                    if header['naxis'] == 0 and header.get('extend', False):
+                        header = fits.getheader(fname, 1)
                     key = header[order]
             
             fkey = to_timestamp(key) if parse_key_as_timestamp else key
