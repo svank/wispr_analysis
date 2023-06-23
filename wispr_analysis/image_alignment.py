@@ -2,11 +2,16 @@ from collections import defaultdict
 from itertools import chain, repeat
 from math import ceil, floor
 import os
+import pickle
+import shutil
 import warnings
 
 
 from astropy.io import fits
 from astropy.wcs import DistortionLookupTable, WCS
+from IPython.core.display import HTML
+from IPython.display import display
+import matplotlib.pyplot as plt
 from numba import njit
 import numpy as np
 import scipy.ndimage
@@ -585,12 +590,15 @@ def smooth_curve(x, y, sig=3600*6.5, n_sig=3, outlier_sig=2):
 
 def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
                                     also_shear=False, n_extra_params=0,
-                                    do_print=True):
+                                    do_print=True, weights=None):
     wcses = []
     all_ras = []
     all_decs = []
     all_xs_true = []
     all_ys_true = []
+    
+    if weights is None:
+        weights = np.ones(len(file_list))
     
     if do_print:
         print("Reading files...")
@@ -663,8 +671,8 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
                 pv.append((2, i, pv_pert))
         
         err = []
-        for w, ras, decs, xs, ys in zip(
-                wcses, all_ras, all_decs, all_xs_true, all_ys_true):
+        for w, ras, decs, xs, ys, weight in zip(
+                wcses, all_ras, all_decs, all_xs_true, all_ys_true, weights):
             if also_shear:
                 w = w.deepcopy()
                 w.wcs.pc = shear @ w.wcs.pc
@@ -673,7 +681,7 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
             xs_comp, ys_comp = np.array(w.all_world2pix(ras, decs, 0))
             ex = xs - xs_comp
             ey = ys - ys_comp
-            err.append(np.sqrt(ex**2 + ey**2))
+            err.append(np.sqrt(ex**2 + ey**2) * np.sqrt(weight))
         
         return np.concatenate(err)
     
@@ -690,6 +698,7 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
                  @ np.array([[1, 0], [shear_y, 1]]))
     else:
         shear_x, shear_y = 0, 0
+        shear = np.array([[1, 0], [0, 1]])
     
     with utils.ignore_fits_warnings():
         header = fits.getheader(file_list[0])
@@ -707,22 +716,29 @@ def iteratively_perturb_projections(file_list, out_dir, series_by_frame,
         if do_print:
             print("Writing out updated files...")
         os.makedirs(out_dir, exist_ok=True)
-        with utils.ignore_fits_warnings():
-            for fname in file_list:
-                with fits.open(fname) as hdul:
-                    hdul[0].header.update(update_dict)
-                    if also_shear:
-                        for wcs_key in ('A', ' '):
-                            w = WCS(hdul[0].header, key=wcs_key)
-                            w.wcs.pc = shear @ w.wcs.pc
-                            update = w.to_header(key=wcs_key)
-                            for k in update:
-                                if k.startswith("PC"):
-                                    hdul[0].header[k] = update[k]
-                    hdul.writeto(os.path.join(out_dir,
-                                 os.path.basename(fname)),
-                                 overwrite=True)
+        for fname in file_list:
+            update_file_with_projection(
+                    fname, update_dict, out_dir,
+                    also_shear=also_shear, shear=shear)
     return update_dict, pv_orig, shear_x, shear_y
+
+
+def update_file_with_projection(input_fname, update_dict, out_dir,
+        also_shear=False, shear=None):
+    with utils.ignore_fits_warnings():
+        with fits.open(input_fname) as hdul:
+            hdul[0].header.update(update_dict)
+            if also_shear:
+                for wcs_key in ('A', ' '):
+                    w = WCS(hdul[0].header, key=wcs_key)
+                    w.wcs.pc = shear @ w.wcs.pc
+                    update = w.to_header(key=wcs_key)
+                    for k in update:
+                        if k.startswith("PC"):
+                            hdul[0].header[k] = update[k]
+            hdul.writeto(os.path.join(out_dir,
+                         os.path.basename(input_fname)),
+                         overwrite=True)
 
 
 def calc_binned_err_components(px_x, px_y, err_x, err_y, ret_coords=False):
@@ -881,4 +897,185 @@ def add_distortion_table(fname, outname, err_x, err_y, err_px, err_py):
         return hdul
     with utils.ignore_fits_warnings():
         hdul.writeto(outname, overwrite=True)
+
+
+def generate_combined_map(search_dir, use_outer=False):
+    inner_outer = "_O_" if use_outer else "_I_"
+    work_dirs = [
+            os.path.join(search_dir, f) for f in sorted(os.listdir(search_dir))
+                if '_for_use' in f and inner_outer in f]
+    print(("Outer" if use_outer else "Inner") + " FOV")
+    for work_dir in work_dirs:
+        print(work_dir)
+    
+    errors_x = []
+    errors_y = []
+    ud_errors_x = []
+    ud_errors_y = []
+    px_x = []
+    px_y = []
+    rmses_before = []
+    
+    for work_dir in work_dirs:
+        with open(os.path.join(work_dir, 'data_dump_r2.pkl'), 'rb') as f:
+            dump = pickle.load(f)
+        
+        errors_x.extend(dump['perrors_x'])
+        errors_y.extend(dump['perrors_y'])
+        ud_errors_x.extend(dump['derrors_x'])
+        ud_errors_y.extend(dump['derrors_y'])
+        
+        px_x.extend(dump['ppx_x'])
+        px_y.extend(dump['ppx_y'])
+        rmses_before.append(dump['drmse'])
+    
+    errors_x = np.array(errors_x)
+    errors_y = np.array(errors_y)
+    errors = np.sqrt(errors_x**2 + errors_y**2)
+    ud_errors_x = np.array(ud_errors_x)
+    ud_errors_y = np.array(ud_errors_y)
+    ud_errors = np.sqrt(ud_errors_x**2 + ud_errors_y**2)
+    px_x = np.array(px_x)
+    px_y = np.array(px_y)
+    
+    
+    dx_maps = []
+    dy_maps = []
+    for work_dir in work_dirs:
+        files = utils.collect_files(
+                os.path.join(work_dir, 'aligned_ud_images'),
+                separate_detectors=False)
+        with utils.ignore_fits_warnings(), fits.open(files[0]) as hdul:
+            dx_maps.append(hdul[1].data)
+            dy_maps.append(hdul[2].data)
+
+    display(HTML("<h3>Per-encounter error maps</h3>"))
+    
+    for dx_map, dy_map, drmse, work_dir in zip(dx_maps, dy_maps, rmses_before, work_dirs):
+        plt.figure(figsize=(15, 5))
+        plt.subplot(131)
+        plt.imshow(-dx_map, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
+        plt.title("X errors")
+        plt.subplot(132)
+        plt.imshow(-dy_map, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
+        plt.colorbar(ax=plt.gcf().axes[:2]).set_label("Distortion (px)")
+        plt.title("Y errors")
+        plt.subplot(133)
+        plt.imshow(np.sqrt(dx_map**2 + dy_map**2),
+                   vmin=0, vmax=1, origin='lower')
+        plt.colorbar().set_label("Distortion amplitude (px)")
+        plt.title("Error magnitude")
+        plt.suptitle(f"{os.path.basename(work_dir)}, rmse={drmse:.5f}")
+        plt.show()
+    
+    filter = errors < 2
+    err_x, err_y, err_px, err_py = calc_binned_err_components(
+            px_x[filter], px_y[filter], errors_x[filter], errors_y[filter],
+            ret_coords=True)
+    
+    plt.hist([errors, ud_errors], bins=50, log=True, histtype='step',
+            range=(0, 6),
+            label=['W/o maps', 'Per-encounter maps'])
+    plt.xlabel("Error magnitude (px)")
+    plt.ylabel("Count")
+    plt.legend()
+    plt.show()
+    
+    print(f"RMSE w/o maps:              {np.sqrt(np.mean(np.square(errors)))}")
+    print(f"RMSE w/ per-encounter maps: {np.sqrt(np.mean(np.square(ud_errors)))}")
+
+
+    display(HTML("<h3>Merged error map</h3>"))
+    
+    plt.figure(figsize=(15, 5))
+    plt.subplot(131)
+    plt.imshow(err_x, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
+    plt.title("X offset table")
+    plt.subplot(132)
+    plt.imshow(err_y, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
+    plt.colorbar(ax=plt.gcf().axes[:2]).set_label("Distortion (px)")
+    plt.title("Y offset table")
+    plt.subplot(133)
+    plt.imshow(np.sqrt(err_x**2 + err_y**2), vmin=0, vmax=1, origin='lower')
+    plt.colorbar().set_label("Distortion amplitude (px)")
+    plt.title("Error magnitude")
+    plt.suptitle("Unsmoothed")
+    plt.show()
+    
+    err_x = filter_distortion_table(err_x)
+    err_y = filter_distortion_table(err_y)
+    
+    plt.figure(figsize=(15, 5))
+    plt.subplot(131)
+    plt.imshow(err_x, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
+    plt.title("X offset table")
+    plt.subplot(132)
+    plt.imshow(err_y, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
+    plt.colorbar(ax=plt.gcf().axes[:2]).set_label("Distortion (px)")
+    plt.title("Y offset table")
+    plt.subplot(133)
+    plt.imshow(np.sqrt(err_x**2 + err_y**2), vmin=0, vmax=1, origin='lower')
+    plt.colorbar().set_label("Distortion amplitude (px)")
+    plt.title("Error magnitude")
+    plt.suptitle("Smoothed")
+    plt.show()
+
+    return err_x, err_y, work_dirs
+
+
+def _write_combined_map(err_x, err_y, ifile, *ofiles, collect_wcs=False):
+    with utils.ignore_fits_warnings(), fits.open(ifile) as hdul:
+        hdul[1].data = -err_x.astype(hdul[1].data.dtype)
+        hdul[2].data = -err_y.astype(hdul[2].data.dtype)
+        for ofile in ofiles:
+            hdul.writeto(ofile)
+        if collect_wcs:
+            return WCS(hdul[0].header, hdul, key='A')
+
+
+def write_combined_maps(err_x, err_y, work_dirs, *out_dirs,
+                        delete_existing=False, collect_wcses=False):
+    """
+    Write a merged error map to many files
+    
+    Parameters
+    ----------
+    err_x, err_y : ``np.ndarray``
+        The merged error map, to be written directly into the correct HDUs
+    work_dirs : ``list`` of ``str``
+        A list of input directories, each containing files that should receive
+        the merged maps.
+    out_dirs : one or multiple ``list``s of ``str``
+        The output directories. Each file can be written to multiple output
+        directories. If ``work_dirs`` is length N, and each file is to be
+        written into M directories, then M lists should be provided, each
+        containing N entries.
+    delete_existing : ``bool``
+        Whether to delete existing output directories
+    """
+    ifiles = []
+    ofiles = [[] for x in out_dirs]
+    for i, work_dir in enumerate(work_dirs):
+        files = utils.collect_files(work_dir, separate_detectors=False)
+        ifiles.extend(files)
+        for j, out_dir in enumerate(out_dirs):
+            ofiles[j].extend([
+                os.path.join(out_dir[i], os.path.basename(f)) for f in files])
+
+    for out_dir in chain(*out_dirs):
+        if os.path.exists(out_dir):
+            if delete_existing:
+                shutil.rmtree(out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+
+    wcses = {}
+    for i in tqdm(range(len(ifiles))):
+        ifile = ifiles[i]
+        ofile = [of[i] for of in ofiles]
+        wcs = _write_combined_map(err_x, err_y, ifile, *ofile,
+            collect_wcs=collect_wcses)
+        if collect_wcses:
+            wcses[utils.to_timestamp(ifile)] = wcs
+    if collect_wcses:
+        return wcses
 

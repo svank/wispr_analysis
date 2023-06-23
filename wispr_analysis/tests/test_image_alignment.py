@@ -3,6 +3,7 @@ from .. import image_alignment, utils
 
 from itertools import product
 import os
+import shutil
 
 
 from astropy.io import fits
@@ -599,7 +600,7 @@ def test_filter_distortion_table_nans_center():
     np.testing.assert_equal(filtered[63:67, 63:67], 10)
 
 
-def test_filter_distortion_median_filter_image():
+def test_filter_distortion_table_median_filter_image():
     data = np.zeros((50, 50))
     
     data[30, 40] = 5
@@ -609,7 +610,7 @@ def test_filter_distortion_median_filter_image():
     assert filtered[30, 40] == 0
 
 
-def test_filter_distortion_gaussian_filter_image():
+def test_filter_distortion_table_gaussian_filter_image():
     data = np.zeros((50, 50))
     
     data[30, 40] = 5
@@ -618,3 +619,79 @@ def test_filter_distortion_gaussian_filter_image():
     
     assert filtered[30, 40] > 0
     assert filtered[30, 40] < 5
+
+
+def test_write_combined_maps(tmp_path):
+    test_dir_path = os.path.join(os.path.dirname(__file__),
+                'test_data', 'WISPR_files_with_distortion_map')
+    test_files = utils.collect_files(test_dir_path, separate_detectors=False)
+    
+    # Populate three work directories (three faux encounters)
+    work_dirs = [os.path.join(tmp_path, f'work_dir_{i}') for i in range(3)]
+    for i, work_dir in enumerate(work_dirs):
+        os.makedirs(work_dir, exist_ok=True)
+        open(os.path.join(work_dir, 'non-fits-file'), 'w')
+        for test_file in test_files:
+            out_name = os.path.basename(test_file)
+            # Ensure we have unique file names for each "encounter"
+            out_name = out_name[:20] + str(i) + out_name[21:]
+            shutil.copyfile(
+                    test_file,
+                    os.path.join(work_dir, out_name))
+    
+    out_dirs_A = [
+            os.path.join(tmp_path, f'out_dir_{i}A')
+            for i in range(len(work_dirs))]
+    out_dirs_B = [
+            os.path.join(tmp_path, f'out_dir_{i}B')
+            for i in range(len(work_dirs))]
+    
+    with utils.ignore_fits_warnings(), fits.open(test_files[0]) as hdul:
+        err_map = hdul[2].data
+    err_x = np.arange(err_map.size).reshape(err_map.shape)
+    err_y = err_x + 1
+    
+    image_alignment.write_combined_maps(
+            err_x,
+            err_y,
+            work_dirs,
+            out_dirs_A,
+            out_dirs_B)
+    
+    def verify_results():
+        for i, work_dir in enumerate(work_dirs):
+            for out_dir in [out_dirs_A[i], out_dirs_B[i]]:
+                assert not os.path.exists(
+                        os.path.join(out_dir, 'non-fits-file'))
+                for test_file in test_files:
+                    out_name = os.path.basename(test_file)
+                    out_name = out_name[:20] + str(i) + out_name[21:]
+                    out_path = os.path.join(out_dir, out_name)
+                    assert os.path.exists(out_path)
+                    with (utils.ignore_fits_warnings(),
+                            fits.open(out_path) as hdul):
+                        np.testing.assert_array_equal(-err_x, hdul[1].data)
+                        np.testing.assert_array_equal(-err_y, hdul[2].data)
+    
+    verify_results()
+    
+    with pytest.raises(OSError, match='already exists'):
+        image_alignment.write_combined_maps(
+                err_x,
+                err_y,
+                work_dirs,
+                out_dirs_A,
+                out_dirs_B)
+    
+    err_x += 10
+    err_y += 11
+    image_alignment.write_combined_maps(
+            err_x,
+            err_y,
+            work_dirs,
+            out_dirs_A,
+            out_dirs_B,
+            delete_existing=True)
+    
+    verify_results()
+
