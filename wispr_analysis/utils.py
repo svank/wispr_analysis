@@ -41,6 +41,10 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
         if as_datetime:
             return datetime.fromtimestamp(datestring, timezone.utc)
         return datestring
+    if datestring == '':
+        if as_datetime:
+            return None
+        return np.nan
     # Check if we got a filename
     if datestring.endswith('.fits') or datestring.endswith('.fits.gz'):
         if read_headers:
@@ -897,7 +901,11 @@ def load_orbit_plane_rtheta(files):
     with ignore_fits_warnings():
         for f in files:
             if isinstance(f, str):
-                h = fits.getheader(f)
+                with fits.open(f) as hdul:
+                    if len(hdul) == 4:
+                        h= fits.getheader(f, 1)
+                    else:
+                        h = fits.getheader(f)
             else:
                 h = f
             xs.append(h['hcix_obs'])
@@ -1020,12 +1028,21 @@ def time_window_savgol_filter(xdata, ydata, window_size, poly_order):
     return output
 
 
-def extract_encounter_number(path):
+def extract_encounter_number(path, as_int=False):
     """
     Extracts the encounter number from a data path
     """
+    if isinstance(path, Iterable) and not isinstance(path, str):
+        return [extract_encounter_number(
+                    x, as_int=as_int)
+                for x in path]
     m = re.search(r'_ENC(\d{2})_', path)
     if m is None:
+        if as_int:
+            return -1
         return None
-    return m.group(1)
+    result = m.group(1)
+    if as_int:
+        result = int(result)
+    return result
 

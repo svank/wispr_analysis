@@ -76,6 +76,16 @@ def test_to_timestamp_list():
     assert (utils.to_timestamp(
         [test_file] * 2, as_datetime=True, read_headers=True)
             == [datetime(2018, 11, 1, 0, 47, 1, 880000, timezone.utc)] * 2)
+    
+    result = utils.to_timestamp([['2021-02-03T12:13:14.5'] * 3] * 2)
+    expected = utils.to_timestamp('2021-02-03T12:13:14.5')
+    assert result == [
+            [expected, expected, expected], [expected, expected, expected]]
+
+
+def test_to_timestamp_empty():
+    assert np.isnan(utils.to_timestamp(''))
+    assert utils.to_timestamp('', as_datetime=True) is None
 
 
 def test_get_PSP_path():
@@ -1034,7 +1044,28 @@ def test_time_window_savgol_filter():
 def test_extract_encounter_number():
     assert utils.extract_encounter_number('str_ENC01_str') == '01'
     assert utils.extract_encounter_number('str_ENC12_str') == '12'
+    assert utils.extract_encounter_number('str_ENC01_str', as_int=True) == 1
+    assert utils.extract_encounter_number('str_ENC12_str', as_int=True) == 12
     assert utils.extract_encounter_number('str_ENC2_str') is None
     assert utils.extract_encounter_number('str_ENC20str') is None
     assert utils.extract_encounter_number('strENC20_str') is None
     assert utils.extract_encounter_number('str_enc20_str') is None
+    assert utils.extract_encounter_number('') is None
+    
+    assert utils.extract_encounter_number(
+            ['str_ENC01_str',
+             'str_ENC22_str',
+             'str_ENC11_str']) == ['01', '22', '11']
+    
+    assert utils.extract_encounter_number(
+            ['str_ENC01_str',
+             'str_ENC22_str',
+             'str_ENC11_str'], as_int=True) == [1, 22, 11]
+    
+    assert utils.extract_encounter_number(
+            [['str_ENC01_str',
+             'str_ENC22_str',
+             'str_ENC11_str'],
+             ['str_ENC03_str',
+             'str_ENC23_str',
+             'str_ENC13_str']], as_int=True) == [[1, 22, 11], [3, 23, 13]]
