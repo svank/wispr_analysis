@@ -35,7 +35,8 @@ cmap = copy.copy(matplotlib.cm.Greys_r)
 cmap.set_bad('black')
 
 
-def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
+def make_WISPR_video(data_dir, between=(None, None), filters=None,
+        trim_threshold=12*60*60,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
         remove_debris=True, debris_mask_dir=None, overlay_coords=True,
         overlay_celest=False, save_location=None, mark_planets=False,
@@ -64,6 +65,8 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         files between these timestamps will be included in the video. Either or
         both timestamp can be `None`, to place no limit on the beginning or end
         of the video.
+    filters : tuple
+        Additional filters to pass to ``utils.collect_files``.
     trim_threshold : float
         After filtering is done with the ``between`` values, the video start and
         end times are determined by scanning the time gaps between successive
@@ -108,7 +111,7 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
         planets.load_kernels()
     files = utils.collect_files(
             data_dir, separate_detectors=align, include_sortkey=True,
-            include_headers=True, between=between)
+            include_headers=True, between=between, filters=filters)
     if align:
         i_files, o_files = files
     else:
@@ -248,6 +251,13 @@ def make_WISPR_video(data_dir, between=(None, None), trim_threshold=12*60*60,
                         args['prev_ofile'] = o_files[j-1][1]
                     args['ohdr'] = o_files[j][2]
                     args['omask'] = masks_o[j]
+                for k in ['ihdr', 'ohdr']:
+                    # CompImageHeaders currently don't unpickle, so convert
+                    # them to normal Headers
+                    if isinstance(
+                            args[k], fits.hdu.compressed.CompImageHeader):
+                        args[k] = fits.Header.fromstring(
+                                args[k].tostring())
                 yield args
         process_map(_draw_WISPR_video_frame, arguments(), total=len(images))
         video_file = os.path.join(tmpdir, 'out.mp4')
@@ -319,9 +329,12 @@ def _draw_WISPR_video_frame(data):
     else:
         if isinstance(input_i, tuple):
             c = input_i[0]
+            wcs_plot = WCS(input_i[1])
         else:
-            with utils.ignore_fits_warnings():
-                c = fits.getdata(input_i)
+            with utils.ignore_fits_warnings(), fits.open(input_i) as hdul:
+                hdu = 1 if hdul[0].data is None else 0
+                c = hdul[hdu].data
+                wcs_plot = WCS(hdul[hdu].header, hdul)
     
     if data['overlay_celest']:
         # Determine which input image is closest in time
@@ -726,9 +739,9 @@ def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20,
     Parameters
     ----------
     frame_renderer : function
-        Function than draws a single frame. Must accept as arguments a file
-        name to which the frame should be saved as a PNG file, and then all
-        other arguments provided in ``arg_list``.
+        Function than draws a single frame. Must accept as arguments a single
+        tuple containing the file name to which the frame should be saved as a
+        PNG file, and then all other arguments provided in ``arg_list``.
     arg_list : Iterable
         A list of arguments to be passed to ``frame_renderer``. Each element can
         be a single non-tuple item, or a tuple of arguments. The output
