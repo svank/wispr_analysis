@@ -372,7 +372,7 @@ def calc_FOV_pos(sc, p, t=0):
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
-        psychadelic=False, celestial_wcs=False):
+        psychadelic=False, celestial_wcs=False, fixed_fov_range=None):
     sc = sc.at(t0)
     
     # Build output image WCS
@@ -477,6 +477,18 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.crval = fov_center, 0
         cdelt = image_wcs.wcs.cdelt[0]
         image_wcs.wcs.cdelt = -cdelt, cdelt
+    
+    if fixed_fov_range is not None:
+        fixed_fov_start = np.arctan2(-sc.y, -sc.x) * 180 / np.pi - 13.5
+        fixed_fov_stop = np.arctan2(-sc.y, -sc.x) * 180 / np.pi - 108
+        add_left = ((fixed_fov_range[0] - fixed_fov_start) % 360) / np.abs(image_wcs.wcs.cdelt[0])
+        add_right = ((fixed_fov_stop - fixed_fov_range[1]) % 360) / np.abs(image_wcs.wcs.cdelt[0])
+        #print(fixed_fov_start, fixed_fov_stop, add_left, add_right, fixed_fov_range[0] - fixed_fov_start, fixed_fov_stop - fixed_fov_range[1])
+        output_image = np.pad(
+                output_image,
+                ((0, 0), (int(np.round(add_left)), int(np.round(add_right)))))
+        crpix = image_wcs.wcs.crpix
+        image_wcs.wcs.crpix = crpix[0] + add_left, crpix[1]
         
     return output_image, image_wcs
 
