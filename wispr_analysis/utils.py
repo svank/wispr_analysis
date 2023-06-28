@@ -162,6 +162,8 @@ def collect_files(top_level_dir, separate_detectors=True, order=None,
         filters = [filters]
     
     top_level_dir = os.path.expanduser(top_level_dir)
+    if not os.path.exists(top_level_dir):
+        raise FileNotFoundError(f'Could not find directory {top_level_dir}')
     for dirpath, _, fnames in os.walk(top_level_dir):
         for file in fnames:
             if (file[0:3] != 'psp'

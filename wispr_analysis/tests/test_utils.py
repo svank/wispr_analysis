@@ -136,7 +136,7 @@ def test_collect_files():
             last_timestamp = timestamp
 
 
-def test_collect_files_comrpessed(tmp_path):
+def test_collect_files_compressed(tmp_path):
     test_data_path = os.path.join(os.path.dirname(__file__),
                 'test_data', 'WISPR_files_headers_only')
     for dirpath, _, filenames in os.walk(test_data_path):
@@ -267,6 +267,11 @@ def test_collect_files_two_filters():
         assert float(h['dsun_obs']) >= 32067077000
         assert float(h['dsun_obs']) <= 34213000000
         assert float(h['xposure']) >= 100
+
+
+def test_collect_files_nonexistent_dir(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        utils.collect_files(tmp_path / 'no-dir')
 
 
 def test_ensure_data():
