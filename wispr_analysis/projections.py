@@ -264,3 +264,35 @@ def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
     wcs_ra.wcs.pc = np.array([[np.cos(angle), -np.sin(angle)],
                               [np.sin(angle), np.cos(angle)]])
     return wcs_ra
+
+
+def overlay_radial_grid(image, transformer, ax=None):
+    """
+    Overlays a (elongation, pa) grid on a non-radially-projected image.
+    
+    Draws a grid in ten-degree increments.
+    
+    Parameters
+    ----------
+    image : ``np.ndarray``
+        The data array being plotted. Needed to determine the size of the image
+        array.
+    transformer : `RadialTransformer`
+        The `RadialTransformer` controlling the transformation to radial
+        coordinates.
+    ax : `matplotlib.axes.Axes`
+        Optional, the axes to plot on
+    """
+    x = np.arange(image.shape[1])
+    y = np.arange(image.shape[0])
+    xx, yy = np.meshgrid(x, y)
+    hplon, hplat = transformer.wcs_in.pixel_to_world_values(xx, yy)
+    elongation, pa = transformer.hp_to_elongation(hplon, hplat)
+    
+    if ax is None:
+        ax = plt.gca()
+    ax.contour( elongation, levels=np.arange(10, 180, 10),
+            colors='w', alpha=.5, linewidths=.5)
+    ax.contour( pa, levels=np.arange(0, 180, 10),
+            colors='w', alpha=.5, linewidths=.5)
+
