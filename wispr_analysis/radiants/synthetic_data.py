@@ -3,9 +3,12 @@ from dataclasses import dataclass
 
 
 from astropy.wcs import WCS
+import astropy.coordinates
+import astropy.units as u
 import numpy as np
 import reproject
 import scipy
+import sunpy.coordinates
 
 
 class Thing:
@@ -85,8 +88,10 @@ class Thing:
         angle = angle_between_vectors(
             other.vx,
             other.vy,
+            other.vz,
             separation_vector.x,
-            separation_vector.y)
+            separation_vector.y,
+            separation_vector.z)
         in_front = np.atleast_1d(np.abs(angle) < np.pi/2)
         in_front[separation_vector.r == 0] = False
         return in_front
@@ -96,14 +101,14 @@ class Thing:
         """
         Convenience access to sqrt(x**2 + y**2)
         """
-        return np.sqrt(self.x**2 + self.y**2)
+        return np.sqrt(self.x**2 + self.y**2 + self.z**2)
     
     @property
     def v(self):
         """
         Convenience access to sqrt(vx**2 + vy**2)
         """
-        return np.sqrt(self.vx**2 + self.vy**2)
+        return np.sqrt(self.vx**2 + self.vy**2 + self.vz**2)
     
     def copy(self):
         """ Returns a deep copy of this object """
@@ -122,10 +127,13 @@ class LinearThing(Thing):
     """ Represents an object with constant velocity """
     x_t0: float = 0
     y_t0: float = 0
+    z_t0: float = 0
     vx_t0: float = 0
     vy_t0: float = 0
+    vz_t0: float = 0
     
-    def __init__(self, x=0, y=0, vx=0, vy=0, t=0, t_min=None, t_max=None):
+    def __init__(self, x=0, y=0, z=0, vx=0, vy=0, vz=0,
+            t=0, t_min=None, t_max=None):
         """
         Accepts physical parameters, as well as the corresponding time
         
@@ -135,10 +143,12 @@ class LinearThing(Thing):
         """
         self.vx_t0 = vx
         self.vy_t0 = vy
+        self.vz_t0 = vz
         self.t = t
         
         self.x_t0 = x - vx * t
         self.y_t0 = y - vy * t
+        self.z_t0 = z - vz * t
         
         self.t_min = t_min
         self.t_max = t_max
@@ -154,6 +164,12 @@ class LinearThing(Thing):
         y = self.y_t0 + self.vy_t0 * self.t
         y = self.process_t_bounds(y)
         return y
+    
+    @property
+    def z(self):
+        z = self.z_t0 + self.vz_t0 * self.t
+        z = self.process_t_bounds(z)
+        return z
     
     @property
     def vx(self):
@@ -173,10 +189,20 @@ class LinearThing(Thing):
     def vy(self, value):
         self.vy_t0 = value
     
+    @property
+    def vz(self):
+        vz = self.process_t_bounds(self.vz_t0)
+        return vz
+    
+    @vz.setter
+    def vz(self, value):
+        self.vz_t0 = value
+    
     def offset_by_time(self, dt):
         out = self.copy()
         out.x_t0 += out.vx_t0 * dt
         out.y_t0 += out.vy_t0 * dt
+        out.z_t0 += out.vz_t0 * dt
         return out
 
 
@@ -191,15 +217,17 @@ class ArrayThing(Thing):
     
     xlist: np.ndarray = 0
     ylist: np.ndarray = 0
+    zlist: np.ndarray = 0
     tlist: np.ndarray = 0
     
-    def __init__(self, tlist, xlist=0, ylist=0, t=0, t_min=None, t_max=None):
+    def __init__(self, tlist, xlist=0, ylist=0, zlist=0,
+            t=0, t_min=None, t_max=None):
         """
         Parameters
         ----------
         tlist : np.ndarray
             The list of time points at which positions are provided
-        xlist, ylist : np.ndarray or float
+        xlist, ylist, zlist : np.ndarray or float
             The specified positions. If either is a single number, that number
             is used at all points in time.
         t : float
@@ -207,6 +235,7 @@ class ArrayThing(Thing):
         """
         xlist = np.atleast_1d(xlist)
         ylist = np.atleast_1d(ylist)
+        zlist = np.atleast_1d(zlist)
         tlist = np.atleast_1d(tlist)
         
         # Check that tlist is sorted
@@ -217,14 +246,19 @@ class ArrayThing(Thing):
             xlist = np.repeat(xlist, len(tlist))
         if len(ylist) == 1:
             ylist = np.repeat(ylist, len(tlist))
+        if len(zlist) == 1:
+            zlist = np.repeat(zlist, len(tlist))
         
         if len(xlist) != len(tlist):
             raise ValueError("Invalid length for xlist")
         if len(ylist) != len(tlist):
             raise ValueError("Invalid length for ylist")
+        if len(zlist) != len(tlist):
+            raise ValueError("Invalid length for zlist")
         
         self.xlist = xlist
         self.ylist = ylist
+        self.zlist = zlist
         self.tlist = tlist
         self.t = t
         
@@ -244,6 +278,12 @@ class ArrayThing(Thing):
         return y
     
     @property
+    def z(self):
+        z = scipy.interpolate.interp1d(self.tlist, self.zlist)(self.t)
+        z = self.process_t_bounds(z)
+        return z
+    
+    @property
     def vx(self):
         interpolator = scipy.interpolate.interp1d(self.tlist, self.xlist)
         dt = .0001
@@ -258,6 +298,14 @@ class ArrayThing(Thing):
         vy = self._finite_difference(interpolator, dt)
         vy = self.process_t_bounds(vy)
         return vy
+    
+    @property
+    def vz(self):
+        interpolator = scipy.interpolate.interp1d(self.tlist, self.zlist)
+        dt = .0001
+        vz = self._finite_difference(interpolator, dt)
+        vz = self.process_t_bounds(vz)
+        return vz
     
     def _finite_difference(self, interpolator, dt):
         try:
@@ -277,7 +325,6 @@ class ArrayThing(Thing):
         out.tlist += dt
         return out
 
-
 class DifferenceThing(Thing):
     """ Represents a difference between two Things """
     
@@ -295,6 +342,10 @@ class DifferenceThing(Thing):
         return self.thing1.at(self.t).y - self.thing2.at(self.t).y
     
     @property
+    def z(self):
+        return self.thing1.at(self.t).z - self.thing2.at(self.t).z
+    
+    @property
     def vx(self):
         dt = .0001
         x_before = self.at(self.t - dt/2).x
@@ -307,9 +358,16 @@ class DifferenceThing(Thing):
         y_before = self.at(self.t - dt/2).y
         y_after = self.at(self.t + dt/2).y
         return (y_after - y_before) / dt
+    
+    @property
+    def vz(self):
+        dt = .0001
+        z_before = self.at(self.t - dt/2).z
+        z_after = self.at(self.t + dt/2).z
+        return (z_after - z_before) / dt
 
 
-def signed_angle_between_vectors(x1, y1, x2, y2):
+def angle_between_vectors(x1, y1, z1, x2, y2, z2):
     """Returns a signed angle between two vectors"""
     # Rotate so v1 is our x axis. We want the angle v2 makes to the x axis.
     # Its components in this rotated frame are its dot and cross products
@@ -318,56 +376,75 @@ def signed_angle_between_vectors(x1, y1, x2, y2):
     x2 = np.atleast_1d(x2)
     y1 = np.atleast_1d(y1)
     y2 = np.atleast_1d(y2)
+    z1 = np.atleast_1d(z1)
+    z2 = np.atleast_1d(z2)
     
-    dot_product = x1 * x2 + y1 * y2
-    cross_product = x1 * y2 - y1 * x2
+    dot_product = x1 * x2 + y1 * y2 + z1 * z2
+    cross_x = (y1*z2 - z1*y2)
+    cross_y = (z1*x2 - x1*z2)
+    cross_z = (x1*y2 - y1*x2)
+    det = np.sqrt(cross_x**2 + cross_y**2 + cross_z**2)
     
-    angle = np.arctan2(cross_product, dot_product)
-    v1_is_zero = ((x1 == 0) * (y1 == 0))
-    v2_is_zero = ((x2 == 0) * (y2 == 0))
+    angle = np.arctan2(det, dot_product)
+    v1_is_zero = ((x1 == 0) * (y1 == 0) * (z1 == 0))
+    v2_is_zero = ((x2 == 0) * (y2 == 0) * (z2 == 0))
     angle[v1_is_zero + v2_is_zero] = np.nan
     return angle
 
 
-def angle_between_vectors(x1, y1, x2, y2):
-    """Returns an unsigned angle between two vectors"""
-    return np.abs(signed_angle_between_vectors(x1, y1, x2, y2))
-
-
-def calc_epsilon(sc, p, t=None, signed=False):
-    """
-    Calculates (unsigned) elongation angle epsilon for spacecraft and parcel positions
-    """
+def calc_hpc(sc, parcels, t=None):
+    was_not_list = False
+    if isinstance(parcels, Thing):
+        parcels = [parcels]
+        was_not_list = True
+    
     if t is not None:
         sc = sc.at(t)
-        p = p.at(t)
-    # Angular position of Sun relative to s/c
-    theta_sun = np.arctan2(-sc.y, -sc.x)
-    # Angular position of Sun relative to s/c
-    diff = p - sc
-    theta_parcel = np.arctan2(diff.y, diff.x)
+        parcels = [p.at(t) for p in parcels]
     
-    angle = theta_sun - theta_parcel
-    angle = np.atleast_1d(angle)
-    if not signed:
-        angle = np.abs(angle)
-        f = angle > np.pi
-        angle[f] = 2*np.pi - angle[f]
-    else:
-        f = angle > np.pi
-        angle[f] -= 2*np.pi
-    return angle
+    px = np.array([p.x for p in parcels])
+    py = np.array([p.y for p in parcels])
+    pz = np.array([p.z for p in parcels])
+    
+    Tx, Ty = xyz_to_hpc(px, py, pz, sc.x, sc.y, sc.z)
+    if was_not_list:
+        Tx = Tx[0]
+        Ty = Ty[0]
+    return Tx, Ty
+    
+
+def xyz_to_hpc(xs, ys, zs, scx, scy, scz):
+    obstime = '2023/07/05T04:21:00'
+    sc_hc = astropy.coordinates.SkyCoord(x=scx, y=scy, z=scz, unit='m',
+            representation_type='cartesian', obstime=obstime,
+            frame=sunpy.coordinates.frames.HeliocentricInertial)
+    p_hc = astropy.coordinates.SkyCoord(x=xs, y=ys, z=zs, unit='m',
+            representation_type='cartesian', obstime=obstime,
+            frame=sunpy.coordinates.frames.HeliocentricInertial)
+    p_hpc = p_hc.transform_to(
+            sunpy.coordinates.frames.Helioprojective(
+                observer=sc_hc, obstime=obstime))
+    
+    Tx = p_hpc.Tx.to(u.deg).value
+    Ty = p_hpc.Ty.to(u.deg).value
+    
+    return Tx, Ty
 
 
-def calc_FOV_pos(sc, p, t=0):
-    """
-    Calculates FOV position given spacecraft and parcel positions
+def hpc_to_elpa(Tx, Ty):
+    Tx = np.deg2rad(Tx)
+    Ty = np.deg2rad(Ty)
     
-    FOV angle is measured relative to the spacecraft's forward direction and
-    increases to the right
-    """
-    offset = (p - sc).at(t)
-    return -signed_angle_between_vectors(sc.vx, sc.vy, offset.x, offset.y)
+    elongation = np.arctan2(
+            np.sqrt(np.cos(Ty)**2 * np.sin(Tx)**2 + np.sin(Ty)**2),
+            np.cos(Ty) * np.cos(Tx)
+            )
+    pa = np.arctan2(
+        -np.cos(Ty) * np.sin(Tx),
+        np.sin(Ty)
+    )
+    
+    return np.rad2deg(elongation), np.rad2deg(pa)
 
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
@@ -399,6 +476,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.cdelt = cdelt, cdelt
         image_wcs.wcs.ctype = f"HPLN-{projection}", f"HPLT-{projection}"
         image_wcs.wcs.cunit = "deg", "deg"
+        image_wcs.array_shape = (output_size_y, output_size_x)
     
     fov_start = image_wcs.wcs.crval[0] - fov/2
     fov_stop = image_wcs.wcs.crval[0] + fov/2
@@ -422,6 +500,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     else:
         output_image = np.zeros((output_size_y, output_size_x))
     
+    good_parcels = []
     for p in parcels:
         # For each blob, calculate a position, update the WCS, and then project
         # the blob image onto the output image.
@@ -430,6 +509,11 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         if np.isnan(parcel.x):
             continue
         
+        good_parcels.append(parcel)
+    
+    Txs, Tys = calc_hpc(sc, good_parcels)
+    
+    for parcel, Tx, Ty in zip(good_parcels, Txs, Tys):
         # We'll compute a scaling factor to reduce parcels' brightness as we
         # fly though them, to try to reduce flashiness as that happens.
         parcel_distance = (parcel - sc).r
@@ -445,11 +529,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         except TypeError:
             pass
         parcel_wcs.wcs.cdelt = cdelt, cdelt
-        horiz_pos = calc_epsilon(sc, parcel, signed=True) * 180 / np.pi
-        if not fov_start - 10 < horiz_pos < fov_stop + 10:
+        if not fov_start - 10 < Tx < fov_stop + 10:
             continue
-        vert_pos = 0
-        parcel_wcs.wcs.crval = horiz_pos[0], vert_pos
+        parcel_wcs.wcs.crval = Tx[0], Ty[0]
         subimage = reproject.reproject_adaptive(
                 (parcel_image, parcel_wcs), image_wcs, output_image.shape[:2],
                 boundary_mode='grid-constant', boundary_fill_value=0,
@@ -470,8 +552,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     
     if celestial_wcs:
         image_wcs.wcs.ctype = f"RA---{projection}", f"DEC--{projection}"
-        to_sun_x = -sc.x
-        to_sun_y = -sc.y
+        to_sun_x = -sc.x[0]
+        to_sun_y = -sc.y[0]
         to_sun_theta = np.arctan2(to_sun_y, to_sun_x) * 180 / np.pi
         fov_center = to_sun_theta - 61
         image_wcs.wcs.crval = fov_center, 0
@@ -483,12 +565,11 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         fixed_fov_stop = np.arctan2(-sc.y, -sc.x) * 180 / np.pi - 108
         add_left = ((fixed_fov_range[0] - fixed_fov_start) % 360) / np.abs(image_wcs.wcs.cdelt[0])
         add_right = ((fixed_fov_stop - fixed_fov_range[1]) % 360) / np.abs(image_wcs.wcs.cdelt[0])
-        #print(fixed_fov_start, fixed_fov_stop, add_left, add_right, fixed_fov_range[0] - fixed_fov_start, fixed_fov_stop - fixed_fov_range[1])
         output_image = np.pad(
                 output_image,
                 ((0, 0), (int(np.round(add_left)), int(np.round(add_right)))))
         crpix = image_wcs.wcs.crpix
-        image_wcs.wcs.crpix = crpix[0] + add_left, crpix[1]
+        image_wcs.wcs.crpix = crpix[0] + add_left[0], crpix[1]
         
     return output_image, image_wcs
 
@@ -502,9 +583,11 @@ def calculate_radiant(sc, parcel, t0=0):
     if not np.any(infront):
         return np.full(max(len(t0), len(np.atleast_1d(parcel.x))), np.nan)
     v_sc = sc.v
-    e_sc = np.atleast_1d(angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y))
+    e_sc = np.atleast_1d(
+            angle_between_vectors(sc.vx, sc.vy, 0, -sc.x, -sc.y, 0))
     v_p = parcel.v
-    dphi = np.atleast_1d(angle_between_vectors(sc.x, sc.y, parcel.x, parcel.y))
+    dphi = np.atleast_1d(
+            angle_between_vectors(sc.x, sc.y, 0, parcel.x, parcel.y, 0))
     epsilons = np.linspace(0, np.pi, 300)[None, :]
     with np.errstate(divide='ignore'):
         i = np.argmin(
@@ -536,8 +619,6 @@ def elongation_to_FOV(sc, elongation):
     fov : ndarray
         Field-of-view position in radians
     """
-    sc_direction = signed_angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
-    return np.where(
-            sc_direction < 0,
-            -(elongation + sc_direction),
-            elongation - sc_direction)
+    sc_direction = angle_between_vectors(
+            sc.vx, sc.vy, 0, -sc.x, -sc.y, 0)
+    return elongation - sc_direction
