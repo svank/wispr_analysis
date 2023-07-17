@@ -895,6 +895,14 @@ def load_orbit_plane_rtheta(files):
     """
     Returns the in-orbit-plane (r, theta) path of the s/c from these files
     """
+    xs, ys, zs = load_sc_xyz(files)
+    return to_orbital_plane_rtheta(xs, ys, zs)
+
+
+def load_sc_xyz(files):
+    """
+    Returns the Heliocentric-Inertial path of the s/c from these files
+    """
     if isinstance(files, (str, fits.Header)):
         files = [files]
     xs = []
@@ -913,7 +921,7 @@ def load_orbit_plane_rtheta(files):
             xs.append(h['hcix_obs'])
             ys.append(h['hciy_obs'])
             zs.append(h['hciz_obs'])
-    return to_orbital_plane_rtheta(xs, ys, zs)
+    return np.array(xs), np.array(ys), np.array(zs)
 
 
 def find_closest_file(target, files, key=None, headers=None):
