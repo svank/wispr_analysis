@@ -330,7 +330,7 @@ def _draw_WISPR_video_frame(data):
             blank_i=(input_i is None), blank_o=(input_o is None),
             image_trim=image_trim)
     else:
-        image_trim = [[1]*4, [1]*4]
+        image_trim = None
         if isinstance(input_i, tuple):
             c = input_i[0]
             wcs_plot = WCS(input_i[1])
@@ -363,9 +363,10 @@ def _draw_WISPR_video_frame(data):
                         fits.open(data['ifile']) as hdul):
                     planet_poses_i = planets.locate_planets(hdul[0].header)
                     wcs_i = WCS(hdul[0].header, hdul)
-                wcs_i = wcs_i[
-                        image_trim[0][2]:-image_trim[0][3],
-                        image_trim[0][0]:-image_trim[0][1]]
+                if image_trim is not None:
+                    wcs_i = wcs_i[
+                            image_trim[0][2]:-image_trim[0][3],
+                            image_trim[0][0]:-image_trim[0][1]]
             else:
                 planet_poses_i = [None] * 8
             if data['ohdr'] is not None:
@@ -373,9 +374,10 @@ def _draw_WISPR_video_frame(data):
                         fits.open(data['ofile']) as hdul):
                     planet_poses_o = planets.locate_planets(hdul[0].header)
                     wcs_o = WCS(hdul[0].header, hdul)
-                wcs_o = wcs_o[
-                        image_trim[1][2]:-image_trim[1][3],
-                        image_trim[1][0]:-image_trim[1][1]]
+                if image_trim is not None:
+                    wcs_o = wcs_o[
+                            image_trim[1][2]:-image_trim[1][3],
+                            image_trim[1][0]:-image_trim[1][1]]
             else:
                 planet_poses_o = [None] * 8
     with matplotlib.style.context('dark_background'):
