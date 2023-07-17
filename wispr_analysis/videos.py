@@ -731,7 +731,7 @@ def draw_overhead_map(ax_orbit, t, path_positions, path_times):
         spine.set_color('.4')
 
 
-def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20,
+def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         save_to=None):
     """
     Helper function for generating a video
@@ -747,13 +747,15 @@ def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20,
     Parameters
     ----------
     frame_renderer : function
-        Function than draws a single frame. Must accept as arguments a single
-        tuple containing the file name to which the frame should be saved as a
-        PNG file, and then all other arguments provided in ``arg_list``.
-    arg_list : Iterable
-        A list of arguments to be passed to ``frame_renderer``. Each element can
-        be a single non-tuple item, or a tuple of arguments. The output
-        filename will be prepended to each tuple of arguments.
+        Function than draws a single frame. Must accept as arguments the file
+        name to which the frame should be saved as a PNG file, and then all
+        other arguments provided in ``arg_list``.
+    *arg_list
+        Arguments to be passed to ``frame_renderer``. Each provided value can
+        be a single non-iterable item (including strings), in which case that
+        value will be repeated for all function calls, or an iterable of
+        arguments, one per function call. The required output filename will be
+        prepended to each tuple of arguments.
     parallel : boolean
         If `True`, frames will be rendered in parallel.
     fps : int
@@ -763,19 +765,39 @@ def generic_make_video(frame_renderer, arg_list, parallel=False, fps=20,
         displayed in Jupyter.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        def arguments(arg_list):
-            for i, args in enumerate(arg_list):
-                if not isinstance(args, tuple):
-                    args = (args,)
-                out_name = f"{tmpdir}/{i:0>10d}.png"
-                args = (out_name, *args)
-                yield args
+        def output_names():
+            i = 0
+            while True:
+                yield f"{tmpdir}/{i:0>10d}.png"
+                i += 1
+        
+        ready_arg_list = [output_names()]
+        n = np.inf
+        have_iterable = False
+        for arg in arg_list:
+            if hasattr(arg, "__iter__") and not isinstance(arg, str):
+                have_iterable = True
+                ready_arg_list.append(arg)
+                try:
+                    n = min(n, len(arg))
+                except TypeError:
+                    # Iterable that doesn't expose a length
+                    pass
+            else:
+                ready_arg_list.append(repeat(arg))
+        if n == np.inf:
+            n = None
+        if not have_iterable:
+            raise ValueError(
+                    "At least one iterable of arguments must be provided")
+        
         if parallel:
             process_map(
-                    frame_renderer, arguments(arg_list), total=len(arg_list))
+                    frame_renderer, *ready_arg_list, total=n)
         else:
-            for args in arguments(tqdm(arg_list)):
-                frame_renderer(args)
+            for args in tqdm(zip(ready_arg_list), total=n):
+                frame_renderer(*args)
+        
         video_file = os.path.join(tmpdir, 'out.mp4')
         subprocess.call(
                 f"ffmpeg -loglevel error -r {fps} "
