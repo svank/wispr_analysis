@@ -3,6 +3,7 @@ import os
 import pickle
 
 import astropy.coordinates
+import numpy as np
 import spiceypy as spice
 import sunpy.coordinates
 
@@ -139,3 +140,61 @@ def format_date(date):
         date = date['date-avg'].replace('T', ' ')
     return date
 
+
+def get_orbital_plane(body, date, observer=None):
+    """
+    Generates coordinates of a set of points along an orbital plane
+    
+    Parameters
+    ----------
+    body : ``str``
+        The body whose orbital plane should be found. Provide a body name
+        recognized by SPICE, or 'PSP'.
+    date
+        A point in time to start from. Should be anything recognized by
+        `format_date`.
+    observer : array
+        The (x,y,z) coordinates of the observer. If given, returned coordinates
+        are Helioprojective. If not given, returned coordinates are
+        HeliocentricIntertial.
+    """
+    date = format_date(date)
+    load_kernels()
+    if body.lower() == 'psp':
+        body = '-96'
+    et = spice.str2et(date)
+    state, ltime = spice.spkezr('-96', et, 'HCI', 'None', 'Sun')
+    
+    mu = 1.32712440018e11
+    elts = spice.oscelt(state, et, mu)
+    
+    a = elts[0] / (1 - elts[1])
+    period = 2*np.pi * np.sqrt(a**3 / mu)
+    
+    times = et * 3600*24 + np.linspace(-period//2, period//2, 360)
+    
+    coords = []
+    for t in times:
+        state = spice.conics(elts, t)
+        coords.append(state[:3])
+    coords = np.array(coords)
+    
+    if observer is not None:
+        if body == '-96':
+            # Expand the orbit so the projected plane comes out right
+            c = astropy.coordinates.CartesianRepresentation(*coords.T)
+            s = c.represent_as(astropy.coordinates.SphericalRepresentation)
+            s2 = astropy.coordinates.SphericalRepresentation(
+                    lon=s.lon, lat=s.lat, distance=1.1*s.distance)
+            c2 = s2.represent_as(astropy.coordinates.CartesianRepresentation)
+            coords = np.array([c2.x, c2.y, c2.z]).T
+        
+        coords = _to_hp(coords.T, observer, date)
+    else:
+        coords = astropy.coordinates.SkyCoord(
+                *coords.T,
+                frame=sunpy.coordinates.frames.HeliocentricInertial,
+                representation_type='cartesian',
+                unit='km',
+                obstime=date)
+    return coords
