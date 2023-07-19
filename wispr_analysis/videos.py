@@ -167,9 +167,9 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     
     if align:
         wcsh, naxis1, naxis2 = composites.gen_header(
-                i_files[len(i_files)//2][2], o_files[len(o_files)//2][2])
+                i_files[len(i_files)//2][1], o_files[len(o_files)//2][1])
         bounds = composites.find_collective_bounds(
-                ([v[-1] for v in i_files[::3]], [v[-1] for v in o_files[::3]]),
+                ([v[-2] for v in i_files[::3]], [v[-2] for v in o_files[::3]]),
                 wcsh, ((33, 40, 42, 39), (20, 25, 26, 31)))
     else:
         wcsh, naxis1, naxis2, bounds = None, None, None, None
@@ -303,7 +303,7 @@ def _draw_WISPR_video_frame(data):
                 data['prev_ifile'], data['ifile'], data['next_ifile'],
                 sliding_window_stride=3, precomputed_mask=data['imask'],
                 radec=False)
-        input_i = (input_i, data['ihdr'])
+        input_i = (input_i, data['ifile'])
     else:
         input_i = data['ifile']
        
@@ -314,7 +314,7 @@ def _draw_WISPR_video_frame(data):
                 data['prev_ofile'], data['ofile'], data['next_ofile'],
                 sliding_window_stride=3, precomputed_mask=data['omask'],
                 radec=False)
-        input_o = (input_o, data['ohdr'])
+        input_o = (input_o, data['ofile'])
     else:
         input_o = data['ofile']
     
@@ -361,8 +361,9 @@ def _draw_WISPR_video_frame(data):
             if data['ihdr'] is not None:
                 with (utils.ignore_fits_warnings(),
                         fits.open(data['ifile']) as hdul):
-                    planet_poses_i = planets.locate_planets(hdul[0].header)
-                    wcs_i = WCS(hdul[0].header, hdul)
+                    hdu = 1 if hdul[0].data is None else 0
+                    planet_poses_i = planets.locate_planets(hdul[hdu].header)
+                    wcs_i = WCS(hdul[hdu].header, hdul)
                 if image_trim is not None:
                     wcs_i = wcs_i[
                             image_trim[0][2]:-image_trim[0][3],
@@ -372,8 +373,9 @@ def _draw_WISPR_video_frame(data):
             if data['ohdr'] is not None:
                 with (utils.ignore_fits_warnings(),
                         fits.open(data['ofile']) as hdul):
-                    planet_poses_o = planets.locate_planets(hdul[0].header)
-                    wcs_o = WCS(hdul[0].header, hdul)
+                    hdu = 1 if hdul[0].data is None else 0
+                    planet_poses_o = planets.locate_planets(hdul[hdu].header)
+                    wcs_o = WCS(hdul[hdu].header, hdul)
                 if image_trim is not None:
                     wcs_o = wcs_o[
                             image_trim[1][2]:-image_trim[1][3],

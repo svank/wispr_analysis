@@ -248,11 +248,23 @@ def gen_header(hdr_i, hdr_o, proj='ARC', level=False, key=' '):
     naxis1, naxis2 : int
         The size of the output image
     """
-    naxis1, naxis2 = int(hdr_i['NAXIS1'] * 3), int(hdr_i['NAXIS2'] * 2)
     with utils.ignore_fits_warnings():
-        wcs_i = WCS(hdr_i, key=key)
-        wcs_o = WCS(hdr_o, key=key)
-
+        if isinstance(hdr_i, str):
+            with fits.open(hdr_i) as hdul:
+                hdu = 1 if hdul[0].data is None else 0
+                hdr_i = hdul[hdu].header
+                wcs_i = WCS(hdr_i, hdul, key=key)
+        else:
+            wcs_i = WCS(hdr_i, key=key)
+        if isinstance(hdr_o, str):
+            with fits.open(hdr_o) as hdul:
+                hdu = 1 if hdul[0].data is None else 0
+                hdr_o = hdul[hdu].header
+                wcs_o = WCS(hdr_o, hdul, key=key)
+        else:
+            wcs_o = WCS(hdr_o, key=key)
+    naxis1, naxis2 = int(hdr_i['NAXIS1'] * 3), int(hdr_i['NAXIS2'] * 2)
+    
     crval1 = (wcs_i.wcs.crval[0] + (wcs_o.wcs.crval[0] * 1.15)) / 2.
     crval2 = (wcs_i.wcs.crval[1] + wcs_o.wcs.crval[1]) / 2.
     ctype1 = wcs_i.wcs.ctype[0].split('-')[0]
@@ -345,23 +357,39 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     wcsh : WCS
         The coordinate system for the composite image
     """
+    img_i, img_o = None, None
     with utils.ignore_fits_warnings():
         if isinstance(fname_i, tuple):
-            img_i, hdr_i = fname_i
-            hdr_i = hdr_i.copy()
-        else:
-            fname_i = os.path.expanduser(fname_i)
-            img_i, hdr_i = fits.getdata(fname_i, header=True)
+            img_i, fname_i = fname_i
+        fname_i = os.path.expanduser(fname_i)
+        with fits.open(fname_i) as hdul:
+            hdu = 1 if hdul[0].data is None else 0
+            if img_i is None:
+                img_i = hdul[hdu].data
+            hdr_i = hdul[hdu].header
+            keys = [k for k in hdr_i if k.endswith("_OBS")
+                    or k.startswith('DATE-') or k.startswith('MJD-')]
+            for k in keys:
+                hdr_i.remove(k)
+            wcs_i = WCS(hdr_i, hdul, key=key)
+        
         if isinstance(fname_o, tuple):
-            img_o, hdr_o = fname_o
-            hdr_o = hdr_o.copy()
-        else:
-            fname_o = os.path.expanduser(fname_o)
-            img_o, hdr_o = fits.getdata(fname_o, header=True)
+            img_o, fname_o = fname_o
+        fname_o = os.path.expanduser(fname_o)
+        with fits.open(fname_o) as hdul:
+            hdu = 1 if hdul[0].data is None else 0
+            if img_o is None:
+                img_o = hdul[hdu].data
+            hdr_o = hdul[hdu].header
+            keys = [k for k in hdr_o if k.endswith("_OBS")
+                    or k.startswith('DATE-') or k.startswith('MJD-')]
+            for k in keys:
+                hdr_o.remove(k)
+            wcs_o = WCS(hdr_o, hdul, key=key)
     
     if wcsh is None:
         wcsh, naxis1, naxis2 = gen_header(
-                hdr_i, hdr_o, proj=proj, level=level, key=key)
+                fname_i, fname_o, proj=proj, level=level, key=key)
     else:
         wcsh = wcsh.deepcopy()
     
@@ -377,18 +405,25 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
                 image_trim[i][j] = image_trim_default[i][j]
     
     imgs = []
-    for img, hdr, trim in zip((img_o, img_i), (hdr_o, hdr_i), image_trim[::-1]):
+    wcses = []
+    for img, hdr, wcs, trim in zip(
+            (img_o, img_i), (hdr_o, hdr_i), (wcs_o, wcs_i), image_trim[::-1]):
+        wcses.append(wcs[trim[2]:img.shape[0]-trim[3],
+                         trim[0]:img.shape[1]-trim[1]])
         imgs.append(img[trim[2]:img.shape[0]-trim[3],
                         trim[0]:img.shape[1]-trim[1]])
         hdr['NAXIS1'] -= trim[0] + trim[1]
         hdr['NAXIS2'] -= trim[2] + trim[3]
         hdr['CRPIX1'] -= trim[0]
         hdr['CRPIX2'] -= trim[2]
+        hdr['CRPIX1A'] -= trim[0]
+        hdr['CRPIX2A'] -= trim[2]
     img_o, img_i = imgs
+    wcs_o, wcs_i = wcses
     
     if bounds is None:
-        img_i_bounds = find_bounds(hdr_i, wcsh, key=key)
-        img_o_bounds = find_bounds(hdr_o, wcsh, key=key)
+        img_i_bounds = find_bounds((hdr_i, wcs_i), wcsh, key=key)
+        img_o_bounds = find_bounds((hdr_o, wcs_o), wcsh, key=key)
         bounds = (min(img_i_bounds[0], img_o_bounds[0]),
                   max(img_i_bounds[1], img_o_bounds[1]),
                   min(img_i_bounds[2], img_o_bounds[2]),
@@ -403,10 +438,6 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     crpix1, crpix2 = wcsh.wcs.crpix
     wcsh.wcs.crpix = crpix1 - bounds[0], crpix2 - bounds[2]
     
-    for hdr in hdr_i, hdr_o:
-        for k in 'date-obs', 'rsun_ref', 'dsun_obs', 'crln_obs', 'crlt_obs':
-            del hdr[k]
-    
     with utils.ignore_fits_warnings():
         if blank_i:
             o1 = np.full((naxis2, naxis1), np.nan)
@@ -415,12 +446,8 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             # sunpy.coordinates has been imported, astropy will know enough
             # about HPC to say this is an invalid coordinate transformation.
             # Here we censor information from the header to pacify Sunpy.
-            keys = [k for k in hdr_i if k.endswith("_OBS")
-                    or k.startswith('DATE-') or k.startswith('MJD-')]
-            for k in keys:
-                hdr_i.remove(k)
             o1 = reproject.reproject_adaptive(
-                    (img_i, WCS(hdr_i, key=key)), wcsh, (naxis2, naxis1),
+                    (img_i, wcs_i), wcsh, (naxis2, naxis1),
                     roundtrip_coords=False, return_footprint=False,
                     boundary_mode='ignore_threshold', **kwargs)
         if blank_o:
@@ -431,7 +458,7 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             for k in keys:
                 hdr_o.remove(k)
             o2 = reproject.reproject_adaptive(
-                    (img_o, WCS(hdr_o, key=key)), wcsh, (naxis2, naxis1),
+                    (img_o, wcs_o), wcsh, (naxis2, naxis1),
                     roundtrip_coords=False, return_footprint=False,
                     boundary_mode='ignore_threshold', **kwargs)
     if return_both:
