@@ -36,7 +36,7 @@ cmap.set_bad('black')
 
 
 def make_WISPR_video(data_dir, between=(None, None), filters=None,
-        trim_threshold=12*60*60,
+        trim_threshold=12*60*60, image_trim=True,
         level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
         remove_debris=True, debris_mask_dir=None, overlay_coords=True,
         overlay_celest=False, save_location=None, mark_planets=False,
@@ -239,7 +239,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                     prev_ofile=None, ohdr=None, imask=None, omask=None,
                     fallback_ifile=i_files[0][1] if align else None,
                     fallback_ofile=o_files[0][1] if align else None,
-                    mark_planets=mark_planets)
+                    mark_planets=mark_planets, image_trim=image_trim)
                 if i is not None:
                     args['ifile'] = i_files[i][1]
                     if 0 < i < len(i_files) - 1:
@@ -319,7 +319,10 @@ def _draw_WISPR_video_frame(data):
         input_o = data['ofile']
     
     if data['align']:
-        image_trim = [[20, 25, 1, 1], [33, 40, 42, 39]]
+        if data['image_trim']:
+            image_trim = [[20, 25, 1, 1], [33, 40, 42, 39]]
+        else:
+            image_trim = None
         c, wcs_plot = composites.gen_composite(
             # Even if we're blanking one of the images, a header is still
             # needed (for now...)
