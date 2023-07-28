@@ -3,6 +3,7 @@ import os
 
 from astropy.io import fits
 from astropy.wcs import WCS
+import astropy.units as u
 import numpy as np
 import reproject
 from tqdm.contrib.concurrent import process_map
