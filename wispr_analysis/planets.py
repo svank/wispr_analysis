@@ -171,7 +171,7 @@ def get_orbital_plane(body, date, observer=None):
     a = elts[0] / (1 - elts[1])
     period = 2*np.pi * np.sqrt(a**3 / mu)
     
-    times = et * 3600*24 + np.linspace(-period//2, period//2, 360)
+    times = et * 3600*24 + np.linspace(-period//2, period//2, 720)
     
     coords = []
     for t in times:
@@ -185,7 +185,7 @@ def get_orbital_plane(body, date, observer=None):
             c = astropy.coordinates.CartesianRepresentation(*coords.T)
             s = c.represent_as(astropy.coordinates.SphericalRepresentation)
             s2 = astropy.coordinates.SphericalRepresentation(
-                    lon=s.lon, lat=s.lat, distance=1.1*s.distance)
+                    lon=s.lon, lat=s.lat, distance=4*s.distance)
             c2 = s2.represent_as(astropy.coordinates.CartesianRepresentation)
             coords = np.array([c2.x, c2.y, c2.z]).T
         
