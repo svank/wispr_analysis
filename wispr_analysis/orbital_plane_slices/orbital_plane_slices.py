@@ -377,7 +377,7 @@ class BaseJmap:
         return copy.deepcopy(self)
 
     def plot(self, bundle=None, ax=None, label_vr=False, vmin=None, vmax=None,
-             pmin=5, pmax=95):
+             pmin=5, pmax=95, transpose=False):
         min, max = np.nanpercentile(self.slices, [pmin, pmax])
         if vmin is None:
             vmin = min
@@ -391,13 +391,26 @@ class BaseJmap:
             # significantly
             if np.max(np.diff(np.unique(np.diff(self.times)))) > 1:
                 warnings.warn("Sequence cadence varies---plot may be garbled")
-        dates = plot_utils.y_axis_dates(self.times, ax=ax)
+        
         cmap = copy.deepcopy(plot_utils.wispr_cmap)
         cmap.set_bad("#4d4540")
-        im = ax.imshow(self.slices, origin='lower',
-                       extent=[self.angles[0], self.angles[-1],
-                               dates[0], dates[-1]],
-                       aspect='auto', cmap=cmap,
+        image = self.slices
+        if transpose:
+            image = image.T
+            dates = plot_utils.x_axis_dates(self.times, ax=ax)
+            extent = [dates[0], dates[-1],
+                      self.angles[0], self.angles[-1]]
+            ax.set_ylabel(self.xlabel)
+        else:
+            dates = plot_utils.y_axis_dates(self.times, ax=ax)
+            extent = [self.angles[0], self.angles[-1],
+                      dates[0], dates[-1]]
+            ax.set_xlabel(self.xlabel)
+        im = ax.imshow(image,
+                       origin='lower',
+                       extent=extent,
+                       aspect='auto',
+                       cmap=cmap,
                        norm=matplotlib.colors.PowerNorm(gamma=1/2.2,
                                                         vmin=vmin,
                                                         vmax=vmax))
@@ -406,8 +419,6 @@ class BaseJmap:
         except ValueError:
             # May occur if we're plotting onto subplots
             pass
-
-        ax.set_xlabel(self.xlabel)
 
         ax.set_title(self.title)
 
@@ -421,8 +432,15 @@ class BaseJmap:
 
             def t2vr(t): return np.interp(t, dates, vrs)
             def vr2t(vr): return np.interp(vr, vrs, dates)
-            ax2 = plt.gca().secondary_yaxis('right', functions=(t2vr, vr2t))
-            ax2.set_ylabel("S/C radial velocity (km/s)")
+            
+            if transpose:
+                ax2 = plt.gca().secondary_xaxis(
+                    'top', functions=(t2vr, vr2t))
+                ax2.set_xlabel("S/C radial velocity (km/s)")
+            else:
+                ax2 = plt.gca().secondary_yaxis(
+                    'right', functions=(t2vr, vr2t))
+                ax2.set_ylabel("S/C radial velocity (km/s)")
 
 
 class PlainJMap(BaseJmap):
