@@ -386,11 +386,6 @@ class BaseJmap:
 
         if ax is None:
             ax = plt.gca()
-        if len(np.unique(np.diff(self.times))) > 1:
-            # In case of floating-point variation, ensure the unique dts differ
-            # significantly
-            if np.max(np.diff(np.unique(np.diff(self.times)))) > 1:
-                warnings.warn("Sequence cadence varies---plot may be garbled")
         
         cmap = copy.deepcopy(plot_utils.wispr_cmap)
         cmap.set_bad("#4d4540")
@@ -398,22 +393,20 @@ class BaseJmap:
         if transpose:
             image = image.T
             dates = plot_utils.x_axis_dates(self.times, ax=ax)
-            extent = [dates[0], dates[-1],
-                      self.angles[0], self.angles[-1]]
+            x = dates
+            y = self.angles
             ax.set_ylabel(self.xlabel)
         else:
             dates = plot_utils.y_axis_dates(self.times, ax=ax)
-            extent = [self.angles[0], self.angles[-1],
-                      dates[0], dates[-1]]
+            x = self.angles
+            y = dates
             ax.set_xlabel(self.xlabel)
-        im = ax.imshow(image,
-                       origin='lower',
-                       extent=extent,
-                       aspect='auto',
-                       cmap=cmap,
-                       norm=matplotlib.colors.PowerNorm(gamma=1/2.2,
+        im = ax.pcolormesh(x, y, image,
+                           cmap=cmap,
+                           norm=matplotlib.colors.PowerNorm(gamma=1/2.2,
                                                         vmin=vmin,
-                                                        vmax=vmax))
+                                                        vmax=vmax),
+                           shading='nearest')
         try:
             plt.sci(im)
         except ValueError:
