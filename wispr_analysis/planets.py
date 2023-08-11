@@ -141,7 +141,7 @@ def format_date(date):
     return date
 
 
-def get_orbital_plane(body, date, observer=None):
+def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_orbit=True):
     """
     Generates coordinates of a set of points along an orbital plane
     
@@ -171,7 +171,7 @@ def get_orbital_plane(body, date, observer=None):
     a = elts[0] / (1 - elts[1])
     period = 2*np.pi * np.sqrt(a**3 / mu)
     
-    times = et * 3600*24 + np.linspace(-period//2, period//2, 720)
+    times = et + np.linspace(-period//2, period//2, 720)
     
     coords = []
     for t in times:
@@ -180,7 +180,7 @@ def get_orbital_plane(body, date, observer=None):
     coords = np.array(coords)
     
     if observer is not None:
-        if body == '-96':
+        if body == '-96' and expand_psp_orbit:
             # Expand the orbit so the projected plane comes out right
             c = astropy.coordinates.CartesianRepresentation(*coords.T)
             s = c.represent_as(astropy.coordinates.SphericalRepresentation)
@@ -197,4 +197,7 @@ def get_orbital_plane(body, date, observer=None):
                 representation_type='cartesian',
                 unit='km',
                 obstime=date)
+    if return_times:
+        times = np.array([spice.et2datetime(t).timestamp() for t in times])
+        return coords, times
     return coords
