@@ -69,6 +69,7 @@ def extract_slices(
             angles.append(angle)
 
     min_len = min(len(s) for s in slices)
+    n_pix_cropped = [len(s) - min_len for s in slices]
     slices = [s[:min_len] for s in slices]
     angles = [a[:min_len] for a in angles]
     Txs = Txs[:min_len]
@@ -90,6 +91,7 @@ def extract_slices(
         transformer=transformer,
         normalized=False,
         title_stub=title,
+        n_pix_cropped=n_pix_cropped,
     )
 
 
@@ -175,6 +177,7 @@ class BaseJmap:
     transformer: OrbitalSliceTransformer
     normalized: bool
     title_stub: str = 'Orbital-plane slices'
+    n_pix_cropped: list[int] = None
 
     _title: list[str] = None
     _subtitles: list[list[str]] = dataclasses.field(default_factory=list)
@@ -225,16 +228,13 @@ class BaseJmap:
         self._title.append("squarish")
 
     def trim_nans(self):
-        # Trim off all-nan rows from the top
+        # Trim off all-nan rows
+        while np.all(np.isnan(self.slices[0])):
+            self.slices = self.slices[1:]
+            self.times = self.times[1:]
         while np.all(np.isnan(self.slices[-1])):
             self.slices = self.slices[:-1]
             self.times = self.times[:-1]
-
-        # Trim off columns that are all-nan in the top half of the image
-        h = self.slices.shape[0]//2
-        while np.all(np.isnan(self.slices[h:, -1])):
-            self.slices = self.slices[:, :-1]
-            self.radii = self.radii[:-1]
 
     def unsharp_mask(self, radius, amount):
         self._title.append(f"unsharp({radius}, {amount})")
@@ -338,6 +338,14 @@ class BaseJmap:
             self.slices = scipy.ndimage.generic_filter(
                 self.slices, np.nanmedian, size)
 
+    def gaussian_filter(self, size, nan_aware=False):
+        self._title.append(f"gauss_filt({size})")
+        if nan_aware:
+            self.slices = nan_gaussian_blur(self.slices, size)
+        else:
+            self.slices = scipy.ndimage.gaussian_filter(
+                self.slices, size, mode='nearest')
+
     def radial_detrend(self):
         def radial_fcn(x, A, exp, B, C, D, switch):
             toggle = 1 / (1 + np.exp(-x+switch))
@@ -365,6 +373,14 @@ class BaseJmap:
             yf = 1e-13 * radial_fcn(x, *popt)
             self.slices[i][g] -= yf
         self._title.append("radial detrending")
+    
+    def bg_remove(self, med_size=15, gauss_size=51):
+        bg = self.deepcopy()
+        bg.median_filter(med_size)
+        bg.gaussian_filter(gauss_size)
+        self.slices -= bg.slices
+        self._title.append(f"bg_rem({med_size}, {gauss_size})")
+        
 
     def merge(self, other):
         self._subtitles.append(self._title)
@@ -443,12 +459,18 @@ class PlainJMap(BaseJmap):
         self.target_angles = target_angles
         super().__init__(*args, **kwargs)
 
-    def derotate(self) -> "DerotatedJMap":
-        output = np.empty((self.slices.shape[0], self.transformer.n))
+    def derotate(self, n) -> "DerotatedJMap":
+        output = np.empty((self.slices.shape[0], n))
+        output_angles = np.linspace(
+            self.transformer.angle_start,
+            self.transformer.angle_stop,
+            n)
         for i, (slice, angles) in enumerate(
                 zip(self.slices, self.target_angles)):
             def transformer(pixel_out):
-                px = self.transformer.pix_to_angle(pixel_out[..., 0])
+                px = (pixel_out[..., 0]
+                      * (self.transformer.angle_stop - self.transformer.angle_start)
+                    / (n-1) + self.transformer.angle_start)
                 px_in = np.interp(
                     px,
                     angles,
@@ -467,7 +489,7 @@ class PlainJMap(BaseJmap):
                 center_jacobian='false')
         outmap = DerotatedJMap(
             slices=output,
-            angles=self.transformer.pix_to_angle(np.arange(output.shape[1])),
+            angles=output_angles,
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
             normalized=self.normalized,
