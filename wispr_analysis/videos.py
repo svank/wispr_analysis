@@ -48,12 +48,12 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     WISPR image for one frame, for instance). This gives the best
     representation of the physical speeds of every feature in the image, but
     can produce jittery videos when the WISPR imaging cadence drops. At each
-    point in time, the most recent preceeding images are shown for the inner
+    point in time, the most recent preceding images are shown for the inner
     and outer imagers (or no image is shown if none is available or the most
     recent image is over a day before the frame's timestamp).
     
     The rendered video is displayed in the Jupyter environment by default, but
-    can be saved to a file instread.
+    can be saved to a file instead.
     
     Parameters
     ----------
@@ -198,7 +198,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
         images.append((i, j, t))
 
     # Sometimes the same image pair is chosen for multiple time steps---the
-    # output will be the same execpt for the overlaid time stamp, so we can
+    # output will be the same except for the overlaid time stamp, so we can
     # render multiple frames from one reprojection call and save time. Convert
     # our list to a list of (unique_image_pair, list_of_timesteps)
     images = [(pair, [d[-1] for d in data])
@@ -540,12 +540,12 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
         Otherwise, an IPython ``Video`` object is returned.
     fps : float
         Number of frames per second in the video
-    file_load_inverval : int
+    file_load_interval : int
         Only the first out of every ``file_load_interval`` files is considered.
         This option is mostly intended to speed up rendering during
         development, and no care is taken to ensure this cooperates well with
         the interleaving of images from the two cameras.
-    plot_inverval : int
+    plot_interval : int
         Only the first out of every ``plot_interval`` considered files is
         rendered in the video.
     """
@@ -719,7 +719,7 @@ def plot_one_frame_for_pointing(imap, omap, starfield_wcs, t, ts, fname,
 
 def draw_overhead_map(ax_orbit, t, path_positions, path_times):
     """
-    Draws a small plot with an overhead view of PSP's position and trajactory
+    Draws a small plot with an overhead view of PSP's position and trajectory
     """
     ax_orbit.margins(.1, .1)
     ax_orbit.set_aspect('equal')
@@ -749,7 +749,7 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
     
     Note: In some cases (particularly when using the parallel mode with many
     cores), it may be helpful to apply the `wrap_with_gc` decorator to the
-    frame-rendering runction.
+    frame-rendering function.
 
     Parameters
     ----------
