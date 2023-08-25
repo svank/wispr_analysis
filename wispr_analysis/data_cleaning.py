@@ -397,6 +397,7 @@ def find_mask(masks_dir, fnames):
         try:
             found_masks.append(masks[utils.to_timestamp(f)])
         except KeyError:
+            warnings.warn(f"No debris-streak mask found for {f}")
             found_masks.append(None)
     
     if isinstance(orig_fnames, str):
