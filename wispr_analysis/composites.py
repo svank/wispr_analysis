@@ -8,6 +8,9 @@ from astropy.wcs import WCS
 import matplotlib.pyplot as plt
 import numpy as np
 import reproject
+import reproject.mosaicking
+# Ensure Helioprojective frames are treated
+import sunpy.coordinates
 
 from . import utils
 
@@ -434,32 +437,43 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
                   max(img_i_bounds[3], img_o_bounds[3]))
     elif not bounds:
         bounds = (0, naxis1, 0, naxis2)
-    
+    wcsh = wcsh[bounds[2]:bounds[3], bounds[0]:bounds[1]]
+    # naxis1, naxis2 = wcsh.pixel_shape
+    # If either image actually falls outside the (guestimated) composite FOV,
+    # expand the image
     naxis1 += bounds[1] - naxis1
     naxis2 += bounds[3] - naxis2
     naxis1 -= bounds[0]
     naxis2 -= bounds[2]
-    crpix1, crpix2 = wcsh.wcs.crpix
-    wcsh.wcs.crpix = crpix1 - bounds[0], crpix2 - bounds[2]
+    wcsh.pixel_shape = naxis1, naxis2
     
     with utils.ignore_fits_warnings():
-        if blank_i:
-            o1 = np.full((naxis2, naxis1), np.nan)
-        else:
-            o1 = reproject.reproject_adaptive(
-                    (img_i, wcs_i), wcsh, (naxis2, naxis1),
-                    roundtrip_coords=False, return_footprint=False,
-                    boundary_mode='ignore_threshold', **kwargs)
-        if blank_o:
-            o2 = np.full((naxis2, naxis1), np.nan)
-        else:
-            o2 = reproject.reproject_adaptive(
-                    (img_o, wcs_o), wcsh, (naxis2, naxis1),
-                    roundtrip_coords=False, return_footprint=False,
-                    boundary_mode='ignore_threshold', **kwargs)
-    if return_both:
-        return o1, o2, wcsh
-    composite = np.where(np.isnan(o1), o2, o1)
-    return composite, wcsh
-
-
+        if return_both:
+            if blank_i:
+                o1 = np.full((naxis2, naxis1), np.nan)
+            else:
+                o1 = reproject.reproject_adaptive(
+                        (img_i, wcs_i), wcsh, (naxis2, naxis1),
+                        roundtrip_coords=False, return_footprint=False,
+                        boundary_mode='ignore_threshold', **kwargs)
+            if blank_o:
+                o2 = np.full((naxis2, naxis1), np.nan)
+            else:
+                o2 = reproject.reproject_adaptive(
+                        (img_o, wcs_o), wcsh, (naxis2, naxis1),
+                        roundtrip_coords=False, return_footprint=False,
+                        boundary_mode='ignore_threshold', **kwargs)
+            return o1, o2, wcsh
+        
+        inputs = []
+        if not blank_i:
+            inputs.append((img_i, wcs_i))
+        if not blank_o:
+            inputs.append((img_o, wcs_o))
+        composite, footprint = reproject.mosaicking.reproject_and_coadd(
+            inputs, wcsh, (naxis2, naxis1),
+            reproject_function=reproject.reproject_adaptive,
+            roundtrip_coords=False, boundary_mode='ignore_threshold',
+            combine_function='first', **kwargs)
+        composite[footprint == 0] = np.nan
+        return composite, wcsh
