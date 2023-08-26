@@ -21,7 +21,7 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' ', wrap_aware=False,
     In other words, this finds the size of the output image that is required to
     bound the reprojected input image.
     
-    Optionall, handles the case that the x axis of the output WCS is periodic
+    Optionally, handles the case that the x axis of the output WCS is periodic
     and the input WCS straddles the wrap point. Two sets of bounds are
     returned, for the two halves of the input WCS.
     
@@ -220,7 +220,7 @@ def find_collective_bounds(hdrs, wcs_target, trim=(0, 0, 0, 0), key=' '):
 
 def gen_header(hdr_i, hdr_o, proj='ARC', level=False, key=' '):
     """
-    Generates a header suitable for a WISPR compositte field of view.
+    Generates a header suitable for a WISPR composite field of view.
     
     This is mostly a port from pyssw.
     
@@ -463,21 +463,3 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     return composite, wcsh
 
 
-def plot_map(map, wcsh, figsize=(15, 10)):
-    fig = plt.figure(figsize=figsize)
-    ax = fig.add_subplot(111, projection=wcsh)
-    ax.set_facecolor('black')
-    lon, lat = ax.coords
-    lat.set_ticks(np.arange(-90, 90, 10) * u.degree)
-    lon.set_ticks(np.arange(-180, 180, 15) * u.degree)
-    lat.set_major_formatter('dd')
-    lon.set_major_formatter('dd')
-    ax.coords.grid(color='white')
-    ax.set_xlabel("Heliprojective Longitude")
-    ax.set_ylabel("Heliprojective Latitude")
-    cmap = copy.copy(plt.cm.Greys_r)
-    cmap.set_bad('black')
-    vmin, vmax = np.nanpercentile(map, [5, 95])
-    ax.imshow(map, cmap=cmap, origin='lower', vmin=vmin, vmax=vmax)
-    fig.tight_layout()
-    return fig
