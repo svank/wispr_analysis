@@ -233,7 +233,8 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                     bounds=bounds, wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
                     overlay_coords=overlay_coords, align=align,
                     overlay_celest=overlay_celest, save_location=save_location,
-                    tmpdir=tmpdir, vmax=vmax, path_positions=path_positions,
+                    tmpdir=tmpdir, vmin=vmin, vmax=vmax,
+                    path_positions=path_positions,
                     path_times=path_times, ifile=None, next_ifile=None,
                     prev_ifile=None, ihdr=None, ofile=None, next_ofile=None,
                     prev_ofile=None, ohdr=None, imask=None, omask=None,
@@ -416,7 +417,7 @@ def _draw_WISPR_video_frame(data):
 
             ax.imshow(c, cmap=cmap, origin='lower',
                       norm=matplotlib.colors.PowerNorm(
-                          gamma=1/2.2, vmin=0, vmax=data['vmax']))
+                          gamma=1/2.2, vmin=data['vmin'], vmax=data['vmax']))
             timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
             ax.text(20, 20,
                     timestamp.strftime("%Y-%m-%d, %H:%M"),
