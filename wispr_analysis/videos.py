@@ -37,7 +37,8 @@ cmap.set_bad('black')
 
 def make_WISPR_video(data_dir, between=(None, None), filters=None,
         trim_threshold=12*60*60, image_trim=True,
-        level_preset=None, vmin=None, vmax=None, duration=15, fps=20,
+        level_preset=None, vmin=None, vmax=None, gamma=1/2.2,
+        duration=15, fps=20, n_procs=os.cpu_count(),
         remove_debris=True, debris_mask_dir=None, overlay_coords=True,
         overlay_celest=False, save_location=None, mark_planets=False,
         align=True):
@@ -233,7 +234,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                     bounds=bounds, wcsh=wcsh, naxis1=naxis1, naxis2=naxis2,
                     overlay_coords=overlay_coords, align=align,
                     overlay_celest=overlay_celest, save_location=save_location,
-                    tmpdir=tmpdir, vmin=vmin, vmax=vmax,
+                    tmpdir=tmpdir, vmin=vmin, vmax=vmax, gamma=gamma,
                     path_positions=path_positions,
                     path_times=path_times, ifile=None, next_ifile=None,
                     prev_ifile=None, ihdr=None, ofile=None, next_ofile=None,
@@ -263,7 +264,8 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                         args[k] = fits.Header.fromstring(
                                 args[k].tostring())
                 yield args
-        process_map(_draw_WISPR_video_frame, arguments(), total=len(images))
+        process_map(_draw_WISPR_video_frame,
+                    arguments(), total=len(images), max_workers=n_procs)
         video_file = os.path.join(tmpdir, 'out.mp4')
         subprocess.call(
                 f"ffmpeg -loglevel error -r {fps} "
@@ -417,7 +419,8 @@ def _draw_WISPR_video_frame(data):
 
             ax.imshow(c, cmap=cmap, origin='lower',
                       norm=matplotlib.colors.PowerNorm(
-                          gamma=1/2.2, vmin=data['vmin'], vmax=data['vmax']))
+                          gamma=data['gamma'],
+                          vmin=data['vmin'], vmax=data['vmax']))
             timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
             ax.text(20, 20,
                     timestamp.strftime("%Y-%m-%d, %H:%M"),
