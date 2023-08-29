@@ -449,20 +449,21 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     
     with utils.ignore_fits_warnings():
         if return_both:
+            reproj_args = dict(
+                roundtrip_coords=False, boundary_mode='ignore_threshold')
+            reproj_args.update(kwargs)
             if blank_i:
                 o1 = np.full((naxis2, naxis1), np.nan)
             else:
                 o1 = reproject.reproject_adaptive(
                         (img_i, wcs_i), wcsh, (naxis2, naxis1),
-                        roundtrip_coords=False, return_footprint=False,
-                        boundary_mode='ignore_threshold', **kwargs)
+                        return_footprint=False, **reproj_args)
             if blank_o:
                 o2 = np.full((naxis2, naxis1), np.nan)
             else:
                 o2 = reproject.reproject_adaptive(
                         (img_o, wcs_o), wcsh, (naxis2, naxis1),
-                        roundtrip_coords=False, return_footprint=False,
-                        boundary_mode='ignore_threshold', **kwargs)
+                        return_footprint=False, **reproj_args)
             return o1, o2, wcsh
         
         inputs = []
@@ -470,10 +471,13 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             inputs.append((img_i, wcs_i))
         if not blank_o:
             inputs.append((img_o, wcs_o))
+        reproj_args = dict(
+            roundtrip_coords=False, boundary_mode='ignore_threshold',
+            combine_function='first')
+        reproj_args.update(kwargs)
         composite, footprint = reproject.mosaicking.reproject_and_coadd(
             inputs, wcsh, (naxis2, naxis1),
             reproject_function=reproject.reproject_adaptive,
-            roundtrip_coords=False, boundary_mode='ignore_threshold',
-            combine_function='first', **kwargs)
+            **reproj_args)
         composite[footprint == 0] = np.nan
         return composite, wcsh
