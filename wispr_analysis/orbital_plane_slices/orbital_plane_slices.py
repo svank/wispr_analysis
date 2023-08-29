@@ -301,7 +301,7 @@ class BaseJmap:
             # between two difference slices). For better plotting, let's let
             # the dropout show as a gap and not a big interpolated streak.
             delta = np.gradient(yn, axis=0)
-            yn[delta < .05] = np.nan
+            yn[delta < .1] = np.nan
             return np.stack((x, yn), axis=-1)
 
         new_slices = np.zeros((1, len(new_t), self.slices.shape[-1]))
@@ -311,7 +311,8 @@ class BaseJmap:
             transformer,
             out_of_range_nan=True,
             boundary_mode='ignore',
-            center_jacobian=False)
+            center_jacobian=False,
+            bad_val_mode='ignore')
         self.slices = new_slices[0]
         self.times = new_t
         self._title.append(f"resampled dt={new_dt}")
@@ -393,7 +394,7 @@ class BaseJmap:
         return copy.deepcopy(self)
 
     def plot(self, bundle=None, ax=None, label_vr=False, vmin=None, vmax=None,
-             pmin=5, pmax=95, transpose=False):
+             pmin=5, pmax=95, transpose=False, gamma=1/2.2):
         min, max = np.nanpercentile(self.slices, [pmin, pmax])
         if vmin is None:
             vmin = min
@@ -419,7 +420,7 @@ class BaseJmap:
             ax.set_xlabel(self.xlabel)
         im = ax.pcolormesh(x, y, image,
                            cmap=cmap,
-                           norm=matplotlib.colors.PowerNorm(gamma=1/2.2,
+                           norm=matplotlib.colors.PowerNorm(gamma=gamma,
                                                         vmin=vmin,
                                                         vmax=vmax),
                            shading='nearest')
