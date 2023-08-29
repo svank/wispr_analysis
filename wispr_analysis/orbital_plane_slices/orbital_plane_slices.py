@@ -7,6 +7,7 @@ from astropy.coordinates import SkyCoord, angular_separation
 import astropy.units as u
 from astropy.wcs import WCS
 import matplotlib.colors
+import matplotlib.ticker
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
@@ -19,9 +20,8 @@ from tqdm.contrib.concurrent import process_map
 from .. import planets, plot_utils
 
 
-def _extract_slice(image, sc_pos, wcs, angle_start, angle_stop, n):
-    transformer = OrbitalSliceTransformer(
-        sc_pos, wcs, angle_start, angle_stop, n)
+def _extract_slice(image, sc_pos, wcs, n, is_inner):
+    transformer = OrbitalSliceTransformer(sc_pos, wcs, n, is_inner)
     slice = np.zeros((1, 1, n))
     reproject.adaptive.deforest.map_coordinates(
         image.astype(float).reshape((1, *image.shape)),
@@ -30,78 +30,56 @@ def _extract_slice(image, sc_pos, wcs, angle_start, angle_stop, n):
         out_of_range_nan=True,
         center_jacobian=False)
     slice = slice[0, 0]
-    angle = transformer.pix_to_angle(np.arange(slice.size))
-    Txs, Tys = transformer.last_hpc.Tx, transformer.last_hpc.Ty
-    # Note: at this point the slices could be stacked into a de-rotated J-map,
-    # but we first want a plain J map
-    while np.isnan(slice[0]):
-        slice = slice[1:]
-        angle = angle[1:]
-        Txs = Txs[1:]
-        Tys = Tys[1:]
-    while np.isnan(slice[-1]):
-        slice = slice[:-1]
-        angle = angle[:-1]
-        Txs = Txs[:-1]
-        Tys = Tys[:-1]
     # Turn infs into nans
     np.nan_to_num(slice, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan)
-    return slice, angle, Txs, Tys
+    fixed_angles = transformer.last_fixed_angles[1, 1:-1]
+    return slice, fixed_angles
 
 
 def extract_slices(
-        bundle: "InputDataBundle", angle_start, angle_stop, n,
-        title="Orbital plane slices"):
+        bundle: "InputDataBundle", n, title="Orbital plane slices"):
     slices = []
-    angles = []
+    fixed_angles = []
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*failed to converge.*')
         warnings.filterwarnings('ignore', message='.*All-NaN slice.*')
-        for slice, angle, Txs, Tys in process_map(_extract_slice,
-                                                  bundle.images,
-                                                  bundle.sc_poses,
-                                                  bundle.wcses,
-                                                  repeat(angle_start),
-                                                  repeat(angle_stop),
-                                                  repeat(n),
-                                                  chunksize=5):
+        for slice, fixed_angle in process_map(_extract_slice,
+                                 bundle.images,
+                                 bundle.sc_poses,
+                                 bundle.wcses,
+                                 repeat(n),
+                                 repeat(bundle.is_inner),
+                                 chunksize=5):
             slices.append(slice)
-            angles.append(angle)
+            fixed_angles.append(fixed_angle)
 
-    min_len = min(len(s) for s in slices)
-    n_pix_cropped = [len(s) - min_len for s in slices]
-    slices = [s[:min_len] for s in slices]
-    angles = [a[:min_len] for a in angles]
-    Txs = Txs[:min_len]
-    Tys = Tys[:min_len]
     slices = np.stack(slices)
-    angles = np.stack(angles)
-
-    elongations = angular_separation(
-        0*u.deg, 0*u.deg, Txs, Tys).to(u.deg).value
+    fixed_angles = np.stack(fixed_angles)
 
     transformer = OrbitalSliceTransformer(
-        bundle.sc_poses[-1], bundle.wcses[-1], angle_start, angle_stop, n)
+        bundle.sc_poses[-1], bundle.wcses[-1], n, bundle.is_inner)
 
     return PlainJMap(
         slices=slices,
-        target_angles=angles,
-        angles=elongations,
+        angles=transformer.pix_to_elongation(np.arange(n)),
+        fixed_angles=fixed_angles,
         times=bundle.times,
         transformer=transformer,
         normalized=False,
         title_stub=title,
-        n_pix_cropped=n_pix_cropped,
     )
 
 
 class OrbitalSliceTransformer:
-    def __init__(self, sc_pos, img_wcs, angle_start, angle_stop, n,
-                 date_override=None):
+    def __init__(self, sc_pos, img_wcs, n, is_inner, date_override=None):
         self.sc_pos = sc_pos
         self.img_wcs = img_wcs
-        self.angle_start = angle_start
-        self.angle_stop = angle_stop
+        if is_inner:
+            self.angle_start = 13.5
+            self.angle_stop = 51.25
+        else:
+            self.angle_start = 51.5
+            self.angle_stop = 103.75
         self.n = n
         self.last_hpc = None
 
@@ -124,7 +102,7 @@ class OrbitalSliceTransformer:
         self.orbital_frame = NorthOffsetFrame(
             north=orbital_north, obstime=self.date)
 
-    def pix_to_angle(self, pixel_num):
+    def pix_to_elongation(self, pixel_num):
         return (pixel_num * (self.angle_stop - self.angle_start)
                 / (self.n-1) + self.angle_start)
 
@@ -134,19 +112,27 @@ class OrbitalSliceTransformer:
                       frame=HeliocentricInertial, obstime=self.date, unit='m')
         sc = sc.transform_to(self.orbital_frame)
         sc_cart = sc.represent_as('cartesian')
+        
+        angle_to_sun = np.arctan2(-sc_cart.y, -sc_cart.x)
+        r = sc.distance
 
-        angles = -self.pix_to_angle(pixel_out[..., 0]) * np.pi/180
+        elongations = self.pix_to_elongation(pixel_out[..., 0]) * u.deg
+        
+        angles = angle_to_sun - elongations
 
-        dx = np.cos(angles) * u.R_sun.to(u.m)
-        dy = np.sin(angles) * u.R_sun.to(u.m)
-        points = SkyCoord(sc_cart.x.value + dx,
-                          sc_cart.y.value + dy,
-                          sc_cart.z.value,
+        x = np.cos(angles) * r + sc_cart.x
+        y = np.sin(angles) * r + sc_cart.y
+        points = SkyCoord(x,
+                          y,
+                          0,
                           frame=self.orbital_frame,
                           representation_type='cartesian',
                           observer=sc, unit='m')
         points = points.transform_to(Helioprojective)
         self.last_hpc = points[1]
+        # Negative here just to choose a frame where the fixed-frame angle
+        # increases in the same direction as elongation
+        self.last_fixed_angles = -angles.to(u.deg).value
 
         x, y = self.img_wcs.world_to_pixel(points)
 
@@ -167,6 +153,7 @@ class InputDataBundle:
     wcses: list[WCS]
     sc_poses: list[tuple]
     times: np.ndarray
+    is_inner: bool
 
 
 @dataclasses.dataclass
@@ -177,7 +164,6 @@ class BaseJmap:
     transformer: OrbitalSliceTransformer
     normalized: bool
     title_stub: str = 'Orbital-plane slices'
-    n_pix_cropped: list[int] = None
 
     _title: list[str] = None
     _subtitles: list[list[str]] = dataclasses.field(default_factory=list)
@@ -404,25 +390,38 @@ class BaseJmap:
         if ax is None:
             ax = plt.gca()
         
+        # Trim all-nan angular positions
+        angles = self.angles
+        image = self.slices
+        while np.all(np.isnan(image[:, 0])):
+            image = image[:, 1:]
+            angles = angles[1:]
+        while np.all(np.isnan(image[:, -1])):
+            image = image[:, :-1]
+            angles = angles[:-1]
+        
         cmap = copy.deepcopy(plot_utils.wispr_cmap)
         cmap.set_bad("#4d4540")
-        image = self.slices
         if transpose:
             image = image.T
             dates = plot_utils.x_axis_dates(self.times, ax=ax)
             x = dates
-            y = self.angles
+            y = angles
             ax.set_ylabel(self.xlabel)
+            ax.yaxis.set_major_formatter(
+                matplotlib.ticker.StrMethodFormatter("{x:.0f}°"))
         else:
             dates = plot_utils.y_axis_dates(self.times, ax=ax)
-            x = self.angles
+            x = angles
             y = dates
             ax.set_xlabel(self.xlabel)
+            ax.xaxis.set_major_formatter(
+                matplotlib.ticker.StrMethodFormatter("{x:.0f}°"))
         im = ax.pcolormesh(x, y, image,
                            cmap=cmap,
                            norm=matplotlib.colors.PowerNorm(gamma=gamma,
-                                                        vmin=vmin,
-                                                        vmax=vmax),
+                                                            vmin=vmin,
+                                                            vmax=vmax),
                            shading='nearest')
         try:
             plt.sci(im)
@@ -456,26 +455,26 @@ class BaseJmap:
 class PlainJMap(BaseJmap):
     xlabel = "Elongation"
 
-    def __init__(self, *args, target_angles=None, **kwargs):
-        self.target_angles = target_angles
+    def __init__(self, fixed_angles, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fixed_angles = fixed_angles
 
     def derotate(self, n) -> "DerotatedJMap":
+        angle_start = 80
+        angle_stop = 460
         output = np.empty((self.slices.shape[0], n))
-        output_angles = np.linspace(
-            self.transformer.angle_start,
-            self.transformer.angle_stop,
-            n)
-        for i, (slice, angles) in enumerate(
-                zip(self.slices, self.target_angles)):
+        for i, (slice, fixed_angles) in enumerate(
+                zip(self.slices, self.fixed_angles)):
             def transformer(pixel_out):
-                px = (pixel_out[..., 0]
-                      * (self.transformer.angle_stop - self.transformer.angle_start)
-                    / (n-1) + self.transformer.angle_start)
+                out_angles = (
+                    pixel_out[..., 0] * (angle_stop - angle_start)
+                    / (n-1) + angle_start)
+                fa = fixed_angles % 360
+                fa[fa < angle_start] += 360
                 px_in = np.interp(
-                    px,
-                    angles,
-                    np.arange(len(angles)),
+                    out_angles,
+                    fa,
+                    np.arange(len(fixed_angles)),
                     left=np.nan, right=np.nan)
                 pixel_in = pixel_out.copy()
                 pixel_in[..., 0] = px_in
@@ -487,10 +486,11 @@ class PlainJMap(BaseJmap):
                 transformer,
                 out_of_range_nan=True,
                 boundary_mode='ignore',
+                bad_val_mode='ignore',
                 center_jacobian='false')
         outmap = DerotatedJMap(
             slices=output,
-            angles=output_angles,
+            angles=np.linspace(angle_start, angle_stop, n),
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
             normalized=self.normalized,
