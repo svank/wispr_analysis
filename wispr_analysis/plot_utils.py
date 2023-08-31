@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from IPython.display import HTML, display
 
-from . import utils
+from . import constellations, utils
     
 
 wispr_cmap = copy.copy(plt.cm.Greys_r)
@@ -75,6 +75,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         detector_preset=None, level_preset=None,
         grid=False, lat_spacing=10, lon_spacing=10,
         relative_vmin=1, relative_vmax=1, gamma=1/2.2,
+        draw_constellations=False,
         **kwargs):
     """
     Does the Right Thing to plot a WISPR image.
@@ -175,6 +176,13 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     if ax.figure.canvas.manager:
         plt.sca(ax)
         plt.sci(im)
+    
+    if draw_constellations:
+        ax.autoscale()
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        constellations.plot_constellations(wcs, xlim, ylim)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
     return im
 
 
