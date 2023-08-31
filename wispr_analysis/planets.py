@@ -51,7 +51,7 @@ def _to_hp(planet_pos, sc_pos, date):
     return c.transform_to(sunpy.coordinates.frames.Helioprojective)
 
 
-def locate_planets(date, cache_dir=None):
+def locate_planets(date, only=None, cache_dir=None):
     """
     Returns the helioprojective coordinates of planets as seen by PSP
     
@@ -63,6 +63,9 @@ def locate_planets(date, cache_dir=None):
         If a number, interpreted as a UTC timestamp. Note that the timestamp in
         WISPR images is the beginning time, not the average time, so providing
         the FITS header is preferred.
+    only : ``list``
+        If provided, a list of specific planets to locate (otherwise, all
+        planets are located). Should be planet names.
     cache_dir : ``str``
         An optional directory to search for cached positions, as saved by
         `cache_planet_pos`.
@@ -72,6 +75,10 @@ def locate_planets(date, cache_dir=None):
     planet_poses : list of ``SkyCoord``
         A Helioprojective SkyCoord for each of the eight planets, in order.
     """
+    if only is None:
+        only = planets
+    only = set(planet.lower() for planet in only)
+    
     date = format_date(date)
     
     if cache_dir is not None:
@@ -89,6 +96,8 @@ def locate_planets(date, cache_dir=None):
     
     planet_poses = []
     for planet in planets:
+        if planet.lower() not in only:
+            continue
         if planet not in ("Mercury", "Venus", "Earth"):
             planet = planet + " Barycenter"
         state, ltime = spice.spkezr(planet, et, 'HCI', 'None', 'Sun')
