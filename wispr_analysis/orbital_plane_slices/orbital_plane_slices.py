@@ -33,28 +33,36 @@ def _extract_slice(image, sc_pos, wcs, n, is_inner):
     # Turn infs into nans
     np.nan_to_num(slice, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan)
     fixed_angles = transformer.last_fixed_angles[1, 1:-1]
-    return slice, fixed_angles
+    return (slice, fixed_angles,
+            transformer.last_venus_elongation, transformer.last_venus_angle)
 
 
 def extract_slices(
         bundle: "InputDataBundle", n, title="Orbital plane slices"):
     slices = []
     fixed_angles = []
+    venus_elongations = []
+    venus_angles = []
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*failed to converge.*')
         warnings.filterwarnings('ignore', message='.*All-NaN slice.*')
-        for slice, fixed_angle in process_map(_extract_slice,
-                                 bundle.images,
-                                 bundle.sc_poses,
-                                 bundle.wcses,
-                                 repeat(n),
-                                 repeat(bundle.is_inner),
-                                 chunksize=5):
+        for slice, fixed_angle, ve, va in process_map(
+                    _extract_slice,
+                    bundle.images,
+                    bundle.sc_poses,
+                    bundle.wcses,
+                    repeat(n),
+                    repeat(bundle.is_inner),
+                    chunksize=5):
             slices.append(slice)
             fixed_angles.append(fixed_angle)
+            venus_elongations.append(ve)
+            venus_angles.append(va)
 
     slices = np.stack(slices)
     fixed_angles = np.stack(fixed_angles)
+    venus_elongations = np.stack(venus_elongations)
+    venus_angles = np.stack(venus_angles)
 
     transformer = OrbitalSliceTransformer(
         bundle.sc_poses[-1], bundle.wcses[-1], n, bundle.is_inner)
@@ -67,6 +75,8 @@ def extract_slices(
         transformer=transformer,
         normalized=False,
         title_stub=title,
+        venus_elongations=venus_elongations,
+        venus_angles=venus_angles,
     )
 
 
@@ -140,6 +150,18 @@ class OrbitalSliceTransformer:
              * (y > 0) * (y < self.img_wcs.pixel_shape[1]-1))
         x[~g] = np.nan
         y[~g] = np.nan
+        
+        venus_pos = planets.locate_planets(self.date, only=['venus'])[0]
+        venus_pos = self.img_wcs.world_to_pixel(venus_pos)
+        if not (0 <= venus_pos[0] < self.img_wcs.pixel_shape[0]
+                and 0 <= venus_pos[1] < self.img_wcs.pixel_shape[1]):
+            venus_pos = np.nan, np.nan
+        self.last_venus_elongation = np.interp(
+            venus_pos[0], x[1], elongations[1].value,
+            left=np.nan, right=np.nan)
+        self.last_venus_angle = np.interp(
+            venus_pos[0], x[1], self.last_fixed_angles[1],
+            left=np.nan, right=np.nan)
 
         pixel_in = np.empty_like(pixel_out)
         pixel_in[..., 0] = x
@@ -163,6 +185,8 @@ class BaseJmap:
     times: np.ndarray
     transformer: OrbitalSliceTransformer
     normalized: bool
+    venus_elongations: np.ndarray
+    venus_angles: np.ndarray
     title_stub: str = 'Orbital-plane slices'
 
     _title: list[str] = None
@@ -300,13 +324,37 @@ class BaseJmap:
             center_jacobian=False,
             bad_val_mode='ignore')
         self.slices = new_slices[0]
-        self.times = new_t
-        self._title.append(f"resampled dt={new_dt}")
 
         # Clear out little extra bits that show up around imager gaps
         nans = np.isnan(self.slices)
         nans = scipy.ndimage.binary_closing(nans, np.ones((3, 3)))
         self.slices[nans] = np.nan
+        
+        # Resample the Venus locations
+        new_venus_elongations = np.zeros((1, len(new_t), 1))
+        reproject.adaptive.deforest.map_coordinates(
+            self.venus_elongations.reshape((1, len(self.venus_elongations), 1)),
+            new_venus_elongations,
+            transformer,
+            out_of_range_nan=True,
+            boundary_mode='ignore',
+            center_jacobian=False,
+            bad_val_mode='ignore')
+        self.venus_elongations = new_venus_elongations[0, :, 0]
+        
+        new_venus_angles = np.zeros((1, len(new_t), 1))
+        reproject.adaptive.deforest.map_coordinates(
+            self.venus_angles.reshape((1, len(self.venus_angles), 1)),
+            new_venus_angles,
+            transformer,
+            out_of_range_nan=True,
+            boundary_mode='ignore',
+            center_jacobian=False,
+            bad_val_mode='ignore')
+        self.venus_angles = new_venus_angles[0, :, 0]
+        
+        self.times = new_t
+        self._title.append(f"resampled dt={new_dt}")
 
     def clamp(self, min=-np.inf, max=np.inf):
         self.slices[self.slices < min] = min
@@ -367,8 +415,22 @@ class BaseJmap:
         bg.gaussian_filter(gauss_size)
         self.slices -= bg.slices
         self._title.append(f"bg_rem({med_size}, {gauss_size})")
-        
-
+    
+    def mask_venus(self, angular_width):
+        self._title.append("Venus masked")
+        for i in range(self.slices.shape[0]):
+            venus_angle = self._get_venus_angles()[i]
+            mask_start = venus_angle - angular_width / 2
+            mask_stop = venus_angle + angular_width / 2
+            xstart, xstop = np.interp(
+                (mask_start, mask_stop),
+                self.angles,
+                np.arange(len(self.angles)))
+            if np.isnan(xstart) or np.isnan(xstop):
+                continue
+            xstart, xstop = int(xstart), int(xstop)
+            self.slices[i, xstart:xstop] = np.nan
+    
     def merge(self, other):
         self._subtitles.append(self._title)
         self._subtitles.append(other._title)
@@ -494,15 +556,23 @@ class PlainJMap(BaseJmap):
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
             normalized=self.normalized,
-            title_stub=copy.deepcopy(self.title_stub))
+            title_stub=copy.deepcopy(self.title_stub),
+            venus_elongations=self.venus_elongations,
+            venus_angles=self.venus_angles)
         outmap._title = copy.deepcopy(self._title)
         outmap._title.append("derotated")
         outmap._subtitles = copy.deepcopy(self._subtitles)
         return outmap
+    
+    def _get_venus_angles(self):
+        return self.venus_elongations
 
 
 class DerotatedJMap(BaseJmap):
     xlabel = "Fixed-frame angular position"
+    
+    def _get_venus_angles(self):
+        return self.venus_angles
 
 
 @numba.njit
