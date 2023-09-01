@@ -17,7 +17,7 @@ from sunpy.coordinates import (
     HeliocentricInertial, Helioprojective, NorthOffsetFrame)
 from tqdm.contrib.concurrent import process_map
 
-from .. import planets, plot_utils
+from .. import planets, plot_utils, utils
 
 
 def _extract_slice(image, sc_pos, wcs, n, is_inner):
@@ -285,6 +285,24 @@ class BaseJmap:
             yf = np.polyval(fit, x)
             self.slices[:, i][g] -= yf
         self._title.append(f"{order}th-order col detrending")
+    
+    def local_col_detrend(self, order=1, window=101):
+        if window % 2 != 1:
+            window += 1
+        half_window = int(window // 2)
+        # for i in range(self.slices.shape[0]):
+        #     for j in range(self.slices.shape[1]):
+        #         if np.isnan(self.slices[i, j]):
+        #             continue
+        #         istart = max(0, i - half_window)
+        #         istop = min(self.slices.shape[0], i + half_window + 1)
+        for j in range(self.slices.shape[1]):
+            data = self.slices[:, j].copy()
+            indices = np.arange(data.size, dtype=float)
+            fitted = utils.time_window_savgol_filter(
+                indices, data, window, order)
+            self.slices[:, j] -= fitted
+        self._title.append(f"local col detrend({order}, {window}px)")
 
     def per_row_normalize(self):
         # Do a per-row normalization
@@ -409,10 +427,10 @@ class BaseJmap:
             self.slices[i][g] -= yf
         self._title.append("radial detrending")
     
-    def bg_remove(self, med_size=15, gauss_size=51):
+    def bg_remove(self, med_size=15, gauss_size=51, nan_aware=False):
         bg = self.deepcopy()
         bg.median_filter(med_size)
-        bg.gaussian_filter(gauss_size)
+        bg.gaussian_filter(gauss_size, nan_aware=nan_aware)
         self.slices -= bg.slices
         self._title.append(f"bg_rem({med_size}, {gauss_size})")
     

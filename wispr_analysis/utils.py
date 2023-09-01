@@ -999,10 +999,13 @@ def time_window_savgol_filter(xdata, ydata, window_size, poly_order):
         window_x = xdata[istart:istop] - xdata[i]
         window_x /= np.max(np.abs(window_x))
         window_y = ydata[istart:istop]
-        cadences = np.diff(window_x)
-        mean_cadence = np.mean(cadences)
+        good = np.isfinite(window_y)
+        window_x = window_x[good]
+        window_y = window_y[good]
         # This was an attempt to cache values when the data spacing is the same for
         # several windows, but it didn't seem to actually speed things up much.
+        # cadences = np.diff(window_x)
+        # mean_cadence = np.mean(cadences)
         # deviation = np.abs(cadences / mean_cadence - 1)
         # cadence_varies = np.any(deviation > .05)
         # cadence_varies = True
