@@ -593,10 +593,10 @@ class DerotatedJMap(BaseJmap):
         return self.venus_angles
 
 
-@numba.njit
+@numba.njit(parallel=True)
 def nan_gaussian_blur(data, radius):
     blurred = np.zeros(data.shape)
-    for yo in range(blurred.shape[0]):
+    for yo in numba.prange(blurred.shape[0]):
         for xo in range(blurred.shape[1]):
             weight_sum = 0
             for dy in range(-4*radius, 4*radius + 1):
@@ -621,10 +621,10 @@ def nan_unsharp_mask(data, radius, amount):
     return data + amount * (data - blurred)
 
 
-@numba.njit
+@numba.njit(parallel=True)
 def nan_minsmooth(data, radius, percentile):
     output = data.copy()
-    for yo in range(output.shape[0]):
+    for yo in numba.prange(output.shape[0]):
         for xo in range(output.shape[1]):
             ystart = max(0, yo - radius)
             ystop = min(yo + radius + 1, data.shape[0])
