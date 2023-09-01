@@ -378,6 +378,12 @@ class BaseJmap:
         self.slices[self.slices < min] = min
         self.slices[self.slices > max] = max
         self._title.append(f"clamp({min}, {max})")
+    
+    def pclamp(self, pmin=0, pmax=100):
+        min, max = np.nanpercentile(self.slices, (pmin, pmax))
+        self.slices[self.slices < min] = min
+        self.slices[self.slices > max] = max
+        self._title.append(f"pclamp({pmin}, {pmax})")
 
     def percentile_normalize(self, pmin, pmax):
         vmin, vmax = np.nanpercentile(self.slices, [pmin, pmax])
