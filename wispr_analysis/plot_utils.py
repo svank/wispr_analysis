@@ -34,14 +34,17 @@ COLORBAR_PRESETS = {
         '3': {
             'i': (PRESET_L3_I_MIN, 1.545e-11),
             'o': (PRESET_L3_O_MIN, .5e-11),
-            }
+            },
+        'W': {
+            'i': (.997, 1.03),
+            'o': (.997, 1.03)},
         }
 
 
 def parse_level_preset(level_preset, header=None):
     if level_preset is None:
         if (header is not None
-                and header.get('level', 'L3') in ('L1', 'L2', 'L3')):
+                and header.get('level', 'L3') in ('L1', 'L2', 'L3', 'LW')):
             level_preset = header.get('level', 'L3')[1]
         else:
             level_preset = '3'
@@ -50,7 +53,7 @@ def parse_level_preset(level_preset, header=None):
             level_preset = level_preset[1]
     
     level_preset = str(level_preset)
-    if level_preset not in ('1', '2', '3'):
+    if level_preset not in ('1', '2', '3', 'W'):
         raise ValueError("Level preset not recognized")
     
     return level_preset
