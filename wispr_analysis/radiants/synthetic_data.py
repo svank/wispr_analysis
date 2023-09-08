@@ -556,8 +556,28 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         if not fov_start - 10 < Tx < fov_stop + 10:
             continue
         parcel_wcs.wcs.crval = Tx[0], Ty[0]
+        
+        # Find the bounds of this blob in the output image, and only reproject
+        # into that part.
+        ny, nx = parcel_image.shape
+        n_per_edge = 3
+        xs = np.linspace(-0.5, nx - 0.5, n_per_edge)
+        ys = np.linspace(-0.5, ny - 0.5, n_per_edge)
+        xs = np.concatenate((xs, np.full(n_per_edge, xs[-1]),
+                             xs, np.full(n_per_edge, xs[0])))
+        ys = np.concatenate((np.full(n_per_edge, ys[0]), ys,
+                             np.full(n_per_edge, ys[-1]), ys))
+        xc_out, yc_out = image_wcs.world_to_pixel(
+            parcel_wcs.pixel_to_world(xs, ys))
+        xmin = max(0, int(np.floor(xc_out.min())) - 1)
+        xmax = min(output_image.shape[1], 2 + int(np.ceil(xc_out.max())))
+        ymin = max(0, int(np.floor(yc_out.min())) - 1)
+        ymax = min(output_image.shape[0], 2 + int(np.ceil(yc_out.max())))
+        slice = np.s_[ymin:ymax, xmin:xmax]
+        
         subimage = reproject.reproject_adaptive(
-                (parcel_image, parcel_wcs), image_wcs, output_image.shape[:2],
+                (parcel_image, parcel_wcs),
+                image_wcs[slice], output_image[slice].shape[:2],
                 boundary_mode='grid-constant', boundary_fill_value=0,
                 roundtrip_coords=False, return_footprint=False,
                 conserve_flux=True)
@@ -572,7 +592,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
             subimage = subimage[:, :, None] * color[None, None, :]
         
         # Build up the output image by adding together all the reprojected blobs
-        output_image += subimage
+        output_image[slice] += subimage
     
     if celestial_wcs:
         image_wcs.wcs.ctype = f"RA---{projection}", f"DEC--{projection}"
