@@ -1,10 +1,10 @@
+from contextlib import ExitStack, contextmanager
 import copy
 from dataclasses import dataclass
 
-
-from astropy.wcs import WCS
 import astropy.coordinates
 import astropy.units as u
+from astropy.wcs import WCS
 import numpy as np
 import reproject
 import scipy
@@ -54,13 +54,23 @@ class Thing:
         out = self.copy()
         out.set_t(t)
         return out
+    
+    @contextmanager
+    def at_temp(self, t):
+        if t is None:
+            yield self
+            return
+        old_t = self.t
+        self.set_t(t)
+        yield self
+        self.t = old_t
      
     def set_t(self, t):
         """ Sets the object's time to ``t``. """
         t = np.atleast_1d(t)
         self.t = t
     
-    def in_front_of(self, other, t=None):
+    def in_front_of(self, other: "Thing", t=None):
         """Returns whether this object is in front of the given object.
         
         "In front" is defined relative to the forward direction of the other
@@ -78,35 +88,33 @@ class Thing:
         in_front : boolean
             ``True`` if this object is in front of ``other``.
         """
-        if t is not None:
-            other = other.at(t)
-            self = self.at(t)
-        elif not self.is_same_time(other):
+        if t is None and not self.is_same_time(other):
             raise ValueError(
                     "Objects are not set at same time---must specify `t`")
-        separation_vector = self - other
-        angle = angle_between_vectors(
-            other.vx,
-            other.vy,
-            other.vz,
-            separation_vector.x,
-            separation_vector.y,
-            separation_vector.z)
-        in_front = np.atleast_1d(np.abs(angle) < np.pi/2)
-        in_front[separation_vector.r == 0] = False
-        return in_front
+        with other.at_temp(t) as other, self.at_temp(t) as self:
+            separation_vector = self - other
+            angle = angle_between_vectors(
+                other.vx,
+                other.vy,
+                other.vz,
+                separation_vector.x,
+                separation_vector.y,
+                separation_vector.z)
+            in_front = np.atleast_1d(np.abs(angle) < np.pi/2)
+            in_front[separation_vector.r == 0] = False
+            return in_front
     
     @property
     def r(self):
         """
-        Convenience access to sqrt(x**2 + y**2)
+        Convenience access to sqrt(x**2 + y**2 + z**2)
         """
         return np.sqrt(self.x**2 + self.y**2 + self.z**2)
     
     @property
     def v(self):
         """
-        Convenience access to sqrt(vx**2 + vy**2)
+        Convenience access to sqrt(vx**2 + vy**2 + vz**2)
         """
         return np.sqrt(self.vx**2 + self.vy**2 + self.vz**2)
     
@@ -335,36 +343,48 @@ class DifferenceThing(Thing):
     
     @property
     def x(self):
-        return self.thing1.at(self.t).x - self.thing2.at(self.t).x
+        with (self.thing1.at_temp(self.t) as thing1,
+              self.thing2.at_temp(self.t) as thing2):
+            return thing1.x - thing2.x
     
     @property
     def y(self):
-        return self.thing1.at(self.t).y - self.thing2.at(self.t).y
+        with (self.thing1.at_temp(self.t) as thing1,
+              self.thing2.at_temp(self.t) as thing2):
+            return thing1.y - thing2.y
     
     @property
     def z(self):
-        return self.thing1.at(self.t).z - self.thing2.at(self.t).z
+        with (self.thing1.at_temp(self.t) as thing1,
+              self.thing2.at_temp(self.t) as thing2):
+            return thing1.z - thing2.z
     
     @property
     def vx(self):
         dt = .0001
-        x_before = self.at(self.t - dt/2).x
-        x_after = self.at(self.t + dt/2).x
-        return (x_after - x_before) / dt
+        with (self.at_temp(self.t - dt/2)):
+            before = self.x
+        with (self.at_temp(self.t + dt/2)):
+            after = self.x
+        return (after - before) / dt
     
     @property
     def vy(self):
         dt = .0001
-        y_before = self.at(self.t - dt/2).y
-        y_after = self.at(self.t + dt/2).y
-        return (y_after - y_before) / dt
+        with (self.at_temp(self.t - dt/2)):
+            before = self.y
+        with (self.at_temp(self.t + dt/2)):
+            after = self.y
+        return (after - before) / dt
     
     @property
     def vz(self):
         dt = .0001
-        z_before = self.at(self.t - dt/2).z
-        z_after = self.at(self.t + dt/2).z
-        return (z_after - z_before) / dt
+        with (self.at_temp(self.t - dt/2)):
+            before = self.z
+        with (self.at_temp(self.t + dt/2)):
+            after = self.z
+        return (after - before) / dt
 
 
 def angle_between_vectors(x1, y1, z1, x2, y2, z2):
@@ -392,25 +412,25 @@ def angle_between_vectors(x1, y1, z1, x2, y2, z2):
     return angle
 
 
-def calc_hpc(sc, parcels, t=None):
+def calc_hpc(sc: "Thing", parcels: list["Thing"], t=None):
     was_not_list = False
     if isinstance(parcels, Thing):
         parcels = [parcels]
         was_not_list = True
     
-    if t is not None:
-        sc = sc.at(t)
-        parcels = [p.at(t) for p in parcels]
+    with ExitStack() as stack:
+        sc = stack.enter_context(sc.at_temp(t))
+        parcels = [stack.enter_context(p.at_temp(t)) for p in parcels]
     
-    px = np.array([p.x for p in parcels])
-    py = np.array([p.y for p in parcels])
-    pz = np.array([p.z for p in parcels])
-    
-    Tx, Ty = xyz_to_hpc(px, py, pz, sc.x, sc.y, sc.z)
-    if was_not_list:
-        Tx = Tx[0]
-        Ty = Ty[0]
-    return Tx, Ty
+        px = np.array([p.x for p in parcels])
+        py = np.array([p.y for p in parcels])
+        pz = np.array([p.z for p in parcels])
+        
+        Tx, Ty = xyz_to_hpc(px, py, pz, sc.x, sc.y, sc.z)
+        if was_not_list:
+            Tx = Tx[0]
+            Ty = Ty[0]
+        return Tx, Ty
     
 
 def xyz_to_hpc(xs, ys, zs, scx, scy, scz):
@@ -458,13 +478,13 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         ## Find elongation of s/c forward direction by computing the angle
         ## between it and the sunward direction
         #forward_elongation = angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
-        ## Set the reference pixel coordiantes as the forward-direction
+        ## Set the reference pixel coordinates as the forward-direction
         ## elongation for longitude, and zero latitude (assume s/c is in
         ## ecliptic plane)
         #image_wcs.wcs.crval = forward_elongation[0] * 180 / np.pi, 0
         
-        # Set the reference pixel coordiantes as 61 degress HPC, which is the
-        # center of WISPR's compositve FOV (as detailed in the in-flight
+        # Set the reference pixel coordinates as 61 degrees HPC, which is the
+        # center of WISPR's composite FOV (as detailed in the in-flight
         # calibration paper)
         image_wcs.wcs.crval = 61, 0
         
@@ -501,27 +521,31 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_image = np.zeros((output_size_y, output_size_x))
     
     good_parcels = []
-    for p in parcels:
-        # For each blob, calculate a position, update the WCS, and then project
-        # the blob image onto the output image.
-        # Is this overkill? Probably?
-        parcel = p.at(t0)
-        if np.isnan(parcel.x):
-            continue
+    parcel_distances = []
+    parcel_rs = []
+    with ExitStack() as stack:
+        parcels = [stack.enter_context(p.at_temp(t0)) for p in parcels]
+        for p in parcels:
+            # For each blob, calculate a position, update the WCS, and then project
+            # the blob image onto the output image.
+            # Is this overkill? Probably?
+            if np.isnan(p.x):
+                continue    
+            good_parcels.append(p)
+            parcel_distances.append((p - sc).r)
+            parcel_rs.append(p.r)
         
-        good_parcels.append(parcel)
-    
-    Txs, Tys = calc_hpc(sc, good_parcels)
-    
-    for parcel, Tx, Ty in zip(good_parcels, Txs, Tys):
+        Txs, Tys = calc_hpc(sc, good_parcels)
+   
+    for parcel_distance, parcel_r, Tx, Ty in zip(
+        parcel_distances, parcel_rs, Txs, Tys):
         # We'll compute a scaling factor to reduce parcels' brightness as we
         # fly though them, to try to reduce flashiness as that happens.
-        parcel_distance = (parcel - sc).r
         if parcel_distance < parcel_width / 2:
             continue
         
         # Compute the apparent angular size of the parcel
-        parcel_angular_width = 2 * np.arctan(parcel_width / 2 / (sc - parcel).r)
+        parcel_angular_width = 2 * np.arctan(parcel_width / 2 / parcel_distance)
         parcel_angular_width *= 180 / np.pi # degrees
         cdelt = parcel_angular_width / parcel_res
         try:
@@ -538,7 +562,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
                 roundtrip_coords=False, return_footprint=False,
                 conserve_flux=True)
         # Scale the brightness of the reprojected blob
-        subimage = subimage / parcel_distance**2 / parcel.r**2
+        subimage = subimage / parcel_distance**2 / parcel_r**2
         
         if psychadelic:
             # Add a dimension and assign a random color to the parcel. Ensure
