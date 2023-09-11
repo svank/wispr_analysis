@@ -20,21 +20,18 @@ from tqdm.contrib.concurrent import process_map
 from .. import planets, plot_utils, utils
 
 
-def _extract_slice(image, sc_pos, wcs, n, is_inner):
-    transformer = OrbitalSliceTransformer(sc_pos, wcs, n, is_inner)
-    slice = np.zeros((1, 1, n))
-    reproject.adaptive.deforest.map_coordinates(
-        image.astype(float).reshape((1, *image.shape)),
-        slice,
-        transformer,
-        out_of_range_nan=True,
-        center_jacobian=False)
-    slice = slice[0, 0]
+def _extract_slice(image, wcs, n, is_inner):
+    output_wcs = OrbitalSliceWCS(wcs, n, is_inner)
+    slice = reproject.reproject_adaptive((image, wcs), output_wcs, (1, n),
+                                  center_jacobian=False,
+                                  return_footprint=False,
+                                  roundtrip_coords=False)
+    slice = slice[0]
     # Turn infs into nans
     np.nan_to_num(slice, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan)
-    fixed_angles = transformer.last_fixed_angles[1, 1:-1]
+    fixed_angles = output_wcs.last_fixed_angles[1, 1:-1]
     return (slice, fixed_angles,
-            transformer.last_venus_elongation, transformer.last_venus_angle)
+            output_wcs.last_venus_elongation, output_wcs.last_venus_angle)
 
 
 def extract_slices(
@@ -49,7 +46,6 @@ def extract_slices(
         for slice, fixed_angle, ve, va in process_map(
                     _extract_slice,
                     bundle.images,
-                    bundle.sc_poses,
                     bundle.wcses,
                     repeat(n),
                     repeat(bundle.is_inner),
@@ -64,8 +60,8 @@ def extract_slices(
     venus_elongations = np.stack(venus_elongations)
     venus_angles = np.stack(venus_angles)
 
-    transformer = OrbitalSliceTransformer(
-        bundle.sc_poses[-1], bundle.wcses[-1], n, bundle.is_inner)
+    transformer = OrbitalSliceWCS(
+        bundle.wcses[-1], n, bundle.is_inner)
 
     return PlainJMap(
         slices=slices,
@@ -80,10 +76,9 @@ def extract_slices(
     )
 
 
-class OrbitalSliceTransformer:
-    def __init__(self, sc_pos, img_wcs, n, is_inner, date_override=None):
-        self.sc_pos = sc_pos
-        self.img_wcs = img_wcs
+class OrbitalSliceWCS(utils.FakeWCS):
+    def __init__(self, input_wcs, n, is_inner, date_override=None):
+        super().__init__(input_wcs)
         if is_inner:
             self.angle_start = 13.5
             self.angle_stop = 51.25
@@ -92,12 +87,11 @@ class OrbitalSliceTransformer:
             self.angle_stop = 103.75
         self.n = n
         self.last_hpc = None
-
         if date_override:
             self.date = date_override
         else:
             try:
-                self.date = img_wcs.wcs.dateavg.replace('T', ' ')
+                self.date = input_wcs.wcs.dateavg.replace('T', ' ')
             except AttributeError:
                 self.date = ''
         if self.date == '':
@@ -115,46 +109,48 @@ class OrbitalSliceTransformer:
     def pix_to_elongation(self, pixel_num):
         return (pixel_num * (self.angle_stop - self.angle_start)
                 / (self.n-1) + self.angle_start)
-
-    def __call__(self, pixel_out):
-        sc = SkyCoord(*(self.sc_pos * u.R_sun.to(u.m)),
-                      representation_type='cartesian',
-                      frame=HeliocentricInertial, obstime=self.date, unit='m')
+    
+    def pixel_to_world_values(self, *pixel_arrays):
+        sc = SkyCoord(self.input_wcs.wcs.aux.hgln_obs * u.deg,
+                      self.input_wcs.wcs.aux.hglt_obs * u.deg,
+                      self.input_wcs.wcs.aux.dsun_obs * u.m,
+                      frame='heliographic_stonyhurst', obstime=self.date)
         sc = sc.transform_to(self.orbital_frame)
         sc_cart = sc.represent_as('cartesian')
         
         angle_to_sun = np.arctan2(-sc_cart.y, -sc_cart.x)
         r = sc.distance
 
-        elongations = self.pix_to_elongation(pixel_out[..., 0]) * u.deg
+        elongations = self.pix_to_elongation(pixel_arrays[0]) * u.deg
         
         angles = angle_to_sun - elongations
 
         x = np.cos(angles) * r + sc_cart.x
         y = np.sin(angles) * r + sc_cart.y
-        points = SkyCoord(x,
-                          y,
-                          0,
+        points = SkyCoord(x, y, 0,
                           frame=self.orbital_frame,
                           representation_type='cartesian',
                           observer=sc, unit='m')
         points = points.transform_to(Helioprojective)
-        self.last_hpc = points[1]
+        self.last_hpc = points
+        Tx = points.Tx.to(u.deg).value
+        Ty = points.Ty.to(u.deg).value
+
         # Negative here just to choose a frame where the fixed-frame angle
         # increases in the same direction as elongation
         self.last_fixed_angles = -angles.to(u.deg).value
 
-        x, y = self.img_wcs.world_to_pixel(points)
+        x, y = self.input_wcs.world_to_pixel(points)
 
-        g = ((x > 0) * (x < self.img_wcs.pixel_shape[0]-1)
-             * (y > 0) * (y < self.img_wcs.pixel_shape[1]-1))
-        x[~g] = np.nan
-        y[~g] = np.nan
+        g = ((x > 0) * (x < self.input_wcs.pixel_shape[0]-1)
+             * (y > 0) * (y < self.input_wcs.pixel_shape[1]-1))
+        Tx[~g] = np.nan
+        Ty[~g] = np.nan
         
         venus_pos = planets.locate_planets(self.date, only=['venus'])[0]
-        venus_pos = self.img_wcs.world_to_pixel(venus_pos)
-        if not (0 <= venus_pos[0] < self.img_wcs.pixel_shape[0]
-                and 0 <= venus_pos[1] < self.img_wcs.pixel_shape[1]):
+        venus_pos = self.input_wcs.world_to_pixel(venus_pos)
+        if not (0 <= venus_pos[0] < self.input_wcs.pixel_shape[0]
+                and 0 <= venus_pos[1] < self.input_wcs.pixel_shape[1]):
             venus_pos = np.nan, np.nan
         self.last_venus_elongation = np.interp(
             venus_pos[0], x[1], elongations[1].value,
@@ -162,18 +158,14 @@ class OrbitalSliceTransformer:
         self.last_venus_angle = np.interp(
             venus_pos[0], x[1], self.last_fixed_angles[1],
             left=np.nan, right=np.nan)
-
-        pixel_in = np.empty_like(pixel_out)
-        pixel_in[..., 0] = x
-        pixel_in[..., 1] = y
-        return pixel_in
+        
+        return Tx, Ty
 
 
 @dataclasses.dataclass
 class InputDataBundle:
     images: np.ndarray
     wcses: list[WCS]
-    sc_poses: list[tuple]
     times: np.ndarray
     is_inner: bool
 
@@ -183,7 +175,7 @@ class BaseJmap:
     slices: np.ndarray
     angles: np.ndarray
     times: np.ndarray
-    transformer: OrbitalSliceTransformer
+    transformer: OrbitalSliceWCS
     normalized: bool
     venus_elongations: np.ndarray
     venus_angles: np.ndarray
@@ -340,7 +332,7 @@ class BaseJmap:
             out_of_range_nan=True,
             boundary_mode='ignore',
             center_jacobian=False,
-            bad_val_mode='ignore')
+            bad_value_mode='ignore')
         self.slices = new_slices[0]
 
         # Clear out little extra bits that show up around imager gaps
@@ -357,7 +349,7 @@ class BaseJmap:
             out_of_range_nan=True,
             boundary_mode='ignore',
             center_jacobian=False,
-            bad_val_mode='ignore')
+            bad_value_mode='ignore')
         self.venus_elongations = new_venus_elongations[0, :, 0]
         
         new_venus_angles = np.zeros((1, len(new_t), 1))
@@ -368,7 +360,7 @@ class BaseJmap:
             out_of_range_nan=True,
             boundary_mode='ignore',
             center_jacobian=False,
-            bad_val_mode='ignore')
+            bad_value_mode='ignore')
         self.venus_angles = new_venus_angles[0, :, 0]
         
         self.times = new_t
@@ -520,10 +512,9 @@ class BaseJmap:
         if label_vr:
             if bundle is None:
                 raise ValueError("Bundle must be provided")
-            sc_poses = bundle.sc_poses
-            r = np.sqrt(np.sum(sc_poses**2, axis=1))
+            r = [w.wcs.aux.dsun_obs for w in bundle.wcses]
             vrs = np.gradient(r, self.times)
-            vrs = (vrs * u.R_sun / u.s).to(u.km / u.s).value
+            vrs /= 1000
 
             def t2vr(t): return np.interp(t, dates, vrs)
             def vr2t(vr): return np.interp(vr, vrs, dates)
@@ -572,7 +563,7 @@ class PlainJMap(BaseJmap):
                 transformer,
                 out_of_range_nan=True,
                 boundary_mode='ignore',
-                bad_val_mode='ignore',
+                bad_value_mode='ignore',
                 center_jacobian='false')
         outmap = DerotatedJMap(
             slices=output,

@@ -8,6 +8,7 @@ import warnings
 
 from astropy.io import fits
 from astropy.wcs import WCS
+from astropy.wcs.wcsapi import BaseLowLevelWCS
 import numba
 import numpy as np
 import scipy.signal
@@ -1059,3 +1060,45 @@ def extract_encounter_number(path, as_int=False):
         result = int(result)
     return result
 
+
+class FakeWCS(BaseLowLevelWCS):
+    """
+    Helper for plugging custom coordinates in reproject.
+    
+    Handles all the boilerplate, so subclasses just need to implement
+    world_to_pixel_values and/or pixel_to_world_values. The only catch is that
+    a "matching" wcs from the other side of the reprojection must be provided
+    to __init__ so some of the boilerplate can be copied from it.
+    """
+    def __init__(self, input_wcs):
+        self.input_wcs = input_wcs
+
+    def world_to_pixel_values(self, *world_arrays):
+        raise NotImplementedError()
+
+    def pixel_to_world_values(self, *world_arrays):
+        raise NotImplementedError()
+
+    @property
+    def pixel_n_dim(self):
+        return self.input_wcs.pixel_n_dim
+
+    @property
+    def world_n_dim(self):
+        return self.input_wcs.world_n_dim
+
+    @property
+    def world_axis_units(self):
+        return self.input_wcs.world_axis_units
+
+    @property
+    def world_axis_physical_types(self):
+        return self.input_wcs.world_axis_physical_types
+
+    @property
+    def world_axis_object_components(self):
+        return self.input_wcs.world_axis_object_components
+
+    @property
+    def world_axis_object_classes(self):
+        return self.input_wcs.world_axis_object_classes
