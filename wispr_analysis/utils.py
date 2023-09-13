@@ -8,7 +8,7 @@ import warnings
 
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.wcs.wcsapi import BaseLowLevelWCS
+from astropy.wcs.wcsapi import BaseLowLevelWCS, HighLevelWCSWrapper
 import numba
 import numpy as np
 import scipy.signal
@@ -1069,14 +1069,19 @@ class FakeWCS(BaseLowLevelWCS):
     world_to_pixel_values and/or pixel_to_world_values. The only catch is that
     a "matching" wcs from the other side of the reprojection must be provided
     to __init__ so some of the boilerplate can be copied from it.
+    
+    If ``None`` is provided for ``input_wcs``, a "unitless" mode is enabled,
+    where input/output coordinates are generic and dimensionless.
     """
     def __init__(self, input_wcs):
+        if input_wcs is None:
+            input_wcs = WCS(naxis=2)
         self.input_wcs = input_wcs
 
     def world_to_pixel_values(self, *world_arrays):
         raise NotImplementedError()
 
-    def pixel_to_world_values(self, *world_arrays):
+    def pixel_to_world_values(self, *pixel_arrays):
         raise NotImplementedError()
 
     @property
@@ -1102,3 +1107,6 @@ class FakeWCS(BaseLowLevelWCS):
     @property
     def world_axis_object_classes(self):
         return self.input_wcs.world_axis_object_classes
+    
+    def as_high_level(self):
+        return HighLevelWCSWrapper(self)

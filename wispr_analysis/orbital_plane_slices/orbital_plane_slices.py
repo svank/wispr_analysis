@@ -311,29 +311,17 @@ class BaseJmap:
         if t_end is None:
             t_end = self.times[-1]
         new_t = np.arange(t_start, t_end+.00001, new_dt)
-
-        def transformer(pixel_out):
-            x, y = pixel_out[..., 0], pixel_out[..., 1]
-            yt = y * new_dt + self.times[0]
-            yn = np.interp(yt, self.times, np.arange(len(self.times)))
-            # If an imager drops out for a while, we'll see a bunch of output
-            # timesteps mapping to pretty much the same exact region (the space
-            # between two difference slices). For better plotting, let's let
-            # the dropout show as a gap and not a big interpolated streak.
-            delta = np.gradient(yn, axis=0)
-            yn[delta < .1] = np.nan
-            return np.stack((x, yn), axis=-1)
-
-        new_slices = np.zeros((1, len(new_t), self.slices.shape[-1]))
-        reproject.adaptive.deforest.map_coordinates(
-            self.slices.astype(float).reshape((1, *self.slices.shape)),
-            new_slices,
-            transformer,
-            out_of_range_nan=True,
+        
+        wcs = ResampleTimeWCS(self.times, new_dt)
+        
+        self.slices = reproject.reproject_adaptive(
+            (self.slices, wcs),
+            wcs, (len(new_t), self.slices.shape[-1]),
             boundary_mode='ignore',
+            bad_value_mode='ignore',
             center_jacobian=False,
-            bad_value_mode='ignore')
-        self.slices = new_slices[0]
+            roundtrip_coords=False,
+            return_footprint=False)
 
         # Clear out little extra bits that show up around imager gaps
         nans = np.isnan(self.slices)
@@ -341,27 +329,25 @@ class BaseJmap:
         self.slices[nans] = np.nan
         
         # Resample the Venus locations
-        new_venus_elongations = np.zeros((1, len(new_t), 1))
-        reproject.adaptive.deforest.map_coordinates(
-            self.venus_elongations.reshape((1, len(self.venus_elongations), 1)),
-            new_venus_elongations,
-            transformer,
-            out_of_range_nan=True,
+        self.venus_elongations = reproject.reproject_adaptive(
+            (self.venus_elongations.reshape((-1, 1)), wcs),
+            wcs, (len(new_t), 1),
             boundary_mode='ignore',
+            bad_value_mode='ignore',
             center_jacobian=False,
-            bad_value_mode='ignore')
-        self.venus_elongations = new_venus_elongations[0, :, 0]
+            roundtrip_coords=False,
+            return_footprint=False)
+        self.venus_elongations = self.venus_elongations[:, 0]
         
-        new_venus_angles = np.zeros((1, len(new_t), 1))
-        reproject.adaptive.deforest.map_coordinates(
-            self.venus_angles.reshape((1, len(self.venus_angles), 1)),
-            new_venus_angles,
-            transformer,
-            out_of_range_nan=True,
+        self.venus_angles = reproject.reproject_adaptive(
+            (self.venus_angles.reshape((-1, 1)), wcs),
+            wcs, (len(new_t), 1),
             boundary_mode='ignore',
+            bad_value_mode='ignore',
             center_jacobian=False,
-            bad_value_mode='ignore')
-        self.venus_angles = new_venus_angles[0, :, 0]
+            roundtrip_coords=False,
+            return_footprint=False)
+        self.venus_angles = self.venus_angles[:, 0]
         
         self.times = new_t
         self._title.append(f"resampled dt={new_dt}")
@@ -529,6 +515,53 @@ class BaseJmap:
                 ax2.set_ylabel("S/C radial velocity (km/s)")
 
 
+class ResampleTimeWCS(utils.FakeWCS):
+    def __init__(self, times, new_dt):
+        super().__init__(None)
+        self.times = times
+        self.new_dt = new_dt
+        
+    def pixel_to_world_values(self, *pixel_arrays):
+        x, y = pixel_arrays[0], pixel_arrays[1]
+        yt = y * self.new_dt + self.times[0]
+        yn = np.interp(yt, self.times, np.arange(len(self.times)))
+        # If an imager drops out for a while, we'll see a bunch of output
+        # timesteps mapping to pretty much the same exact region (the space
+        # between two difference slices). For better plotting, let's let
+        # the dropout show as a gap and not a big interpolated streak.
+        delta = np.gradient(yn, axis=0)
+        yn[delta < .1] = np.nan
+        return x.copy(), yn
+    
+    def world_to_pixel_values(self, *world_arrays):
+        return world_arrays
+
+
+class DerotateWCS(utils.FakeWCS):
+    def __init__(self, fixed_angles, angle_start, angle_stop, n):
+        super().__init__(None)
+        self.fixed_angles = fixed_angles
+        self.angle_start = angle_start
+        self.angle_stop = angle_stop
+        self.n = n
+        
+    def pixel_to_world_values(self, *pixel_arrays):
+        out_angles = (
+            pixel_arrays[0] * (self.angle_stop - self.angle_start)
+            / (self.n-1) + self.angle_start)
+        fa = self.fixed_angles % 360
+        fa[fa < self.angle_start] += 360
+        px_in = np.interp(
+            out_angles,
+            fa,
+            np.arange(len(self.fixed_angles)),
+            left=np.nan, right=np.nan)
+        return px_in, pixel_arrays[1].copy()
+    
+    def world_to_pixel_values(self, *world_arrays):
+        return world_arrays
+
+
 class PlainJMap(BaseJmap):
     xlabel = "Elongation"
 
@@ -542,29 +575,15 @@ class PlainJMap(BaseJmap):
         output = np.empty((self.slices.shape[0], n))
         for i, (slice, fixed_angles) in enumerate(
                 zip(self.slices, self.fixed_angles)):
-            def transformer(pixel_out):
-                out_angles = (
-                    pixel_out[..., 0] * (angle_stop - angle_start)
-                    / (n-1) + angle_start)
-                fa = fixed_angles % 360
-                fa[fa < angle_start] += 360
-                px_in = np.interp(
-                    out_angles,
-                    fa,
-                    np.arange(len(fixed_angles)),
-                    left=np.nan, right=np.nan)
-                pixel_in = pixel_out.copy()
-                pixel_in[..., 0] = px_in
-                return pixel_in
-
-            reproject.adaptive.deforest.map_coordinates(
-                slice.reshape((1, 1, slice.size)),
-                output[i].reshape((1, 1, output[i].size)),
-                transformer,
-                out_of_range_nan=True,
+            wcs = DerotateWCS(fixed_angles, angle_start, angle_stop, n)
+            output[i] = reproject.reproject_adaptive(
+                (slice.reshape((1, slice.size)), wcs),
+                wcs, (1, n),
                 boundary_mode='ignore',
                 bad_value_mode='ignore',
-                center_jacobian='false')
+                center_jacobian=False,
+                return_footprint=False,
+                roundtrip_coords=False)
         outmap = DerotatedJMap(
             slices=output,
             angles=np.linspace(angle_start, angle_stop, n),
