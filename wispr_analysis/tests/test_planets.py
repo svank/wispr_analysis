@@ -14,18 +14,18 @@ def test_locate_planets_cache(tmp_path, mocker):
     mocker.patch(
             planets.__name__ + ".locate_planets",
             return_value='first_timestamp')
-    planets.cache_planet_pos(t, tmp_path)
+    planets.cache_planet_pos(t, cache_dir=tmp_path)
     
     t2 = t + 20
     mocker.patch(
             planets.__name__ + ".locate_planets",
             return_value='second_timestamp')
-    planets.cache_planet_pos(t2, tmp_path)
+    planets.cache_planet_pos(t2, cache_dir=tmp_path)
     
     planets.locate_planets = locate_planets_orig
     
-    assert planets.locate_planets(t, tmp_path) == 'first_timestamp'
-    assert planets.locate_planets(t2, tmp_path) == 'second_timestamp'
+    assert planets.locate_planets(t, cache_dir=tmp_path) == 'first_timestamp'
+    assert planets.locate_planets(t2, cache_dir=tmp_path) == 'second_timestamp'
 
 
 def test_formate_date():
