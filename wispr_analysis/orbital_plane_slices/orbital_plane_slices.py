@@ -530,7 +530,7 @@ class ResampleTimeWCS(utils.FakeWCS):
         # between two difference slices). For better plotting, let's let
         # the dropout show as a gap and not a big interpolated streak.
         delta = np.gradient(yn, axis=0)
-        yn[delta < .1] = np.nan
+        yn[delta < .2] = np.nan
         return x.copy(), yn
     
     def world_to_pixel_values(self, *world_arrays):
@@ -593,6 +593,8 @@ class PlainJMap(BaseJmap):
             title_stub=copy.deepcopy(self.title_stub),
             venus_elongations=self.venus_elongations,
             venus_angles=self.venus_angles)
+        outmap.venus_angles[outmap.venus_angles < angle_start] += 360
+        outmap.venus_angles[outmap.venus_angles > angle_stop] -= 360
         outmap._title = copy.deepcopy(self._title)
         outmap._title.append("derotated")
         outmap._subtitles = copy.deepcopy(self._subtitles)
