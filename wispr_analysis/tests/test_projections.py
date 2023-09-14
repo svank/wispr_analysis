@@ -3,8 +3,6 @@ from .. import composites, projections, utils
 from astropy.io import fits
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
-from matplotlib.testing.conftest import mpl_test_settings
-from matplotlib.testing.decorators import image_comparison
 import numpy as np
 import os
 import pytest
@@ -244,8 +242,7 @@ def test_radial_transformer_roundtrip():
     np.testing.assert_allclose(pixel_out, pixel_in)
 
 
-@image_comparison(baseline_images=['test_reproject_to_radial'],
-        extensions=['pdf'])
+@pytest.mark.mpl_image_compare
 def test_reproject_to_radial():
     data = np.zeros((500, 500))
     x = np.arange(-data.shape[0]//2, data.shape[0]//2)
@@ -279,8 +276,7 @@ def test_reproject_to_radial():
     return plt.gcf()
 
 
-@image_comparison(baseline_images=['test_reproject_from_radial'],
-        extensions=['pdf'])
+@pytest.mark.mpl_image_compare
 def test_reproject_from_radial():
     data = np.zeros((500, 500))
     x = np.arange(0, data.shape[0])

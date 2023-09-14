@@ -3,12 +3,10 @@ from .. import plot_utils
 import os
 
 import matplotlib.pyplot as plt
-from matplotlib.testing.conftest import mpl_test_settings
-from matplotlib.testing.decorators import image_comparison
+import pytest
 
 
-@image_comparison(baseline_images=['test_plot_constellations'],
-                  extensions=['pdf'], tol=10)
+@pytest.mark.mpl_image_compare
 def test_plot_constellations():
     dir_path = os.path.join(os.path.dirname(__file__),
                 'test_data', 'WISPR_files_with_data_half_size', '20181101',

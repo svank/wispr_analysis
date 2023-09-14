@@ -2,8 +2,6 @@ from .. import synthetic_data as sd
 
 
 import matplotlib.pyplot as plt
-from matplotlib.testing.conftest import mpl_test_settings
-from matplotlib.testing.decorators import image_comparison
 import numpy as np
 import pytest
 from pytest import approx
@@ -111,8 +109,7 @@ def test_calc_epsilon():
     np.testing.assert_allclose(el, [0, 90])
 
 
-@image_comparison(baseline_images=['test_synthesize_image'],
-        extensions=['pdf'])
+@pytest.mark.mpl_image_compare
 def test_synthesize_image():
     sc = sd.LinearThing(x=-10, y=-10, vx=1, vy=0.2)
     p = sd.LinearThing(x=-5, y=-12, vx=-.5, vy=-.5)

@@ -131,9 +131,6 @@ dmypy.json
 .DS_Store
 *.swp
 
-# Plotting test outputs
-result_images
-
 */version.py
 docs/api
 

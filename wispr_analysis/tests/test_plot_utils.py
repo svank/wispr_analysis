@@ -5,8 +5,6 @@ import os
 
 from astropy.io import fits
 import matplotlib.pyplot as plt
-from matplotlib.testing.conftest import mpl_test_settings
-from matplotlib.testing.decorators import image_comparison
 import pytest
 
 
@@ -50,8 +48,7 @@ def test_parse_level_preset():
     assert plot_utils.parse_level_preset(1, header) == '1'
 
 
-@image_comparison(baseline_images=['test_plot_orbit'], extensions=['pdf'],
-        tol=10)
+@pytest.mark.mpl_image_compare
 def test_plot_orbit():
     dir_path = os.path.join(os.path.dirname(__file__),
                 'test_data', 'WISPR_files_headers_only')
@@ -60,7 +57,7 @@ def test_plot_orbit():
     return plt.gcf()
 
 
-@image_comparison(baseline_images=['test_x_axis_dates'], extensions=['pdf'])
+@pytest.mark.mpl_image_compare
 def test_x_axis_dates():
     dates = ['20200101T000000', '20200105T120000', '20200110T010000']
     y = [1, 0, 2]
@@ -71,7 +68,7 @@ def test_x_axis_dates():
     return plt.gcf()
 
 
-@image_comparison(baseline_images=['test_y_axis_dates'], extensions=['pdf'])
+@pytest.mark.mpl_image_compare
 def test_y_axis_dates():
     dates = ['20200101T000000', '20200105T120000', '20200110T010000']
     y = [1, 0, 2]
@@ -82,8 +79,7 @@ def test_y_axis_dates():
     return plt.gcf()
 
 
-@image_comparison(baseline_images=['test_x_axis_dates_setting_fig_ax'],
-        extensions=['pdf'])
+@pytest.mark.mpl_image_compare
 def test_x_axis_dates_setting_fig_ax():
     fig1 = plt.figure()
     fig2 = plt.figure()
