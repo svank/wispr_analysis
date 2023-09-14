@@ -24,6 +24,7 @@ from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from . import composites
+from . import constellations
 from . import data_cleaning
 from . import planets
 from . import plot_utils
@@ -41,7 +42,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
         duration=15, fps=20, n_procs=os.cpu_count(),
         remove_debris=True, debris_mask_dir=None, overlay_coords=True,
         overlay_celest=False, save_location=None, mark_planets=False,
-        align=True):
+        align=True, draw_constellations=False):
     """
     Renders a video of a WISPR data sequence, in a composite field of view.
     
@@ -226,6 +227,10 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
         masks_i = [None] * len(i_files)
         masks_o = [None] * len(o_files)
     
+    if draw_constellations:
+        # Do this once before we start multiprocessing---the result is cached
+        constellations.load_constellation_data()
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         def arguments():
             for (i, j), timesteps in images:
@@ -241,6 +246,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                     prev_ofile=None, ohdr=None, imask=None, omask=None,
                     fallback_ifile=i_files[0][1] if align else None,
                     fallback_ofile=o_files[0][1] if align else None,
+                    draw_constellations=draw_constellations,
                     mark_planets=mark_planets, image_trim=image_trim)
                 if i is not None:
                     args['ifile'] = i_files[i][1]
@@ -376,6 +382,7 @@ def _draw_WISPR_video_frame(data):
                             image_trim[0][0]:-image_trim[0][1]]
             else:
                 planet_poses_i = [None] * 8
+                wcs_i = None
             if data['ohdr'] is not None:
                 with (utils.ignore_fits_warnings(),
                         fits.open(data['ofile']) as hdul):
@@ -388,6 +395,10 @@ def _draw_WISPR_video_frame(data):
                             image_trim[1][0]:-image_trim[1][1]]
             else:
                 planet_poses_o = [None] * 8
+                wcs_o = None
+    
+    composites.set_wcs_observer_details(wcs_plot, wcs_i, wcs_o)
+    
     with matplotlib.style.context('dark_background'):
         for t in data['timesteps']:
             # Determine which input image is closest in time
@@ -446,6 +457,9 @@ def _draw_WISPR_video_frame(data):
                 fig.subplots_adjust(
                     top=0.90, bottom=0.10,
                     left=0.05, right=0.95)
+            
+            if data['draw_constellations']:
+                constellations.plot_constellations(wcs_plot, ax=ax)
             
             main_ax_pos = ax.get_position()
             if data['path_positions'] is not None:

@@ -2,7 +2,6 @@ from collections.abc import Iterable
 import copy
 from datetime import datetime, timedelta, timezone
 from itertools import chain
-import warnings
 
 import astropy.units as u
 from astropy.visualization.wcsaxes import WCSAxes
@@ -181,11 +180,7 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         plt.sci(im)
     
     if draw_constellations:
-        ax.autoscale()
-        xlim, ylim = ax.get_xlim(), ax.get_ylim()
-        constellations.plot_constellations(wcs, xlim, ylim)
-        ax.set_xlim(*xlim)
-        ax.set_ylim(*ylim)
+        constellations.plot_constellations(wcs)
     return im
 
 
@@ -297,7 +292,7 @@ def plot_orbit(data_dir, between=None, filters=None,
         By default, ``between`` and ``filters`` apply only to which images are
         indicated, while the full orbital path (as determined by the unfiltered
         set of files) is plotted. Set this to ``False`` to only indicate the
-        oribal path for the filtered range of files.
+        orbital path for the filtered range of files.
     """
     kwargs = {}
     if not plot_full_orbit:

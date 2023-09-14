@@ -4,11 +4,14 @@ import os
 from astropy.coordinates import SkyCoord, ICRS
 import astropy.units as u
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtrans
 import numpy as np
 # For Helioprojective treatment
 import sunpy.coordinates
 
 
+# This is a subjective list of nice constellations to plot that could be used,
+# but currently isn't
 GOOD_CONSTELLATIONS = [
     'Andromeda',
     'Aquarius',
@@ -85,8 +88,6 @@ def load_constellation_data():
     for const in line_dat:
         pieces = const.split()
         name = name_map[pieces[0]]
-        if name not in GOOD_CONSTELLATIONS:
-            continue
         star_ids = pieces[2:]
         for id in star_ids:
             if id not in id_to_elem:
@@ -109,35 +110,57 @@ def plot_constellations(wcs, ax=None):
         ax = plt.gca()
     
     constellations, coords = load_constellation_data()
-    x, y = wcs.world_to_pixel(coords)
+    xs, ys = wcs.world_to_pixel(coords)
     
+    # When a line segment goes off the edge of the image, we want to plot it,
+    # but we don't want to push out the axis bounds. So we capture and later
+    # restore the current axis bounds.
     ax.autoscale()
     xlim, ylim = ax.get_xlim(), ax.get_ylim()
     
     for name, pairs in constellations.items():
-        x_used = []
-        y_used = []
+        x_all = []
+        y_all = []
+        n_good = 0
+        if len(pairs) < 2:
+            # Skip the really small, trivial constellations
+            continue
         for start, stop in pairs:
-            start = x[start], y[start]
-            stop = x[stop], y[stop]
+            start = xs[start], ys[start]
+            stop = xs[stop], ys[stop]
+            if not np.all(np.isfinite(start)) or not np.all(np.isfinite(stop)):
+                continue
+            x_all.extend((start[0], stop[0]))
+            y_all.extend((start[1], stop[1]))
             
-            xgood = (xlim[0] <= start[0] <= xlim[1]
-                     or xlim[0] <= stop[0] <= xlim[1])
-            ygood = (ylim[0] <= start[1] <= ylim[1]
-                     or ylim[0] <= stop[1] <= ylim[1])
-            if xgood and ygood:
+            p1good = (xlim[0] <= start[0] <= xlim[1]
+                      and ylim[0] <= start[1] <= ylim[1])
+            p2good = (xlim[0] <= stop[0] <= xlim[1]
+                      and ylim[0] <= stop[1] <= ylim[1])
+            # Skip this segment if neither end is in the plot
+            if p1good or p2good:
                 ax.plot(
                     [start[0], stop[0]],
                     [start[1], stop[1]],
                     color='#ffe282', linewidth=.4, alpha=.7)
-                x_used.extend((start[0], stop[0]))
-                y_used.extend((start[1], stop[1]))
-        if len(x_used) > 6:
-            plt.text(
-                np.mean(x_used),
-                np.mean(y_used),
+                n_good += 1
+        if n_good > 0:
+            x = np.mean(x_all)
+            y = np.mean(y_all)
+            text = ax.text(
+                x, y,
                 name,
+                # Ensure the text isn't drawn outside the axis bounds
+                clip_on=True,
                 color='#ffe282', alpha=.7)
-    
+            # Don't let text that falls outside the axis bounds affect the size
+            # of the whole figure
+            text.set_in_layout(False)
+            # Ensure the text is clipped at exactly the edge of the axes
+            text.set_clip_box(
+                mtrans.TransformedBbox(
+                    mtrans.Bbox([[0,0], [1,1]]),
+                    ax.transAxes))
+    # Restore the axis bounds
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)

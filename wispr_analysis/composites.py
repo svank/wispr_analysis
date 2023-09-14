@@ -298,7 +298,38 @@ def gen_header(hdr_i, hdr_o, proj='ARC', level=False, key=' '):
     
     wcsh.pixel_shape = naxis1, naxis2
     
+    set_wcs_observer_details(wcsh, wcs_i, wcs_o)
+    
     return wcsh, naxis1, naxis2
+
+
+def set_wcs_observer_details(target_wcs, wcs1, wcs2):
+    if wcs1 is None:
+        wcs1 = wcs2
+    if wcs2 is None:
+        wcs2 = wcs1
+    date = np.mean([wcs1.wcs.mjdavg, wcs2.wcs.mjdavg])
+    dsun_obs = np.mean([wcs1.wcs.aux.dsun_obs, wcs2.wcs.aux.dsun_obs])
+    hglt_obs = np.mean([wcs1.wcs.aux.hglt_obs, wcs2.wcs.aux.hglt_obs])
+    # Angular mean for hgln
+    hglnx = 0
+    hglny = 0
+    for wcs in (wcs1, wcs2):
+        x, y = np.cos(wcs.wcs.aux.hgln_obs * np.pi/180), np.sin(wcs.wcs.aux.hgln_obs * np.pi/180)
+        hglnx += x / 2
+        hglny += y / 2
+    hgln_obs = np.arctan2(hglny, hglnx) * 180 / np.pi
+    
+    target_wcs.wcs.mjdobs = date
+    target_wcs.wcs.mjdavg = date
+    target_wcs.wcs.dateobs = ''
+    target_wcs.wcs.dateavg = ''
+    target_wcs.wcs.aux.hgln_obs = hgln_obs
+    target_wcs.wcs.aux.hglt_obs = hglt_obs
+    target_wcs.wcs.aux.dsun_obs = dsun_obs
+    with utils.ignore_fits_warnings():
+        target_wcs.fix()
+    return target_wcs
 
 
 def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
@@ -370,14 +401,6 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             if img_i is None:
                 img_i = hdul[hdu].data
             hdr_i = hdul[hdu].header
-            # The input images have slightly different viewpoints. If
-            # sunpy.coordinates has been imported, astropy will know enough
-            # about HPC to say this is an invalid coordinate transformation.
-            # Here we censor information from the header to pacify Sunpy.
-            keys = [k for k in hdr_i if k.endswith("_OBS")
-                    or k.startswith('DATE-') or k.startswith('MJD-')]
-            for k in keys:
-                hdr_i.remove(k)
             wcs_i = WCS(hdr_i, hdul, key=key)
         
         if isinstance(fname_o, tuple):
@@ -388,10 +411,6 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             if img_o is None:
                 img_o = hdul[hdu].data
             hdr_o = hdul[hdu].header
-            keys = [k for k in hdr_o if k.endswith("_OBS")
-                    or k.startswith('DATE-') or k.startswith('MJD-')]
-            for k in keys:
-                hdr_o.remove(k)
             wcs_o = WCS(hdr_o, hdul, key=key)
     
     if wcsh is None:
@@ -447,6 +466,23 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     naxis2 -= bounds[2]
     wcsh.pixel_shape = naxis1, naxis2
     
+    def censor_wcs(wcs):
+        # The input images have slightly different viewpoints. If
+        # sunpy.coordinates has been imported, astropy will know enough
+        # about HPC to say this is an invalid coordinate transformation.
+        # Here we censor information from the WCS to pacify Sunpy.
+        wcs = wcs.deepcopy()
+        wcs.wcs.aux.hgln_obs = None
+        wcs.wcs.aux.hglt_obs = None
+        wcs.wcs.aux.dsun_obs = None
+        wcs.wcs.dateobs = ''
+        wcs.wcs.dateavg = ''
+        return wcs
+    
+    wcs_target = censor_wcs(wcsh)
+    wcs_i = censor_wcs(wcs_i)
+    wcs_o = censor_wcs(wcs_o)
+    
     with utils.ignore_fits_warnings():
         if return_both:
             reproj_args = dict(
@@ -456,13 +492,13 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
                 o1 = np.full((naxis2, naxis1), np.nan)
             else:
                 o1 = reproject.reproject_adaptive(
-                        (img_i, wcs_i), wcsh, (naxis2, naxis1),
+                        (img_i, wcs_i), wcs_target, (naxis2, naxis1),
                         return_footprint=False, **reproj_args)
             if blank_o:
                 o2 = np.full((naxis2, naxis1), np.nan)
             else:
                 o2 = reproject.reproject_adaptive(
-                        (img_o, wcs_o), wcsh, (naxis2, naxis1),
+                        (img_o, wcs_o), wcs_target, (naxis2, naxis1),
                         return_footprint=False, **reproj_args)
             return o1, o2, wcsh
         
@@ -476,7 +512,7 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             combine_function='first')
         reproj_args.update(kwargs)
         composite, footprint = reproject.mosaicking.reproject_and_coadd(
-            inputs, wcsh, (naxis2, naxis1),
+            inputs, wcs_target, (naxis2, naxis1),
             reproject_function=reproject.reproject_adaptive,
             **reproj_args)
         composite[footprint == 0] = np.nan
