@@ -14,9 +14,11 @@ def test_parse_level_preset():
     assert plot_utils.parse_level_preset('L1') == '1'
     assert plot_utils.parse_level_preset('L2') == '2'
     assert plot_utils.parse_level_preset('L3') == '3'
+    assert plot_utils.parse_level_preset('LW') == 'W'
     assert plot_utils.parse_level_preset('1') == '1'
     assert plot_utils.parse_level_preset('2') == '2'
     assert plot_utils.parse_level_preset('3') == '3'
+    assert plot_utils.parse_level_preset('W') == 'W'
     assert plot_utils.parse_level_preset(1) == '1'
     assert plot_utils.parse_level_preset(2) == '2'
     assert plot_utils.parse_level_preset(3) == '3'
@@ -41,6 +43,10 @@ def test_parse_level_preset():
     
     header['level'] = 'bad'
     assert plot_utils.parse_level_preset(None, header) == '3'
+    assert plot_utils.parse_level_preset(1, header) == '1'
+    
+    header['level'] = 'LW'
+    assert plot_utils.parse_level_preset(None, header) == 'W'
     assert plot_utils.parse_level_preset(1, header) == '1'
 
 
