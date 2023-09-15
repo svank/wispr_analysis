@@ -207,8 +207,8 @@ def test_find_collective_bounds(wcs_key):
 
 
 def test_gen_header():
-    dir_path = os.path.join(os.path.dirname(__file__),
-                'test_data', 'WISPR_files_with_data_half_size')
+    dir_path = os.path.join(utils.test_data_path(),
+                'WISPR_files_with_data_half_size')
     ifiles, ofiles = utils.collect_files(dir_path)
     with utils.ignore_fits_warnings():
         hdr_i = fits.getheader(ifiles[0])
@@ -239,8 +239,8 @@ def test_gen_header():
 
 
 def setup_gen_composite_test():
-    dir_path = os.path.join(os.path.dirname(__file__),
-                'test_data', 'WISPR_files_with_data_half_size')
+    dir_path = os.path.join(utils.test_data_path(),
+                'WISPR_files_with_data_half_size')
     ifiles, ofiles = utils.collect_files(dir_path)
     
     with utils.ignore_fits_warnings():

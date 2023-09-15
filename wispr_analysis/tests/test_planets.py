@@ -29,8 +29,7 @@ def test_locate_planets_cache(tmp_path, mocker):
 
 
 def test_formate_date():
-    path = os.path.join(os.path.dirname(__file__),
-            'test_data',
+    path = os.path.join(utils.test_data_path(),
             'WISPR_files_headers_only',
             '20181101',
             'psp_L3_wispr_20181101T013048_V3_1221.fits')

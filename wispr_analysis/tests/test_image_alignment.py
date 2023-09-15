@@ -458,8 +458,8 @@ def test_smooth_curve_outlier_rejection():
 
 @pytest.mark.parametrize('wcs_key', [' ', 'A'])
 def test_add_distortion_table(tmpdir, wcs_key):
-    dir_path = os.path.join(os.path.dirname(__file__),
-                'test_data', 'WISPR_files_with_data_half_size')
+    dir_path = os.path.join(utils.test_data_path(),
+                'WISPR_files_with_data_half_size')
     in_file = os.path.join(
         dir_path, '20181101', 'psp_L2_wispr_20181101T004530_V3_2222.fits')
     
@@ -497,8 +497,8 @@ def test_add_distortion_table(tmpdir, wcs_key):
 
 @pytest.mark.parametrize('wcs_key', [' ', 'A'])
 def test_binned_add_distortion_table(tmpdir, wcs_key):
-    dir_path = os.path.join(os.path.dirname(__file__),
-                'test_data', 'WISPR_files_with_data_half_size')
+    dir_path = os.path.join(utils.test_data_path(),
+                'WISPR_files_with_data_half_size')
     in_file = os.path.join(
         dir_path, '20181101', 'psp_L2_wispr_20181101T004530_V3_2222.fits')
     
@@ -622,8 +622,8 @@ def test_filter_distortion_table_gaussian_filter_image():
 
 
 def test_write_combined_maps(tmp_path):
-    test_dir_path = os.path.join(os.path.dirname(__file__),
-                'test_data', 'WISPR_files_with_distortion_map')
+    test_dir_path = os.path.join(utils.test_data_path(),
+                'WISPR_files_with_distortion_map')
     test_files = utils.collect_files(test_dir_path, separate_detectors=False)
     
     # Populate three work directories (three faux encounters)

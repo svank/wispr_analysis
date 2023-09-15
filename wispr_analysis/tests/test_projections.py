@@ -314,7 +314,7 @@ def test_reproject_from_radial():
 @pytest.mark.parametrize('pass_wcs', [True, False])
 def test_produce_radec_for_hp_wcs(pass_wcs, use_inner_as_ref):
     dir = os.path.join(
-            os.path.dirname(__file__), 'test_data',
+            utils.test_data_path(),
             'WISPR_files_headers_only', '20181101')
     ifile = os.path.join(dir, 'psp_L3_wispr_20181101T051548_V3_1221.fits')
     ofile = os.path.join(dir, 'psp_L3_wispr_20181101T060030_V3_2222.fits')

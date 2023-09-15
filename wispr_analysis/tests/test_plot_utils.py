@@ -1,4 +1,4 @@
-from .. import plot_utils
+from .. import plot_utils, utils
 
 from datetime import datetime
 import os
@@ -50,8 +50,7 @@ def test_parse_level_preset():
 
 @pytest.mark.mpl_image_compare
 def test_plot_orbit():
-    dir_path = os.path.join(os.path.dirname(__file__),
-                'test_data', 'WISPR_files_headers_only')
+    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
     plot_utils.plot_orbit(dir_path)
     
     return plt.gcf()

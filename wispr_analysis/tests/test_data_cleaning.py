@@ -45,8 +45,7 @@ def headers():
 @pytest.fixture
 def real_headers():
     with utils.ignore_fits_warnings():
-        path = os.path.join(os.path.dirname(__file__), 'test_data',
-                'WISPR_files_headers_only')
+        path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
         h1 = fits.getheader(os.path.join(
             path, '20181101', 'psp_L3_wispr_20181101T004548_V3_1221.fits'))
         h2 = fits.getheader(os.path.join(
@@ -301,8 +300,7 @@ def test_gen_diffs_distribution(window_width):
 
 @pytest.mark.parametrize('compressed', [True, False])
 def test_find_mask(compressed, mocker):
-    path = os.path.dirname(__file__)
-    path = os.path.join(path, 'test_data', 'WISPR_files_headers_only')
+    path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
     
     files = utils.collect_files(path, separate_detectors=False)
     
