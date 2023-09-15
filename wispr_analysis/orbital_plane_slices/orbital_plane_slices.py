@@ -316,13 +316,6 @@ class BaseJmap:
     def local_col_detrend(self, order=1, window=101):
         if window % 2 != 1:
             window += 1
-        half_window = int(window // 2)
-        # for i in range(self.slices.shape[0]):
-        #     for j in range(self.slices.shape[1]):
-        #         if np.isnan(self.slices[i, j]):
-        #             continue
-        #         istart = max(0, i - half_window)
-        #         istop = min(self.slices.shape[0], i + half_window + 1)
         for j in range(self.slices.shape[1]):
             data = self.slices[:, j].copy()
             indices = np.arange(data.size, dtype=float)
@@ -646,7 +639,7 @@ class DerotatedJMap(BaseJmap):
         return self.venus_angles
 
 
-@numba.njit(parallel=True)
+@numba.njit(parallel=True, cache=True)
 def nan_gaussian_blur(data, radius):
     blurred = np.zeros(data.shape)
     for yo in numba.prange(blurred.shape[0]):
@@ -674,7 +667,7 @@ def nan_unsharp_mask(data, radius, amount):
     return data + amount * (data - blurred)
 
 
-@numba.njit(parallel=True)
+@numba.njit(parallel=True, cache=True)
 def nan_minsmooth(data, radius, percentile):
     output = data.copy()
     for yo in numba.prange(output.shape[0]):
