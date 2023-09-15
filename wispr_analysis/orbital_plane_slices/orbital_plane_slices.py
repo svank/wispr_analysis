@@ -79,6 +79,20 @@ def extract_slices(
 
 
 class OrbitalSliceWCS(utils.FakeWCS):
+    orbital_north = None
+    
+    @classmethod
+    def _init_orbital_north(cls):
+        # Structuring things this way facilitates testing---the SPICE functions
+        # in `planets` can be mocked, the orbital plane can be loaded, and then
+        # the functions can be unmocked so the Venus calculations can run
+        # normally.
+        orbital_plane = planets.get_orbital_plane('psp', '2020-01-01 12:12:12')
+        orbital_north = orbital_plane.data[0].cross(orbital_plane.data[20])
+        cls.orbital_north = SkyCoord(orbital_north,
+                                     representation_type='cartesian',
+                                     frame=HeliocentricInertial)
+
     def __init__(self, input_wcs, n, is_inner, date_override=None):
         super().__init__(input_wcs)
         if is_inner:
@@ -98,15 +112,10 @@ class OrbitalSliceWCS(utils.FakeWCS):
                 self.date = ''
         if self.date == '':
             self.date = '2020-01-01 12:12:12'
-        orbital_plane = planets.get_orbital_plane('psp', '2020-01-01 12:12:12')
-        p1 = orbital_plane.data[0]
-        p2 = orbital_plane.data[20]
-        orbital_north = p1.cross(p2)
-        orbital_north = SkyCoord(orbital_north,
-                                 representation_type='cartesian',
-                                 frame=HeliocentricInertial, obstime=self.date)
-        self.orbital_frame = NorthOffsetFrame(
-            north=orbital_north, obstime=self.date)
+        if self.orbital_north is None:
+            self._init_orbital_north()
+        self.orbital_frame = NorthOffsetFrame(north=self.orbital_north,
+                                              obstime=self.date)
 
     def pix_to_elongation(self, pixel_num):
         return (pixel_num * (self.angle_stop - self.angle_start)

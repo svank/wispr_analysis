@@ -14,7 +14,7 @@ planets = [
         'Jupiter', 'Saturn', 'Uranus', 'Neptune']
 
 
-def load_kernels(kernel_dir='spice_kernels'):
+def load_kernels(kernel_dir='spice_kernels', force=False):
     """
     Recursively scans a directory and loading each file as a SPICE kernel.
     
@@ -26,7 +26,7 @@ def load_kernels(kernel_dir='spice_kernels'):
         The path to search for kernels.
     """
     global KERNELS_LOADED
-    if KERNELS_LOADED:
+    if KERNELS_LOADED and not force:
         return
     for root, _, files in os.walk(kernel_dir):
         for kern in files:
