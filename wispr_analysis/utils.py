@@ -969,7 +969,6 @@ def find_closest_file(target, files, key=None, headers=None):
 @numba.njit(cache=True)
 def time_window_savgol_filter(xdata, ydata, window_size, poly_order):
     output = np.zeros_like(ydata)
-    r = window_size // 2
     # Ainv_by_cadence = dict()
     should_do_beginning = True
     should_do_end = False
@@ -1001,6 +1000,9 @@ def time_window_savgol_filter(xdata, ydata, window_size, poly_order):
         window_x /= np.max(np.abs(window_x))
         window_y = ydata[istart:istop]
         good = np.isfinite(window_y)
+        if not np.any(good):
+            output[i] = np.nan
+            continue
         window_x = window_x[good]
         window_y = window_y[good]
         # This was an attempt to cache values when the data spacing is the same for
