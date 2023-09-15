@@ -35,23 +35,24 @@ def load_kernels(kernel_dir='spice_kernels'):
 
 
 def _to_hp(planet_pos, sc_pos, date):
-    sc = astropy.coordinates.SkyCoord(
-            *sc_pos,
-            frame=sunpy.coordinates.frames.HeliocentricInertial,
-            representation_type='cartesian',
-            unit='km',
-            obstime=date)
+    if not isinstance(sc_pos, astropy.coordinates.SkyCoord):
+        sc_pos = astropy.coordinates.SkyCoord(
+                *sc_pos,
+                frame=sunpy.coordinates.frames.HeliocentricInertial,
+                representation_type='cartesian',
+                unit='km',
+                obstime=date)
     c = astropy.coordinates.SkyCoord(
             *planet_pos,
             frame=sunpy.coordinates.frames.HeliocentricInertial,
             representation_type='cartesian',
             unit='km',
-            observer=sc,
+            observer=sc_pos,
             obstime=date)
     return c.transform_to(sunpy.coordinates.frames.Helioprojective)
 
 
-def locate_planets(date, only=None, cache_dir=None):
+def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
     """
     Returns the helioprojective coordinates of planets as seen by PSP
     
@@ -90,9 +91,10 @@ def locate_planets(date, only=None, cache_dir=None):
     load_kernels()
     et = spice.str2et(date)
     
-    spacecraft_id = '-96'
-    state, ltime = spice.spkezr(spacecraft_id, et, 'HCI', 'None', 'Sun')
-    sc_pos = state[:3]
+    if sc_pos is None:
+        spacecraft_id = '-96'
+        state, ltime = spice.spkezr(spacecraft_id, et, 'HCI', 'None', 'Sun')
+        sc_pos = state[:3]
     
     planet_poses = []
     for planet in planets:

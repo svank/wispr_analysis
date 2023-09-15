@@ -4,6 +4,7 @@ from itertools import repeat
 import warnings
 
 from astropy.coordinates import SkyCoord, angular_separation
+from astropy.io import fits
 import astropy.units as u
 from astropy.wcs import WCS
 import matplotlib.colors
@@ -15,6 +16,7 @@ import reproject
 import scipy
 from sunpy.coordinates import (
     HeliocentricInertial, Helioprojective, NorthOffsetFrame)
+from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from .. import planets, plot_utils, utils
@@ -147,7 +149,8 @@ class OrbitalSliceWCS(utils.FakeWCS):
         Tx[~g] = np.nan
         Ty[~g] = np.nan
         
-        venus_pos = planets.locate_planets(self.date, only=['venus'])[0]
+        venus_pos = planets.locate_planets(
+            self.date, only=['venus'], sc_pos=sc)[0]
         venus_pos = self.input_wcs.world_to_pixel(venus_pos)
         if not (0 <= venus_pos[0] < self.input_wcs.pixel_shape[0]
                 and 0 <= venus_pos[1] < self.input_wcs.pixel_shape[1]):
@@ -160,6 +163,29 @@ class OrbitalSliceWCS(utils.FakeWCS):
             left=np.nan, right=np.nan)
         
         return Tx, Ty
+
+
+def load_files(files):
+    wcses = []
+    images = None
+    
+    with utils.ignore_fits_warnings():
+        for i, f in enumerate(tqdm(files)):
+            with fits.open(f) as hdul:
+                if images is None:
+                    images = np.empty((len(files), *hdul[0].data.shape),
+                                      dtype='f4')
+                images[i] = hdul[0].data
+                header = hdul[0].header
+                wcses.append(WCS(header, hdul))
+    
+    times = np.array(utils.to_timestamp(files, read_headers=True))
+
+    is_inner = header['detector'] == 1
+    return InputDataBundle(images=images,
+                           wcses=wcses,
+                           times=times,
+                           is_inner=is_inner)
 
 
 @dataclasses.dataclass
