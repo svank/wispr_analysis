@@ -32,7 +32,8 @@ def _extract_slice(image, wcs, n, is_inner):
     # Turn infs into nans
     np.nan_to_num(slice, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan)
     fixed_angles = output_wcs.last_fixed_angles[1, 1:-1]
-    return (slice, fixed_angles,
+    hpc = output_wcs.last_hpc[1, 1:-1]
+    return (slice, fixed_angles, hpc,
             output_wcs.last_venus_elongation, output_wcs.last_venus_angle)
 
 
@@ -42,10 +43,11 @@ def extract_slices(
     fixed_angles = []
     venus_elongations = []
     venus_angles = []
+    hpcs = []
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*failed to converge.*')
         warnings.filterwarnings('ignore', message='.*All-NaN slice.*')
-        for slice, fixed_angle, ve, va in process_map(
+        for slice, fixed_angle, hpc, ve, va in process_map(
                     _extract_slice,
                     bundle.images,
                     bundle.wcses,
@@ -54,6 +56,7 @@ def extract_slices(
                     chunksize=5):
             slices.append(slice)
             fixed_angles.append(fixed_angle)
+            hpcs.append(hpc)
             venus_elongations.append(ve)
             venus_angles.append(va)
 
@@ -71,10 +74,11 @@ def extract_slices(
         fixed_angles=fixed_angles,
         times=bundle.times,
         transformer=transformer,
-        normalized=False,
         title_stub=title,
         venus_elongations=venus_elongations,
         venus_angles=venus_angles,
+        hpcs=hpcs,
+        is_inner=bundle.is_inner,
     )
 
 
@@ -99,7 +103,7 @@ class OrbitalSliceWCS(utils.FakeWCS):
             self.angle_start = 13.5
             self.angle_stop = 51.25
         else:
-            self.angle_start = 51.5
+            self.angle_start = 49
             self.angle_stop = 103.75
         self.n = n
         self.last_hpc = None
@@ -194,6 +198,7 @@ def load_files(files):
     return InputDataBundle(images=images,
                            wcses=wcses,
                            times=times,
+                           level=header['level'],
                            is_inner=is_inner)
 
 
@@ -203,6 +208,7 @@ class InputDataBundle:
     wcses: list[WCS]
     times: np.ndarray
     is_inner: bool
+    level: str
 
 
 @dataclasses.dataclass
@@ -211,9 +217,9 @@ class BaseJmap:
     angles: np.ndarray
     times: np.ndarray
     transformer: OrbitalSliceWCS
-    normalized: bool
     venus_elongations: np.ndarray
     venus_angles: np.ndarray
+    is_inner: bool
     title_stub: str = 'Orbital-plane slices'
 
     _title: list[str] = None
@@ -333,6 +339,9 @@ class BaseJmap:
             self.slices = (self.slices - lows) / (highs - lows)
         self._title.append("row-normalized")
 
+    def _resample_time_post_hook(self):
+        pass
+    
     def resample_time(self, new_dt, t_start=None, t_end=None):
         if t_start is None:
             t_start = self.times[0]
@@ -460,26 +469,29 @@ class BaseJmap:
                 continue
             xstart, xstop = int(xstart), int(xstop)
             self.slices[i, xstart:xstop] = np.nan
-    
-    def merge(self, other):
-        self._subtitles.append(self._title)
-        self._subtitles.append(other._title)
-        self._title = ['Merged']
-        self.slices = np.where(np.isfinite(self.slices),
-                               self.slices, other.slices)
 
     def deepcopy(self) -> "BaseJmap":
         return copy.deepcopy(self)
 
-    def plot(self, bundle=None, ax=None, label_vr=False, vmin=None, vmax=None,
-             pmin=5, pmax=95, transpose=False, gamma=1/2.2):
+    def plot(self,
+             bundle: "InputDataBundle"=None,
+             ax=None, label_vr=False, vmin=None, vmax=None,
+             pmin=5, pmax=95, transpose=False, gamma=1/2.2, interactive=False):
         min, max = np.nanpercentile(self.slices, [pmin, pmax])
         if vmin is None:
             vmin = min
         if vmax is None:
             vmax = max
 
-        if ax is None:
+        if interactive:
+            if bundle is None:
+                raise ValueError(
+                    "Bundle must be provided for interactive mode")
+            if ax is not None:
+                raise ValueError("Cannot accept `ax` for interactive mode")
+            plt.figure(figsize=(15, 7.5))
+            ax = plt.subplot(121)
+        elif ax is None:
             ax = plt.gca()
         
         # Trim all-nan angular positions
@@ -541,6 +553,72 @@ class BaseJmap:
                 ax2 = plt.gca().secondary_yaxis(
                     'right', functions=(t2vr, vr2t))
                 ax2.set_ylabel("S/C radial velocity (km/s)")
+        
+        if interactive:
+            if isinstance(bundle, InputDataBundle):
+                b = bundle
+            else:
+                b = bundle[0]
+            axi = plt.subplot(122, projection=b.wcses[0])
+            plot_utils.plot_WISPR(b.images[0], ax=axi, level_preset=b.level)
+            plot_utils.setup_WCS_axes(axi)
+            class EventHandler():
+                self.last_t = None
+                
+                def __init__(self, map):
+                    self.axmarker, = ax.plot(
+                        [None], [None], marker='x', color='C1')
+                    self.map = map
+                
+                def onclick(self, event):
+                    try:
+                        if event.inaxes is not ax:
+                            return
+                        if transpose:
+                            t, angle = event.xdata, event.ydata
+                        else:
+                            t, angle = event.ydata, event.xdata
+                        if event.button == 3:
+                            # Right click
+                            if self.last_t is None:
+                                return
+                            t = self.last_t
+                            if transpose:
+                                event.xdata = self.axmarker.get_data()[0][0]
+                            else:
+                                event.ydata = self.axmarker.get_data()[1][0]
+                        else:
+                            self.last_t = t
+                        t = np.interp(t, dates, self.map.times)
+                        tindex, hpc, hpcs, bb = self.map._get_hpc(
+                            t, angle, bundle)
+                        if hpc is None:
+                            return
+                        nonlocal axi
+                        axi.remove()
+                        wcs = bb.wcses[tindex]
+                        axi = plt.subplot(122, projection=wcs)
+                        plot_utils.setup_WCS_axes(axi)
+                        min, max = np.nanpercentile(bb.images[tindex], [pmin, pmax])
+                        axi.imshow(bb.images[tindex], cmap=cmap,
+                                norm=matplotlib.colors.PowerNorm(gamma=gamma,
+                                                                    vmin=min,
+                                                                    vmax=max),
+                                origin='lower')
+                        x, y = wcs.world_to_pixel(hpc)
+                        axi.scatter(x, y-10, marker=3, color='C1')
+                        axi.scatter(x, y+10, marker=2, color='C1')
+                        x, y = wcs.world_to_pixel(hpcs)
+                        axi.plot(x, y-10, color='C0', ls='--')
+                        axi.plot(x, y+10, color='C0', ls='--')
+                        axi.set_xlim(-.5, bb.images[tindex].shape[1]-.5)
+                        axi.set_ylim(-.5, bb.images[tindex].shape[0]-.5)
+                        
+                        self.axmarker.set_data([event.xdata], [event.ydata])
+                    except Exception as e:
+                        ax.set_title(e)
+            self.handler = EventHandler(self)
+            plt.connect('button_press_event', self.handler.onclick)
 
 
 class ResampleTimeWCS(utils.FakeWCS):
@@ -593,9 +671,10 @@ class DerotateWCS(utils.FakeWCS):
 class PlainJMap(BaseJmap):
     xlabel = "Elongation"
 
-    def __init__(self, fixed_angles, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *, fixed_angles, hpcs, **kwargs):
+        super().__init__(**kwargs)
         self.fixed_angles = fixed_angles
+        self.hpcs = hpcs
 
     def derotate(self, n) -> "DerotatedJMap":
         angle_start = 80
@@ -615,12 +694,13 @@ class PlainJMap(BaseJmap):
         outmap = DerotatedJMap(
             slices=output,
             angles=np.linspace(angle_start, angle_stop, n),
+            source_jmap=self,
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
-            normalized=self.normalized,
-            title_stub=copy.deepcopy(self.title_stub),
-            venus_elongations=self.venus_elongations,
-            venus_angles=self.venus_angles)
+            title_stub=self.title_stub,
+            venus_elongations=copy.deepcopy(self.venus_elongations),
+            venus_angles=copy.deepcopy(self.venus_angles),
+            is_inner=self.is_inner)
         outmap.venus_angles[outmap.venus_angles < angle_start] += 360
         outmap.venus_angles[outmap.venus_angles > angle_stop] -= 360
         outmap._title = copy.deepcopy(self._title)
@@ -630,13 +710,82 @@ class PlainJMap(BaseJmap):
     
     def _get_venus_angles(self):
         return self.venus_elongations
+    
+    def _get_hpc(self, t, angle, bundle, angle_is_fixed=False):
+        tindex = int(np.round(np.argmin(np.abs(self.times - t))))
+        if angle_is_fixed:
+            angles = self.fixed_angles[tindex]
+        else:
+            angles = self.angles
+        for offset in [0, -360, -720]:
+            if angles[0] <= angle + offset <= angles[-1]:
+                angle += offset
+                break
+        else:
+            return None, None, None, None
+        aindex = int(np.round(np.argmin(np.abs(angles - angle))))
+        return tindex, self.hpcs[tindex][aindex], self.hpcs[tindex], bundle
+    
+    def _resample_time_post_hook(self):
+        # These aren't valid anymore
+        self.hpcs = None
 
 
 class DerotatedJMap(BaseJmap):
     xlabel = "Fixed-frame angular position"
     
+    def __init__(self, *, source_jmap: "PlainJMap", **kwargs):
+        super().__init__(**kwargs)
+        self.source_jmap = source_jmap
+        self.other_map = None
+    
     def _get_venus_angles(self):
         return self.venus_angles
+    
+    def _get_hpc(self, t, fixed_angle, bundle):
+        return self.source_jmap._get_hpc(
+            t, fixed_angle, bundle, angle_is_fixed=True)
+    
+    def merge(self, other):
+        if not np.all(self.times == other.times):
+            raise ValueError("Time grids must match")
+        if not np.all(self.angles == other.angles):
+            raise ValueError("Angle grids must match")
+        
+        slices = np.where(np.isfinite(self.slices),
+                          self.slices, other.slices)
+        if self.is_inner:
+            source_jmaps = [self, other]
+        else:
+            source_jmaps = [other, self]
+        outmap = MergedDerotatedJMap(
+            slices=slices,
+            source_jmaps=source_jmaps,
+            angles=copy.deepcopy(self.angles),
+            times=copy.deepcopy(self.times),
+            transformer=copy.deepcopy(self.transformer),
+            title_stub=self.title_stub,
+            venus_elongations=copy.deepcopy(self.venus_elongations),
+            venus_angles=copy.deepcopy(self.venus_angles),
+            )
+        outmap._subtitles.append(self._title)
+        outmap._subtitles.append(other._title)
+        outmap._title = ['Merged']
+        return outmap
+
+
+class MergedDerotatedJMap(DerotatedJMap):
+    def __init__(self, *, source_jmaps, **kwargs):
+        kwargs['is_inner'] = None
+        super().__init__(**kwargs, source_jmap=None)
+        self.source_jmaps = source_jmaps    
+    
+    def _get_hpc(self, t, fixed_angle, bundles):
+        for jmap, bundle in zip(self.source_jmaps, bundles):
+            ret = jmap._get_hpc(t, fixed_angle, bundle)
+            if ret[0] is not None:
+                break
+        return ret
 
 
 @numba.njit(parallel=True, cache=True)
