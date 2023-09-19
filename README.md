@@ -12,6 +12,12 @@ To run the tests, simply run `pytest` within the base directory of this repo.
 
 To generate a coverage report for the tests, run `NUMBA_DISABLE_JIT=1 coverage run; coverage html`.
 
+To update reference arrays for the tests, run `pytest --arraydiff-generate-path=tests/reference`.
+
+To update reference images for the tests, run `pytest --mpl-generate-path=tests/baseline`.
+
+If the image-comparison tests are failing, run `pytest --mpl-generate-summary=html` to generate a summary page showing the generated and reference images. The location of the generated file will be shown at the end of pytest’s command-line output.
+
 ## Some highlights
 
 `plot_utils.py`
