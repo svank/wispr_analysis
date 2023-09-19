@@ -27,7 +27,10 @@ def _extract_slice(image, wcs, n, is_inner):
     slice = reproject.reproject_adaptive((image, wcs), output_wcs, (1, n),
                                   center_jacobian=False,
                                   return_footprint=False,
-                                  roundtrip_coords=False)
+                                  roundtrip_coords=False,
+                                  kernel_width=2.5,
+                                  sample_region_width=8,
+                                  )
     slice = slice[0]
     # Turn infs into nans
     np.nan_to_num(slice, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan)
