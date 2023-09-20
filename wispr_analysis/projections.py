@@ -7,37 +7,21 @@ import scipy.optimize
 from . import utils
 
 
-class RadialTransformer():
+class HprWcs(utils.FakeWCS):
     pa_of_ecliptic = 90
     
-    def __init__(self, ref_pa, ref_y, dpa,
-            ref_elongation, ref_x, delongation, wcs_in):
+    def __init__(self, wcs, ref_pa, ref_y, dpa,
+            ref_elongation, ref_x, delongation):
+        super().__init__(wcs)
         self.ref_pa = ref_pa
         self.ref_elongation = ref_elongation
         self.ref_x = ref_x
         self.ref_y = ref_y
         self.dpa = dpa
         self.delongation = delongation
-        self.wcs_in = wcs_in
-    
-    
-    def __call__(self, pixel_out):
-        pixel_out = np.asarray(pixel_out, dtype=float)
-        pixel_in = np.empty_like(pixel_out)
-        elongation, pa = self.all_pix2world(
-                pixel_out[..., 0], pixel_out[..., 1], 0)
-        
-        hp_lon, hp_lat = self.elongation_to_hp(elongation, pa)
-        
-        input_x, input_y = self.wcs_in.all_world2pix(hp_lon, hp_lat, 0)
-        
-        pixel_in[..., 0] = input_x
-        pixel_in[..., 1] = input_y
-        return pixel_in
-    
     
     @classmethod
-    def hp_to_elongation(cls, lon, lat):
+    def hpc_to_hpr(cls, lon, lat):
         lon = np.asarray(lon) * np.pi / 180
         lat = np.asarray(lat) * np.pi / 180
         
@@ -56,9 +40,8 @@ class RadialTransformer():
         
         return elongation, pa
     
-    
     @classmethod
-    def elongation_to_hp(cls, elongation, pa):
+    def hpr_to_hpc(cls, elongation, pa):
         elongation = np.asarray(elongation) * np.pi / 180
         pa = np.asarray(pa) - (cls.pa_of_ecliptic - 90)
         pa *= np.pi / 180
@@ -74,43 +57,31 @@ class RadialTransformer():
         lon *= 180 / np.pi
         return lon, lat
     
-    
-    def all_pix2world(self, x, y, origin=0):
-        x = np.asarray(x) - origin
-        y = np.asarray(y) - origin
+    def pix_to_hpr(self, x, y):
+        x = np.asarray(x)
+        y = np.asarray(y)
         pa = (y - self.ref_y) * self.dpa + self.ref_pa
         elongation = ((x - self.ref_x) * self.delongation
                 + self.ref_elongation)
-        
         return elongation, pa
     
-    
-    def all_world2pix(self, elongation, pa, origin=0):
+    def hpr_to_pix(self, elongation, pa):
         elongation = np.asarray(elongation)
         pa = np.asarray(pa)
         x = (elongation - self.ref_elongation) / self.delongation + self.ref_x
         y = (pa - self.ref_pa) / self.dpa + self.ref_y
         
-        x += origin
-        y += origin
-        
         return x, y
-
-
-class InverseRadialTransformer(RadialTransformer):
-    def __call__(self, pixel_out):
-        pixel_out = np.asarray(pixel_out, dtype=float)
-        pixel_in = np.empty_like(pixel_out)
-        hp_lon, hp_lat = self.wcs_in.all_pix2world(
-                pixel_out[..., 0], pixel_out[..., 1], 0)
-        
-        elongation, pa = self.hp_to_elongation(hp_lon, hp_lat)
-        
-        input_x, input_y = self.all_world2pix(elongation, pa, 0)
-        
-        pixel_in[..., 0] = input_x
-        pixel_in[..., 1] = input_y
-        return pixel_in
+    
+    def pixel_to_world_values(self, x, y):
+        hpr = self.pix_to_hpr(x, y)
+        hpc = self.hpr_to_hpc(*hpr)
+        return hpc
+    
+    def world_to_pixel_values(self, lon, lat):
+        hpr = self.hpc_to_hpr(lon, lat)
+        pix = self.hpr_to_pix(*hpr)
+        return pix
 
 
 def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
@@ -129,15 +100,12 @@ def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
         ref_x = 0
     if ref_y is None:
         ref_y = out_shape[0] // 2
-    transformer = RadialTransformer(
-            ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
-            ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
-            wcs_in=wcs)
-    reprojected = np.zeros((1, *out_shape))
-    reproject.adaptive.deforest.map_coordinates(data.astype(float).reshape((1, *data.shape)),
-            reprojected, transformer, out_of_range_nan=True,
-            center_jacobian=False)
-    return reprojected[0], transformer
+    wcs_out = HprWcs(wcs, ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
+            ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation)
+    reprojected = reproject.reproject_adaptive(
+        (data, wcs), wcs_out, out_shape,
+        center_jacobian=False, roundtrip_coords=False, return_footprint=False)
+    return reprojected, wcs_out
 
 
 def reproject_from_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
@@ -156,42 +124,39 @@ def reproject_from_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
         ref_x = 0
     if ref_y is None:
         ref_y = out_shape[0] // 2
-    transformer = InverseRadialTransformer(
-            ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
-            ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
-            wcs_in=wcs)
-    reprojected = np.zeros((1, *out_shape))
-    reproject.adaptive.deforest.map_coordinates(data.astype(float).reshape((1, *data.shape)),
-            reprojected, transformer, out_of_range_nan=True,
-            center_jacobian=False)
-    return reprojected[0], transformer
+    wcs_in = HprWcs(wcs, ref_pa=ref_pa, ref_y=ref_y, dpa=-dpa,
+        ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation)
+    reprojected = reproject.reproject_adaptive(
+        (data, wcs_in), wcs, out_shape,
+        center_jacobian=False, roundtrip_coords=False, return_footprint=False)
+    return reprojected, wcs
 
 
-def label_radial_axes(transformer, ax=None):
+def label_radial_axes(wcs, ax=None):
     if ax is None:
         ax = plt.gca()
     
     xmin, xmax = ax.get_xlim()
-    emin, emax = transformer.all_pix2world([xmin, xmax], [1, 1], 0)[0]
+    emin, emax = wcs.pix_to_hpr([xmin, xmax], [1, 1])[0]
     emin = int(np.ceil(emin/10)) * 10
     emax = int(np.floor(emax/10)) * 10
     spacing = 10 if (emax - emin) < 80 else 20
     tick_values = range(emin, emax+1, spacing)
-    xtick_locs = [transformer.all_world2pix(elongation, 0)[0]
+    xtick_locs = [wcs.hpr_to_pix(elongation, 0)[0]
                   for elongation in tick_values]
     xtick_labels = [f"{elongation}°" for elongation in tick_values]
     ax.set_xticks(xtick_locs, xtick_labels)
     ax.set_xlabel("Elongation")
     
     ymin, ymax = ax.get_ylim()
-    pmin, pmax = transformer.all_pix2world([1, 1], [ymin, ymax], 0)[1]
+    pmin, pmax = wcs.pix_to_hpr([1, 1], [ymin, ymax])[1]
     if pmin > pmax:
         pmin, pmax = pmax, pmin
     pmin = int(np.ceil(pmin/10)) * 10
     pmax = int(np.floor(pmax/10)) * 10
     spacing = 10 if (pmax - pmin) < 80 else 20
     tick_values = range(pmin, pmax+1, spacing)
-    ytick_locs = [transformer.all_world2pix(30, pa)[1]
+    ytick_locs = [wcs.hpr_to_pix(30, pa)[1]
                   for pa in tick_values]
     ytick_labels = [f"{pa}°" for pa in tick_values]
     ax.set_yticks(ytick_locs, ytick_labels)
@@ -288,7 +253,7 @@ def overlay_radial_grid(image, wcs, ax=None):
     y = np.arange(image.shape[0])
     xx, yy = np.meshgrid(x, y)
     hplon, hplat = wcs.pixel_to_world_values(xx, yy)
-    elongation, pa = RadialTransformer.hp_to_elongation(hplon, hplat)
+    elongation, pa = HprWcs.hpc_to_hpr(hplon, hplat)
     
     if ax is None:
         ax = plt.gca()
@@ -296,4 +261,3 @@ def overlay_radial_grid(image, wcs, ax=None):
             colors='w', alpha=.5, linewidths=.5)
     ax.contour(pa, levels=np.arange(0, 180, 10),
             colors='w', alpha=.5, linewidths=.5)
-

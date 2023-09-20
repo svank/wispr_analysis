@@ -9,11 +9,12 @@ import pytest
 from pytest import approx
 
 
-def get_transformer(inverse=False):
+@pytest.fixture
+def hpr_wcs():
     ref_pa = 90
     ref_elongation = 40
-    ref_x = 500
-    ref_y = 1000
+    ref_x = 50
+    ref_y = 100
     dpa = .2
     delongation = .3
     
@@ -23,133 +24,91 @@ def get_transformer(inverse=False):
     wcs_in.wcs.crval = 10, 0
     wcs_in.wcs.cdelt = 2, 1.5
     
-    constructor = (projections.InverseRadialTransformer
-            if inverse else projections.RadialTransformer)
-    transformer = constructor(
+    wcs = projections.HprWcs(wcs_in,
             ref_pa=ref_pa, ref_y=ref_y, dpa=dpa,
-            ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation,
-            wcs_in=wcs_in)
+            ref_elongation=ref_elongation, ref_x=ref_x, delongation=delongation)
     
-    return transformer
+    return wcs
 
 
-def test_radial_transformer():
-    transformer = get_transformer()
+def test_radial_transformer(hpr_wcs):
     # Test one known coordinate, the reference pixel for the output. It's on
     # the equator, so it's easy to know what HPLN and HPLT it maps to.
-    pixel_out = np.array(
-            [transformer.ref_x, transformer.ref_y]).reshape((1, 1, 2))
-    pixel_in = transformer(pixel_out)
-    # The resulting pixel coordinates should be those corresponding to a
-    # longitude of 40 and latitude of 0.
-    np.testing.assert_allclose(
-            pixel_in.flatten(),
-            transformer.wcs_in.all_world2pix(40, 0, 0))
+    lon, lat = hpr_wcs.pixel_to_world_values(hpr_wcs.ref_x, hpr_wcs.ref_y)
+    assert lon == approx(hpr_wcs.ref_elongation)
+    assert lat == approx(0)
     
     # From there, add a grid of dx values and compute what they should map to.
     # Still on the equator, so an easy computation to check
     dx = np.arange(0, 200, 10).reshape((10, 2))
     dy = np.zeros_like(dx)
-    output_x = transformer.ref_x + dx
-    output_y = transformer.ref_y + dy
-    pixel_out = np.stack((output_x, output_y), axis=-1)
+    px = hpr_wcs.ref_x + dx
+    py = hpr_wcs.ref_y + dy
     
-    pixel_in = transformer(pixel_out)
+    lon, lat = hpr_wcs.pixel_to_world_values(px, py)
     
-    expected_x = transformer.wcs_in.all_world2pix(40, 0, 0)[0]
-    expected_x = (expected_x
-            + dx * transformer.delongation / transformer.wcs_in.wcs.cdelt[0])
-    np.testing.assert_allclose(pixel_in[..., 0], expected_x)
-    np.testing.assert_allclose(pixel_in[..., 1],
-            transformer.wcs_in.wcs.crpix[1] - 1)
+    np.testing.assert_allclose(
+        lon,
+        hpr_wcs.ref_elongation
+            + (dx * hpr_wcs.delongation))
+    np.testing.assert_allclose(lat, 0, atol=1e-8)
     
     # Now, offset in position angle. At this point, we need to compute
     # great-circle distances and azimuths to check the result.
-    dx = np.array([50, 50]).reshape((1, 2))
-    dy = np.array([-50, 50]).reshape((1, 2))
-    output_x = transformer.ref_x + dx
-    output_y = transformer.ref_y + dy
-    pixel_out = np.stack((output_x, output_y), axis=-1)
+    dx = np.array([10, 10])
+    dy = np.array([-10, 10])
+    px = hpr_wcs.ref_x + dx
+    py = hpr_wcs.ref_y + dy
     
-    pixel_in = transformer(pixel_out)
+    lon, lat = hpr_wcs.pixel_to_world_values(px, py)
+    lon *= np.pi/180
+    lat *= np.pi/180
     
-    lon_in, lat_in = transformer.wcs_in.all_pix2world(
-            pixel_in[..., 0], pixel_in[..., 1], 0)
-    lon_in *= np.pi / 180
-    lat_in *= np.pi / 180
-    computed_elongation = np.arccos(np.sin(lat_in) * np.sin(0)
-            + np.cos(lat_in) * np.cos(0) * np.cos(lon_in))
-    computed_pa = np.arctan2(np.cos(lat_in) * np.sin(lon_in), np.sin(lat_in))
+    computed_elongation = np.arccos(np.sin(lat) * np.sin(0)
+            + np.cos(lat) * np.cos(0) * np.cos(lon))
+    computed_pa = np.arctan2(np.cos(lat) * np.sin(lon), np.sin(lat))
     
     np.testing.assert_allclose(
             computed_elongation * 180 / np.pi,
-            transformer.ref_elongation + dx * transformer.delongation)
+            hpr_wcs.ref_elongation + dx * hpr_wcs.delongation)
     np.testing.assert_allclose(
             computed_pa * 180 / np.pi,
-            transformer.ref_pa + dy * transformer.dpa)
+            hpr_wcs.ref_pa + dy * hpr_wcs.dpa)
 
 
-def test_radial_transformer_all_world2pix():
-    transformer = get_transformer()
-    assert (transformer.all_world2pix(
-                transformer.ref_elongation,
-                transformer.ref_pa)
-            == (transformer.ref_x, transformer.ref_y))
+def test_radial_wcs_hpr_to_pix(hpr_wcs):
+    x, y = hpr_wcs.hpr_to_pix(hpr_wcs.ref_elongation, hpr_wcs.ref_pa)
+    assert x == approx(hpr_wcs.ref_x)
+    assert y == approx(hpr_wcs.ref_y)
     
-    assert (transformer.all_world2pix(
-                transformer.ref_elongation,
-                transformer.ref_pa, 1)
-            == (transformer.ref_x + 1, transformer.ref_y + 1))
-    
-    assert (transformer.all_world2pix(
-                transformer.ref_elongation + transformer.delongation,
-                transformer.ref_pa + transformer.dpa)
-            == (transformer.ref_x + 1, transformer.ref_y + 1))
-    
-    assert (transformer.all_world2pix(
-                transformer.ref_elongation + transformer.delongation,
-                transformer.ref_pa + transformer.dpa, 1)
-            == (transformer.ref_x + 2, transformer.ref_y + 2))
+    x, y = hpr_wcs.hpr_to_pix(
+        hpr_wcs.ref_elongation + hpr_wcs.delongation,
+        hpr_wcs.ref_pa + hpr_wcs.dpa)
+    assert x == approx(hpr_wcs.ref_x + 1)
+    assert y == approx(hpr_wcs.ref_y + 1)
 
 
-def test_radial_transformer_all_pix2world():
-    transformer = get_transformer()
-    assert (transformer.all_pix2world(
-                transformer.ref_x,
-                transformer.ref_y)
-            == (transformer.ref_elongation, transformer.ref_pa))
+def test_radial_wcs_pix_to_hpr(hpr_wcs):
+    el, pa = hpr_wcs.pix_to_hpr(hpr_wcs.ref_x, hpr_wcs.ref_y)
+    assert el == approx(hpr_wcs.ref_elongation)
+    assert pa == approx(hpr_wcs.ref_pa)
     
-    assert (transformer.all_pix2world(
-                transformer.ref_x + 1,
-                transformer.ref_y + 1, 1)
-            == (transformer.ref_elongation, transformer.ref_pa))
-    
-    assert (transformer.all_pix2world(
-                transformer.ref_x + 1,
-                transformer.ref_y + 1)
-            == (transformer.ref_elongation + transformer.delongation,
-                transformer.ref_pa + transformer.dpa))
-    
-    assert (transformer.all_pix2world(
-                transformer.ref_x + 2,
-                transformer.ref_y + 2, 1)
-            == (transformer.ref_elongation + transformer.delongation,
-                transformer.ref_pa + transformer.dpa))
+    el, pa = hpr_wcs.pix_to_hpr(hpr_wcs.ref_x + 1, hpr_wcs.ref_y + 1)
+    assert el == approx(hpr_wcs.ref_elongation + hpr_wcs.delongation)
+    assert pa == approx(hpr_wcs.ref_pa + hpr_wcs.dpa)
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic, mocker):
+def test_radial_wcs_hpr_hpc_roundtrip(pa_of_ecliptic, mocker, hpr_wcs):
     mocker.patch.object(
-        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
-    transformer = get_transformer()
+        projections.HprWcs, 'pa_of_ecliptic', pa_of_ecliptic)
     
     lat = np.linspace(-90, 90)
     lon = np.linspace(-100, 100)
     
     LN, LT = np.meshgrid(lon, lat)
     
-    LN2, LT2 = transformer.elongation_to_hp(
-            *transformer.hp_to_elongation(LN, LT))
+    LN2, LT2 = hpr_wcs.hpr_to_hpc(*hpr_wcs.hpc_to_hpr(LN, LT))
     
     # A longitude isn't defined for the poles, so don't compare those.
     np.testing.assert_allclose(LN[1:-1], LN2[1:-1])
@@ -157,18 +116,16 @@ def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic, mocker):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic, mocker):
+def test_radial_wcs_hpc_hpr_roundtrip(pa_of_ecliptic, mocker, hpr_wcs):
     mocker.patch.object(
-        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
-    transformer = get_transformer()
+        projections.HprWcs, 'pa_of_ecliptic', pa_of_ecliptic)
     
     elongation = np.linspace(0, 89)
     pa = np.linspace(-100, 100)
     
     E, PA = np.meshgrid(elongation, pa)
     
-    E2, PA2 = transformer.hp_to_elongation(
-            *transformer.elongation_to_hp(E, PA))
+    E2, PA2 = hpr_wcs.hpc_to_hpr(*hpr_wcs.hpr_to_hpc(E, PA))
     
     # A position angle isn't defined for zero elongation, so don't compare there
     np.testing.assert_allclose(PA[:, 1:] % 360, PA2[:, 1:] % 360)
@@ -176,74 +133,55 @@ def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic, mocker):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_pix_world_roundtrip(pa_of_ecliptic, mocker):
+def test_radial_wcs_pix_world_roundtrip(pa_of_ecliptic, mocker, hpr_wcs):
     mocker.patch.object(
-        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
-    transformer = get_transformer()
+        projections.HprWcs, 'pa_of_ecliptic', pa_of_ecliptic)
     
     x = np.linspace(0, 100)
     y = np.linspace(0, 100)
     
     X, Y = np.meshgrid(x, y)
     
-    X2, Y2 = transformer.all_world2pix(
-            *transformer.all_pix2world(X, Y, 0), 0)
+    X2, Y2 = hpr_wcs.world_to_pixel_values(
+        *hpr_wcs.pixel_to_world_values(X, Y))
     
-    np.testing.assert_allclose(X, X2)
-    np.testing.assert_allclose(Y, Y2)
+    np.testing.assert_allclose(X, X2, atol=1e-8)
+    np.testing.assert_allclose(Y, Y2, atol=1e-8)
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_world_pix_roundtrip(pa_of_ecliptic, mocker):
+def test_radial_wcs_world_pix_roundtrip(pa_of_ecliptic, mocker, hpr_wcs):
     mocker.patch.object(
-        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
-    transformer = get_transformer()
+        projections.HprWcs, 'pa_of_ecliptic', pa_of_ecliptic)
     
-    pa = np.linspace(-100, 100)
-    e = np.linspace(0, 90)
+    lon = np.linspace(-100, 100)
+    lat = np.linspace(-85, 85)
     
-    E, PA = np.meshgrid(e, pa)
+    LON, LAT = np.meshgrid(lon, lat)
     
-    E2, PA2 = transformer.all_pix2world(
-            *transformer.all_world2pix(E, PA, 0), 0)
+    LON2, LAT2 = hpr_wcs.pixel_to_world_values(
+        *hpr_wcs.world_to_pixel_values(LON, LAT))
     
-    np.testing.assert_allclose(E, E2, atol=1e-8)
-    np.testing.assert_allclose(PA, PA2)
+    np.testing.assert_allclose(LON, LON2, atol=1e-8)
+    np.testing.assert_allclose(LAT, LAT2, atol=1e-8)
 
 
-def test_radial_transformer_pa_of_ecliptic(mocker):
-    transformer = get_transformer()
+def test_radial_wcs_pa_of_ecliptic(mocker, hpr_wcs):
     for pa_of_ecliptic in [-90, -50, -10, 0, 10, 50, 90]:
         mocker.patch.object(
-            projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
+            projections.HprWcs, 'pa_of_ecliptic', pa_of_ecliptic)
         
-        e, pa = transformer.hp_to_elongation(50, 0)
+        e, pa = hpr_wcs.hpc_to_hpr(50, 0)
         assert e == approx(50)
         assert pa == approx(pa_of_ecliptic, rel=1e-4)
         
-        e, pa = transformer.hp_to_elongation(.1, .1)
+        e, pa = hpr_wcs.hpc_to_hpr(.1, .1)
         assert e == approx(np.sqrt(.1**2 + .1**2))
         assert pa == approx(pa_of_ecliptic - 45, rel=1e-4)
         
-        e, pa = transformer.hp_to_elongation(.1, -.1)
+        e, pa = hpr_wcs.hpc_to_hpr(.1, -.1)
         assert e == approx(np.sqrt(.1**2 + .1**2))
         assert pa == approx(pa_of_ecliptic + 45, rel=1e-4)
-
-
-def test_radial_transformer_roundtrip():
-    transformer = get_transformer(inverse=False)
-    inv_transformer = get_transformer(inverse=True)
-    
-    x = np.arange(400, 600, 20)
-    y = np.arange(800, 1200, 20)
-    
-    X, Y = np.meshgrid(x, y)
-    
-    pixel_out = np.stack((X, Y), axis=-1)
-    
-    pixel_in = inv_transformer(transformer(pixel_out))
-    
-    np.testing.assert_allclose(pixel_out, pixel_in)
 
 
 @pytest.mark.mpl_image_compare
