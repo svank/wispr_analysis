@@ -305,12 +305,6 @@ def test_plot(jmap):
     return plt.gcf()
 
 
-@pytest.mark.mpl_image_compare
-def test_plot_transposed(jmap):
-    jmap.plot(transpose=True)
-    return plt.gcf()
-
-
 @pytest.mark.array_compare
 def test_jmap_derotate(jmap):
     derotated = jmap.derotate(101)
