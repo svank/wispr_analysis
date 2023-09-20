@@ -1,4 +1,4 @@
-from .. import composites, projections, utils
+from .. import composites, plot_utils, projections, utils
 
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -138,10 +138,10 @@ def test_radial_transformer_all_pix2world():
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic):
+def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic, mocker):
+    mocker.patch.object(
+        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
     transformer = get_transformer()
-    
-    transformer.pa_of_ecliptic = pa_of_ecliptic
     
     lat = np.linspace(-90, 90)
     lon = np.linspace(-100, 100)
@@ -157,9 +157,10 @@ def test_radial_transformer_hp_elon_roundtrip(pa_of_ecliptic):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic):
+def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic, mocker):
+    mocker.patch.object(
+        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
     transformer = get_transformer()
-    transformer.pa_of_ecliptic = pa_of_ecliptic
     
     elongation = np.linspace(0, 89)
     pa = np.linspace(-100, 100)
@@ -175,9 +176,10 @@ def test_radial_transformer_elon_hp_roundtrip(pa_of_ecliptic):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_pix_world_roundtrip(pa_of_ecliptic):
+def test_radial_transformer_pix_world_roundtrip(pa_of_ecliptic, mocker):
+    mocker.patch.object(
+        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
     transformer = get_transformer()
-    transformer.pa_of_ecliptic = pa_of_ecliptic
     
     x = np.linspace(0, 100)
     y = np.linspace(0, 100)
@@ -192,9 +194,10 @@ def test_radial_transformer_pix_world_roundtrip(pa_of_ecliptic):
 
 
 @pytest.mark.parametrize('pa_of_ecliptic', [0, 90, 100, 180])
-def test_radial_transformer_world_pix_roundtrip(pa_of_ecliptic):
+def test_radial_transformer_world_pix_roundtrip(pa_of_ecliptic, mocker):
+    mocker.patch.object(
+        projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
     transformer = get_transformer()
-    transformer.pa_of_ecliptic = pa_of_ecliptic
     
     pa = np.linspace(-100, 100)
     e = np.linspace(0, 90)
@@ -208,10 +211,11 @@ def test_radial_transformer_world_pix_roundtrip(pa_of_ecliptic):
     np.testing.assert_allclose(PA, PA2)
 
 
-def test_radial_transformer_pa_of_ecliptic():
+def test_radial_transformer_pa_of_ecliptic(mocker):
     transformer = get_transformer()
     for pa_of_ecliptic in [-90, -50, -10, 0, 10, 50, 90]:
-        transformer.pa_of_ecliptic = pa_of_ecliptic
+        mocker.patch.object(
+            projections.RadialTransformer, 'pa_of_ecliptic', pa_of_ecliptic)
         
         e, pa = transformer.hp_to_elongation(50, 0)
         assert e == approx(50)
@@ -360,3 +364,17 @@ def test_produce_radec_for_hp_wcs(pass_wcs, use_inner_as_ref):
     ok = np.isfinite(real_ra)
     np.testing.assert_allclose(
             np.array(computed_ra)[ok], np.array(real_ra)[ok], atol=.2)
+
+
+@pytest.mark.mpl_image_compare
+def test_overlay_radial_grid():
+    file = os.path.join(utils.test_data_path(),
+                        'WISPR_files_with_data_half_size_L3',
+                        '20190405',
+                        'psp_L3_wispr_20190405T011515_V3_1221.fits')
+    with utils.ignore_fits_warnings():
+        image = fits.getdata(file)
+        wcs = WCS(fits.getheader(file))
+    plot_utils.plot_WISPR(image, wcs=wcs)
+    projections.overlay_radial_grid(image, wcs)
+    return plt.gcf()

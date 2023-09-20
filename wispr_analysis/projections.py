@@ -8,9 +8,10 @@ from . import utils
 
 
 class RadialTransformer():
+    pa_of_ecliptic = 90
+    
     def __init__(self, ref_pa, ref_y, dpa,
-            ref_elongation, ref_x, delongation, wcs_in,
-            pa_of_ecliptic=90):
+            ref_elongation, ref_x, delongation, wcs_in):
         self.ref_pa = ref_pa
         self.ref_elongation = ref_elongation
         self.ref_x = ref_x
@@ -18,8 +19,6 @@ class RadialTransformer():
         self.dpa = dpa
         self.delongation = delongation
         self.wcs_in = wcs_in
-        
-        self.pa_of_ecliptic = pa_of_ecliptic
     
     
     def __call__(self, pixel_out):
@@ -37,7 +36,8 @@ class RadialTransformer():
         return pixel_in
     
     
-    def hp_to_elongation(self, lon, lat):
+    @classmethod
+    def hp_to_elongation(cls, lon, lat):
         lon = np.asarray(lon) * np.pi / 180
         lat = np.asarray(lat) * np.pi / 180
         
@@ -52,14 +52,15 @@ class RadialTransformer():
         
         elongation *= 180 / np.pi
         pa *= 180 / np.pi
-        pa += (self.pa_of_ecliptic - 90)
+        pa += (cls.pa_of_ecliptic - 90)
         
         return elongation, pa
     
     
-    def elongation_to_hp(self, elongation, pa):
+    @classmethod
+    def elongation_to_hp(cls, elongation, pa):
         elongation = np.asarray(elongation) * np.pi / 180
-        pa = np.asarray(pa) - (self.pa_of_ecliptic - 90)
+        pa = np.asarray(pa) - (cls.pa_of_ecliptic - 90)
         pa *= np.pi / 180
         
         # Expressions from Snyder (1987)
@@ -201,7 +202,7 @@ def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
         ref_hdr=None):
     """Produces an RA/Dec WCS for an HP WCS, from a pair of RA/Dec and HP WCSs
     
-    The indended use case is producing composite images, where an output HP WCS
+    The intended use case is producing composite images, where an output HP WCS
     is constructed from scratch, and a corresponding RA/Dec WCS in the same
     projection is desired. To produce it, the RA/Dec and HP WCSs of one of the
     input images are used.
@@ -266,9 +267,9 @@ def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
     return wcs_ra
 
 
-def overlay_radial_grid(image, transformer, ax=None):
+def overlay_radial_grid(image, wcs, ax=None):
     """
-    Overlays a (elongation, pa) grid on a non-radially-projected image.
+    Overlays an (elongation, pa) grid on a non-radially-projected image.
     
     Draws a grid in ten-degree increments.
     
@@ -286,13 +287,13 @@ def overlay_radial_grid(image, transformer, ax=None):
     x = np.arange(image.shape[1])
     y = np.arange(image.shape[0])
     xx, yy = np.meshgrid(x, y)
-    hplon, hplat = transformer.wcs_in.pixel_to_world_values(xx, yy)
-    elongation, pa = transformer.hp_to_elongation(hplon, hplat)
+    hplon, hplat = wcs.pixel_to_world_values(xx, yy)
+    elongation, pa = RadialTransformer.hp_to_elongation(hplon, hplat)
     
     if ax is None:
         ax = plt.gca()
-    ax.contour( elongation, levels=np.arange(10, 180, 10),
+    ax.contour(elongation, levels=np.arange(10, 180, 10),
             colors='w', alpha=.5, linewidths=.5)
-    ax.contour( pa, levels=np.arange(0, 180, 10),
+    ax.contour(pa, levels=np.arange(0, 180, 10),
             colors='w', alpha=.5, linewidths=.5)
 
