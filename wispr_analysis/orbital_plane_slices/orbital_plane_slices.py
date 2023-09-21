@@ -479,7 +479,7 @@ class BaseJmap:
     def plot(self,
              bundle: "InputDataBundle"=None,
              ax=None, label_vr=False, vmin=None, vmax=None,
-             pmin=5, pmax=95, transpose=False, gamma=1/2.2, interactive=False):
+             pmin=5, pmax=95, gamma=1/2.2, interactive=False):
         min, max = np.nanpercentile(self.slices, [pmin, pmax])
         if vmin is None:
             vmin = min
@@ -509,21 +509,13 @@ class BaseJmap:
         
         cmap = copy.deepcopy(plot_utils.wispr_cmap)
         cmap.set_bad("#4d4540")
-        if transpose:
-            image = image.T
-            dates = plot_utils.x_axis_dates(self.times, ax=ax)
-            x = dates
-            y = angles
-            ax.set_ylabel(self.xlabel)
-            ax.yaxis.set_major_formatter(
-                matplotlib.ticker.StrMethodFormatter("{x:.0f}°"))
-        else:
-            dates = plot_utils.y_axis_dates(self.times, ax=ax)
-            x = angles
-            y = dates
-            ax.set_xlabel(self.xlabel)
-            ax.xaxis.set_major_formatter(
-                matplotlib.ticker.StrMethodFormatter("{x:.0f}°"))
+        image = image.T
+        dates = plot_utils.x_axis_dates(self.times, ax=ax)
+        x = dates
+        y = angles
+        ax.set_ylabel(self.xlabel)
+        ax.yaxis.set_major_formatter(
+            matplotlib.ticker.StrMethodFormatter("{x:.0f}°"))
         im = ax.pcolormesh(x, y, image,
                            cmap=cmap,
                            norm=matplotlib.colors.PowerNorm(gamma=gamma,
@@ -548,14 +540,9 @@ class BaseJmap:
             def t2vr(t): return np.interp(t, dates, vrs)
             def vr2t(vr): return np.interp(vr, vrs, dates)
             
-            if transpose:
-                ax2 = plt.gca().secondary_xaxis(
-                    'top', functions=(t2vr, vr2t))
-                ax2.set_xlabel("S/C radial velocity (km/s)")
-            else:
-                ax2 = plt.gca().secondary_yaxis(
-                    'right', functions=(t2vr, vr2t))
-                ax2.set_ylabel("S/C radial velocity (km/s)")
+            ax2 = plt.gca().secondary_xaxis(
+                'top', functions=(t2vr, vr2t))
+            ax2.set_xlabel("S/C radial velocity (km/s)")
         
         if interactive:
             if isinstance(bundle, InputDataBundle):
@@ -577,19 +564,13 @@ class BaseJmap:
                     try:
                         if event.inaxes is not ax:
                             return
-                        if transpose:
-                            t, angle = event.xdata, event.ydata
-                        else:
-                            t, angle = event.ydata, event.xdata
+                        t, angle = event.xdata, event.ydata
                         if event.button == 3:
                             # Right click
                             if self.last_t is None:
                                 return
                             t = self.last_t
-                            if transpose:
-                                event.xdata = self.axmarker.get_data()[0][0]
-                            else:
-                                event.ydata = self.axmarker.get_data()[1][0]
+                            event.xdata = self.axmarker.get_data()[0][0]
                         else:
                             self.last_t = t
                         t = np.interp(t, dates, self.map.times)
