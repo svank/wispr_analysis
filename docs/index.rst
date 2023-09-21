@@ -10,6 +10,9 @@ Contents
 
 .. automodapi:: wispr_analysis.composites
    :no-inheritance-diagram:
+   
+.. automodapi:: wispr_analysis.constellations
+   :no-inheritance-diagram:
 
 .. automodapi:: wispr_analysis.data_cleaning
    :no-inheritance-diagram:
@@ -21,16 +24,17 @@ Contents
   
 .. automodapi:: wispr_analysis.image_alignment
    :no-inheritance-diagram:
-   :skip: repeat
    :skip: defaultdict
+   :skip: display
    :skip: chain
    :skip: WCS
    :skip: DistortionLookupTable
-   :skip: floor
    :skip: ceil
-   :skip: process_map
-   :skip: tqdm
+   :skip: floor
    :skip: njit
+   :skip: process_map
+   :skip: repeat
+   :skip: tqdm
 
 .. automodapi:: wispr_analysis.planets
    :no-inheritance-diagram:
@@ -55,12 +59,29 @@ Contents
    :no-inheritance-diagram:
    :skip: ceil
    :skip: contextmanager
+   :skip: datetime
+   :skip: timezone
+   :skip: BaseLowLevelWCS
+   :skip: HighLevelWCSWrapper
+   :skip: Iterable
+   :skip: WCS
 
 .. automodapi:: wispr_analysis.videos
    :no-inheritance-diagram:
    :skip: process_map
    :skip: display
    :skip: floor
+   
+.. automodapi:: wispr_analysis.orbital_plane_slices.orbital_plane_slices
+   :no-inheritance-diagram:
+   :skip: process_map
+   :skip: repeat
+   :skip: tqdm
+   :skip: HeliocentricInertial
+   :skip: Helioprojective
+   :skip: NorthOffsetFrame
+   :skip: SkyCoord
+   :skip: WCS
 
 .. automodapi:: wispr_analysis.radiants.radiants
    :no-inheritance-diagram:
@@ -68,5 +89,7 @@ Contents
 .. automodapi:: wispr_analysis.radiants.synthetic_data
    :no-inheritance-diagram:
    :skip: WCS
+   :skip: contextmanager
    :skip: dataclass
+   :skip: ExitStack
 

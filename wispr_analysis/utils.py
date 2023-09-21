@@ -24,10 +24,10 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
         If a ``str`` ending in ``.fits``, a filename from which the timestamp
         should be extracted (but see the ``read_headers`` option). If otherwise
         a ``str``, a timestamp as stored in WISPR headers. If a ``float`` or
-        ``int``, a POSIX timestamp. If an iterable, multiple of the preceeding
+        ``int``, a POSIX timestamp. If an iterable, multiple of the preceding
         types.
     as_datetime : ``bool``
-        If ``True``, timestamps are returned as `datetime` instances, rather
+        If ``True``, timestamps are returned as ``datetime`` instances, rather
         than numeric timestamps.
     read_headers : ``bool``
         If True, when filenames are provided, read ``DATE-AVG`` from the
@@ -381,6 +381,13 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
     each pixel is the statistic for a window centered on that pixel. Values are
     duplicated at the edges, where the window does not fit in the input array.
     
+    Note: When calculating the mean or standard deviation, if the input array
+    has <= 3 dimensions, an optimized routine is used that calculates rolling
+    statistics, which may introduce some floating-point error (e.g. regions
+    with the same exact input values may have different outputs at the
+    floating-point-error level). Otherwise, the statistic is computed from
+    scratch at each location in the array.
+    
     Parameters
     ----------
     data : ``ndarray``
@@ -405,7 +412,7 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         interpolated into the skipped pixels. If an integer, it is applied to
         all axes.
     where : ``ndarray``
-        An optinal binary mask indicating which pixels to include in the
+        An optional binary mask indicating which pixels to include in the
         calculations. Cannot be used when calculating medians.
     check_nans : boolean
         Whether to use the NaN-handling calculation functions, which does slow
@@ -420,15 +427,6 @@ def sliding_window_stats(data, window_width, stats=['mean', 'std'],
         a mean with a sliding_window_stride > 1 and linearly interpolating the
         skipped values may be slower than just letting
         sliding_window_stride==1.
-    
-    Note
-    ----
-    When calculating the mean or standard deviation, if the input array has <=
-    3 dimensions, an optimized routine is used that calculates rolling
-    statistics, which may introduce some floating-point error (e.g. regions
-    with the same exact input values may have different outputs at the
-    floating-point-error level). Otherwise, the statistic is computed from
-    scratch at each location in the array.
     """
     if where is not None and 'median' in stats:
         raise ValueError("'where' parameter not supported for medians")

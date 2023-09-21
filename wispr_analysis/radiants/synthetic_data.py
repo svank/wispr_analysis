@@ -233,9 +233,9 @@ class ArrayThing(Thing):
         """
         Parameters
         ----------
-        tlist : np.ndarray
+        tlist : ``np.ndarray``
             The list of time points at which positions are provided
-        xlist, ylist, zlist : np.ndarray or float
+        xlist, ylist, zlist : ``np.ndarray`` or float
             The specified positions. If either is a single number, that number
             is used at all points in time.
         t : float
@@ -654,13 +654,13 @@ def elongation_to_FOV(sc, elongation):
     ----------
     sc : `Thing`
         A `Thing` representing the observer. Can be vectorized over time.
-    elongation : scalar or ndarray
+    elongation : scalar or ``ndarray``
         Elongation values to be converted. Measured in radians, with zero
         representing the Sunward direction. Unsigned.
     
     Returns
     -------
-    fov : ndarray
+    fov : ``ndarray``
         Field-of-view position in radians
     """
     sc_direction = angle_between_vectors(

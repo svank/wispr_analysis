@@ -15,8 +15,8 @@ def padded_slice(img, sl):
     """
     Returns a chunk of an image, padded with zeros if outside the image bounds
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     img : ``np.ndarray``
         The image to take a chunk out of
     sl : Iterable of ints
@@ -93,21 +93,21 @@ def collect_region_all_frames(coord, data_dir, r=5, target_wcs=None,
     """
     Extracts the region around a celestial coordinate from each image it's in.
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     coord : ``tuple``
         The coordinate around which data should be extracted, as (RA, Dec). Can
         be a tuple of numbers (in degrees), or astropy Coordinate objects.
     data_dir : ``str``
         The directory containing the FITS files from which data should be
-        extracted. Will be searched recursively by `utils.collect_files`.
+        extracted. Will be searched recursively by ``utils.collect_files``.
     r : ``int``
         The size of the region to extract. The total size is (2*r + 1).
     target_wcs : WCS or FITS header
         If given, each image is reprojected to this frame before the region is
         extracted.
     wcs_key : str
-        If parsing a FITS header as `target_wcs`, use this ``wcs_key``.
+        If parsing a FITS header as ``target_wcs``, use this ``wcs_key``.
     detector : 'i' or 'o'
         If specified, only use files from this WISPR detector.
     trim_amount : int
@@ -116,7 +116,7 @@ def collect_region_all_frames(coord, data_dir, r=5, target_wcs=None,
     clip_as_r : int
         If given, for the purposes of determining whether the extraction region
         lies within the bounds of an image, actually use this value rather than
-        `r` itself to determine the extraction region size.
+        ``r`` itself to determine the extraction region size.
     
     Returns
     -------

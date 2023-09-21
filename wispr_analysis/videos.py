@@ -551,10 +551,10 @@ def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
     between : tuple
         A beginning and end timestamp of the format 'YYYYMMDDTHHMMSS'. Only the
         files between these timestamps will be included in the video. Either or
-        both timestamp can be `None`, to place no limit on the beginning or end
+        both timestamp can be ``None``, to place no limit on the beginning or end
         of the video.
     show : boolean
-        When `True`, the rendered video is shown in the Jupyter environment.
+        When ``True``, the rendered video is shown in the Jupyter environment.
         Otherwise, an IPython ``Video`` object is returned.
     fps : float
         Number of frames per second in the video
@@ -775,14 +775,14 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         Function than draws a single frame. Must accept as arguments the file
         name to which the frame should be saved as a PNG file, and then all
         other arguments provided in ``arg_list``.
-    *arg_list
+    arg_list
         Arguments to be passed to ``frame_renderer``. Each provided value can
         be a single non-iterable item (including strings), in which case that
         value will be repeated for all function calls, or an iterable of
         arguments, one per function call. The required output filename will be
         prepended to each tuple of arguments.
     parallel : boolean
-        If `True`, frames will be rendered in parallel.
+        If ``True``, frames will be rendered in parallel.
     fps : int
         The frames-per-second to use for the final video.
     save_to : str

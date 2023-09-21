@@ -138,6 +138,7 @@ def format_date(date):
         The date of the observation. If a FITS header, DATE-AVG is extracted
         and used. If a string, passed through unaltered. If a number,
         interpreted as a UTC timestamp.
+    
     Returns
     -------
     date : ``str``

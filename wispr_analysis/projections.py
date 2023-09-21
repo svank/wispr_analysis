@@ -363,8 +363,8 @@ def overlay_radial_grid(image, wcs, ax=None):
     image : ``np.ndarray``
         The data array being plotted. Needed to determine the size of the image
         array.
-    transformer : `RadialTransformer`
-        The `RadialTransformer` controlling the transformation to radial
+    wcs : `HprWcs`
+        The `HprWcs` controlling the transformation to radial
         coordinates.
     ax : `matplotlib.axes.Axes`
         Optional, the axes to plot on

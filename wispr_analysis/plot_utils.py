@@ -515,6 +515,7 @@ def date_to_mdate(date):
         A date to be converted to a matplotlib-friendly format. Should be
         either a format understood by utils.to_timestamp, or a POSIX timestamp.
         Can also be a list of such values.
+    
     Returns
     -------
     date
@@ -541,7 +542,7 @@ def browse_frames(frames, *args, **kwargs):
     ----------
     frames : Iterable
         A list of anything that can be the first argument to `plot_WISPR`
-    *args, **kwargs
+    args, kwargs
         Additional arguments to pass to plot_WISPR
     """
     def plot(f):

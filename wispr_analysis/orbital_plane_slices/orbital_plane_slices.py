@@ -3,7 +3,7 @@ import dataclasses
 from itertools import repeat
 import warnings
 
-from astropy.coordinates import SkyCoord, angular_separation
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
 import astropy.units as u
 from astropy.wcs import WCS
