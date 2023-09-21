@@ -8,10 +8,37 @@ from . import utils
 
 
 class HprWcs(utils.FakeWCS):
+    """Implements Helioprojective-Cartesian coordinates in a radial projection
+    
+    This implements the minimal set of the WCS API to support reprojection,
+    plus some helper functions.
+    """
     pa_of_ecliptic = 90
     
     def __init__(self, wcs, ref_pa, ref_y, dpa,
             ref_elongation, ref_x, delongation):
+        """Create an `HprWcs`
+
+        Parameters
+        ----------
+        wcs : ``WCS``
+            A WCS describing the "other side" of the reprojection---i.e.,
+            describing the input data that will be reprojected to radial
+            coordinates. This is needed to copy some metadata.
+        ref_pa : float, optional
+            The position angle of the reference pixel
+        ref_y : float, optional
+            The reference pixel
+        dpa : float, optional
+            The degrees-per-pixel spacing of the output image along the PA axis
+        ref_elongation : float, optional
+            The elongation of the reference pixel
+        ref_x, ref_x : float, optional
+            The reference pixel
+        delongation : float, optional
+            The degrees-per-pixel spacing of the output image along the
+            elongation axis
+        """
         super().__init__(wcs)
         self.ref_pa = ref_pa
         self.ref_elongation = ref_elongation
@@ -86,6 +113,45 @@ class HprWcs(utils.FakeWCS):
 
 def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
         ref_pa=100, ref_elongation=13, ref_x=None, ref_y=None):
+    """Helper to reproject from helioprojective-cartesian to radial
+    
+    In the radial frame, the two axes are position angle (degrees around from a
+    reference position---by default, increasing clockwise from 0 degrees at
+    solar North) and elongation (degrees from disc center).
+    
+    This function accepts parameters for WCS-like specification of the output
+    radial projection. If not provided, defaults suitable for a WISPR-I image
+    are used.
+
+    Parameters
+    ----------
+    data : ``np.ndarray``
+        The input image
+    wcs : ``WCS``
+        A ``WCS`` describing the input data
+    out_shape : tuple, optional
+        The shape for the output array
+    dpa : float, optional
+        The degrees-per-pixel spacing of the output image along the PA axis
+    delongation : float, optional
+        The degrees-per-pixel spacing of the output image along the elongation
+        axis
+    ref_pa : float, optional
+        The position angle of the reference pixel
+    ref_elongation : float, optional
+        The elongation of the reference pixel
+    ref_x, ref_y : float, optional
+        The reference pixel
+
+    Returns
+    -------
+    reprojected : ``np.ndarray``
+        The reprojected image
+    wcs_out : `HprWcs`
+        A WCS-like object which converts between pixels and
+        helioprojective-cartesian coordinates using the specified radial
+        projection.
+    """
     if out_shape is None:
         # Defaults that are decent for a full-res WISPR-I image
         out_shape = list(data.shape)
@@ -110,6 +176,43 @@ def reproject_to_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
 
 def reproject_from_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
         ref_pa=100, ref_elongation=13, ref_x=None, ref_y=None):
+    """Helper to reproject from helioprojective-radial to cartesian
+    
+    In the radial frame, the two axes are position angle (degrees around from a
+    reference position---by default, increasing clockwise from 0 degrees at
+    solar North) and elongation (degrees from disc center).
+    
+    This function accepts parameters for WCS-like specification of the input
+    data's radial projection. If not provided, defaults suitable for a WISPR-I
+    image are used.
+
+    Parameters
+    ----------
+    data : ``np.ndarray``
+        The input image
+    wcs : ``WCS``
+        A ``WCS`` describing the output, non-radial projection
+    out_shape : tuple, optional
+        The shape for the output array
+    dpa : float, optional
+        The degrees-per-pixel spacing of the input image along the PA axis
+    delongation : float, optional
+        The degrees-per-pixel spacing of the input image along the elongation
+        axis
+    ref_pa : float, optional
+        The position angle of the reference pixel
+    ref_elongation : float, optional
+        The elongation of the reference pixel
+    ref_x, ref_x : float, optional
+        The reference pixel
+
+    Returns
+    -------
+    reprojected : ``np.ndarray``
+        The reprojected image
+    wcs : ``WCS``
+        The WCS of the output image
+    """
     if out_shape is None:
         # Defaults that are decent for a full-res WISPR-I image
         out_shape = list(data.shape)
@@ -133,6 +236,23 @@ def reproject_from_radial(data, wcs, out_shape=None, dpa=None, delongation=None,
 
 
 def label_radial_axes(wcs, ax=None):
+    """Helper function to label plot axes as elongation and position angle
+    
+    Note that these radial coordinates can't be used with ``WCSAxes`` or via
+    ``plt.subplot(111, projection=my_hpr_wcs)``, since Astropy doesn't
+    understand this coordinate system. `HprWcs` outputs
+    helioprojective-cartesian coordinates, so this helper function is required
+    to label with helioprojective-radial coordinates.
+
+    Parameters
+    ----------
+    wcs : `HprWcs`
+        An `HprWcs` describing the image being plotting, such as the one
+        returned by `reproject_to_radial`.
+    ax : ``Axes``, optional
+        A matplotlib ``Axes`` to label. If not provided, the currently-active
+        ``Axes`` are used.
+    """
     if ax is None:
         ax = plt.gca()
     
