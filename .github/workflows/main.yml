@@ -38,10 +38,10 @@ jobs:
           sudo apt-get install ghostscript -yy
 
       - name: Run tests with pytest
-        run: pytest -v -rsx
+        run: pytest -v -rsx --mpl-generate-summary=html --mpl-results-path=/tmp/pytest-mpl-results
 
       - uses: actions/upload-artifact@v3
         if: failure()
         with:
-          name: "result images"
-          path: ./result_images
+          name: "plot results"
+          path: /tmp/pytest-mpl-results
