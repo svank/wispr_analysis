@@ -102,7 +102,10 @@ class OrbitalSliceWCS(utils.FakeWCS):
 
     def __init__(self, input_wcs, n, is_inner, date_override=None):
         super().__init__(input_wcs)
-        if is_inner:
+        if is_inner == 'both':
+            self.angle_start = 13.5
+            self.angle_stop = 103.75
+        elif is_inner:
             self.angle_start = 13.5
             self.angle_stop = 51.25
         else:

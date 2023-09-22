@@ -3,12 +3,15 @@ import copy
 from dataclasses import dataclass
 
 import astropy.coordinates
+import astropy.time
 import astropy.units as u
 from astropy.wcs import WCS
 import numpy as np
 import reproject
 import scipy
 import sunpy.coordinates
+
+from .. import utils
 
 
 class Thing:
@@ -324,8 +327,19 @@ class ArrayThing(Thing):
                 y1 = interpolator(self.t)
                 y2 = interpolator(self.t + dt)
             except ValueError:
-                y1 = interpolator(self.t - dt)
-                y2 = interpolator(self.t)
+                try:
+                    y1 = interpolator(self.t - dt)
+                    y2 = interpolator(self.t)
+                except:
+                    # If out list of times includes both endpoints exactly,
+                    # none of these above will work for every time, but one
+                    # will work for each time. So compute each time
+                    # individually.
+                    vals = []
+                    for t in self.t:
+                        with self.at_temp(t) as s:
+                            vals.append(s._finite_difference(interpolator, dt))
+                    return np.concatenate(vals)
         return (y2 - y1) / dt
     
     def offset_by_time(self, dt):
@@ -472,6 +486,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         psychadelic=False, celestial_wcs=False, fixed_fov_range=None):
     sc = sc.at(t0)
     
+    parcel_width *= u.R_sun.to(u.m)
+    
     # Build output image WCS
     if image_wcs is None:
         image_wcs = WCS(naxis=2)
@@ -560,13 +576,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         # Find the bounds of this blob in the output image, and only reproject
         # into that part.
         ny, nx = parcel_image.shape
-        n_per_edge = 3
-        xs = np.linspace(-0.5, nx - 0.5, n_per_edge)
-        ys = np.linspace(-0.5, ny - 0.5, n_per_edge)
-        xs = np.concatenate((xs, np.full(n_per_edge, xs[-1]),
-                             xs, np.full(n_per_edge, xs[0])))
-        ys = np.concatenate((np.full(n_per_edge, ys[0]), ys,
-                             np.full(n_per_edge, ys[-1]), ys))
+        xs = np.array([0, nx/2, nx, nx, nx, nx/2, 0, 0]) - .5
+        ys = np.array([0, 0, 0, ny/2, ny, ny, ny, ny/2]) - .5
         xc_out, yc_out = image_wcs.world_to_pixel(
             parcel_wcs.pixel_to_world(xs, ys))
         xmin = max(0, int(np.floor(xc_out.min())) - 1)
@@ -582,7 +593,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
                 roundtrip_coords=False, return_footprint=False,
                 conserve_flux=True)
         # Scale the brightness of the reprojected blob
-        subimage = subimage / parcel_distance**2 / parcel_r**2
+        rsun = u.R_sun.to(u.m)
+        subimage = subimage / (parcel_distance/rsun)**2 / (parcel_r/rsun)**2
         
         if psychadelic:
             # Add a dimension and assign a random color to the parcel. Ensure
@@ -603,6 +615,21 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.crval = fov_center, 0
         cdelt = image_wcs.wcs.cdelt[0]
         image_wcs.wcs.cdelt = -cdelt, cdelt
+    else:
+        date = astropy.time.Time(t0, format='unix').fits
+        image_wcs.wcs.dateobs = date
+        image_wcs.wcs.dateavg = date
+        c = astropy.coordinates.SkyCoord(sc.x, sc.y, sc.z,
+                     frame='heliocentricinertial',
+                     representation_type='cartesian',
+                     obstime=date,
+                     unit='m')
+        c = c.transform_to('heliographic_stonyhurst')
+        image_wcs.wcs.aux.hgln_obs = c.lon.to(u.deg).value
+        image_wcs.wcs.aux.hglt_obs = c.lat.to(u.deg).value
+        image_wcs.wcs.aux.dsun_obs = c.radius.to(u.m).value
+        with utils.ignore_fits_warnings():
+            image_wcs.fix()
     
     if fixed_fov_range is not None:
         fixed_fov_start = np.arctan2(-sc.y, -sc.x) * 180 / np.pi - 13.5
