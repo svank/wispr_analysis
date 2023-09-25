@@ -7,7 +7,6 @@ import astropy.time
 import astropy.units as u
 from astropy.wcs import WCS
 import numpy as np
-import reproject
 import scipy
 import sunpy.coordinates
 
@@ -484,9 +483,45 @@ def hpc_to_elpa(Tx, Ty):
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
         psychadelic=False, celestial_wcs=False, fixed_fov_range=None):
+    """Produce a synthetic WISPR image
+
+    Parameters
+    ----------
+    sc : `Thing`
+        Object representing the spacecraft
+    parcels : ``List[Thing]``
+        Objects representing the plasma blobs
+    t0 : float
+        The time at which to generate the image
+    fov : int, optional
+        Camera field-of-view width
+    projection : str, optional
+        Projection to use
+    output_size_x, output_size_y : int, optional
+        Size of the generated image
+    parcel_width : int, optional
+        Width of each plasma blob, in R_sun
+    image_wcs : ``WCS``, optional
+        The WCS to use for the output image. If not provided, a WISPR-like WCS
+        is generated
+    psychadelic : bool, optional
+        Whether to render each parcel in a unique color
+    celestial_wcs : bool, optional
+        Whether to convert the output WCS to RA/Dec
+
+    Returns
+    -------
+    output_image : ``np.ndarray``
+        The output image
+    image_wcs : ``WCS``
+        The corresponding WCS
+    """
     sc = sc.at(t0)
-    
-    parcel_width *= u.R_sun.to(u.m)
+    date = astropy.time.Time(t0, format='unix').fits
+    if isinstance(parcel_width, u.Quantity):
+        parcel_width = parcel_width.to(u.m).value
+    else:
+        parcel_width *= u.R_sun.to(u.m)
     
     # Build output image WCS
     if image_wcs is None:
@@ -514,97 +549,90 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.cunit = "deg", "deg"
         image_wcs.array_shape = (output_size_y, output_size_x)
     
-    fov_start = image_wcs.wcs.crval[0] - fov/2
-    fov_stop = image_wcs.wcs.crval[0] + fov/2
-    
-    # Build a "blob" image on a small canvas
-    parcel_amp = 1
-    parcel_res = 21
-    parcel_stdev = parcel_res / 6
-    x = np.arange(parcel_res) - parcel_res / 2 + .5
-    X, Y = np.meshgrid(x, x)
-    parcel_image = parcel_amp * np.exp(-(X**2 + Y**2)/2/parcel_stdev**2)
-    
-    # Build a WCS for the blob
-    parcel_wcs = WCS(naxis=2)
-    parcel_wcs.wcs.crpix = parcel_res/2 + .5, parcel_res/2 + .5
-    parcel_wcs.wcs.ctype = "HPLN-ARC", "HPLT-ARC"
-    parcel_wcs.wcs.cunit = "deg", "deg"
-    
     if psychadelic:
         output_image = np.zeros((output_size_y, output_size_x, 3))
     else:
         output_image = np.zeros((output_size_y, output_size_x))
     
-    good_parcels = []
-    parcel_distances = []
-    parcel_rs = []
-    with ExitStack() as stack:
-        parcels = [stack.enter_context(p.at_temp(t0)) for p in parcels]
-        for p in parcels:
-            # For each blob, calculate a position, update the WCS, and then project
-            # the blob image onto the output image.
-            # Is this overkill? Probably?
-            if np.isnan(p.x):
-                continue    
-            good_parcels.append(p)
-            parcel_distances.append((p - sc).r)
-            parcel_rs.append(p.r)
-        
-        Txs, Tys = calc_hpc(sc, good_parcels)
+    x = np.arange(output_image.shape[1])
+    y = np.arange(output_image.shape[0])
+    x, y = np.meshgrid(x, y)
+    # Compute the LOS direction of each pixel (as helioprojective coordinates)
+    los = image_wcs.pixel_to_world(x, y)
+    Tx, Ty = los.Tx, los.Ty
+    obstime = date
+    sc_coord = astropy.coordinates.SkyCoord(
+        sc.x, sc.y, sc.z, frame='heliocentricinertial',
+        representation_type='cartesian', unit='m', obstime=obstime)
+    # Turn the LOS directions into distant points and transform them to HCI
+    # (x,y,z) points
+    los = astropy.coordinates.SkyCoord(
+        Tx, Ty, 100*u.au, frame='helioprojective', observer=sc_coord)
+    los = los.transform_to('heliocentricinertial').cartesian
+    los = np.array(
+        [los.x.to(u.m).value, los.y.to(u.m).value, los.z.to(u.m).value])
+    los = np.transpose(los, axes=(1,2,0))
+    sc_pos = np.array([sc.x, sc.y, sc.z]).flatten()
+    # Pre-compute x for closest-approach finding
+    x = los - sc_pos
+    x_over_xdotx = x / np.sum(x**2, axis=-1, keepdims=True)
    
-    for parcel_distance, parcel_r, Tx, Ty in zip(
-        parcel_distances, parcel_rs, Txs, Tys):
-        # We'll compute a scaling factor to reduce parcels' brightness as we
-        # fly though them, to try to reduce flashiness as that happens.
-        if parcel_distance < parcel_width / 2:
-            continue
-        
-        # Compute the apparent angular size of the parcel
-        parcel_angular_width = 2 * np.arctan(parcel_width / 2 / parcel_distance)
-        parcel_angular_width *= 180 / np.pi # degrees
-        cdelt = parcel_angular_width / parcel_res
-        try:
-            cdelt = cdelt[0]
-        except TypeError:
-            pass
-        parcel_wcs.wcs.cdelt = cdelt, cdelt
-        if not fov_start - 10 < Tx < fov_stop + 10:
-            continue
-        parcel_wcs.wcs.crval = Tx[0], Ty[0]
-        
-        # Find the bounds of this blob in the output image, and only reproject
-        # into that part.
-        ny, nx = parcel_image.shape
-        xs = np.array([0, nx/2, nx, nx, nx, nx/2, 0, 0]) - .5
-        ys = np.array([0, 0, 0, ny/2, ny, ny, ny, ny/2]) - .5
-        xc_out, yc_out = image_wcs.world_to_pixel(
-            parcel_wcs.pixel_to_world(xs, ys))
-        xmin = max(0, int(np.floor(xc_out.min())) - 1)
-        xmax = min(output_image.shape[1], 2 + int(np.ceil(xc_out.max())))
-        ymin = max(0, int(np.floor(yc_out.min())) - 1)
-        ymax = min(output_image.shape[0], 2 + int(np.ceil(yc_out.max())))
-        slice = np.s_[ymin:ymax, xmin:xmax]
-        
-        subimage = reproject.reproject_adaptive(
-                (parcel_image, parcel_wcs),
-                image_wcs[slice], output_image[slice].shape[:2],
-                boundary_mode='grid-constant', boundary_fill_value=0,
-                roundtrip_coords=False, return_footprint=False,
-                conserve_flux=True)
-        # Scale the brightness of the reprojected blob
-        rsun = u.R_sun.to(u.m)
-        subimage = subimage / (parcel_distance/rsun)**2 / (parcel_r/rsun)**2
-        
-        if psychadelic:
-            # Add a dimension and assign a random color to the parcel. Ensure
-            # the same color is chosen for each frame.
-            np.random.seed(id(p) % (2**32 - 1))
-            color = np.random.random(3)
-            subimage = subimage[:, :, None] * color[None, None, :]
-        
-        # Build up the output image by adding together all the reprojected blobs
-        output_image[slice] += subimage
+    for parcel in parcels:
+        with parcel.at_temp(t0) as p:
+            parcel_pos = np.array([p.x, p.y, p.z]).flatten()
+            # Check if this time point is valid for this parcel
+            if np.isnan(parcel_pos[0]):
+                continue
+            
+            # Compute the closest-approach distance between each LOS segment
+            # and the parcel center, following
+            # https://stackoverflow.com/a/50728570.
+            # x is the projection of the parcel's position on the line between
+            # the s/c and a distant point, and t is the fractional position of
+            # the closest approach along that line segment.
+            t = np.dot(x_over_xdotx, parcel_pos - sc_pos)
+            
+            # Where the closest approach isn't along that segment (i.e. it's
+            # behind the s/c), flag it
+            t[t<0] = np.nan
+            t[t>1] = np.nan
+            
+            if np.all(np.isnan(t)):
+                continue
+
+            # Compute the actual coordinates of the closest-approach point
+            closest_approach = (t.reshape((*t.shape, 1)) * x + sc_pos)
+            # Compute how close the closest approach is to the parcel center
+            d_p = np.sqrt(
+                np.sum(np.square(closest_approach - parcel_pos), axis=-1))
+            # Truncate the gaussian
+            d_p[d_p > 2 * parcel_width] = np.nan
+            
+            if np.all(np.isnan(d_p)):
+                continue
+            
+            flux = np.exp(-d_p**2 / (parcel_width/6)**2 / 2)
+            rsun = u.R_sun.to(u.m)
+            # Scale for the Sun-parcel distance and the parcel-s/c distance
+            d_sc = np.linalg.norm(sc_pos - parcel_pos)
+            if d_sc < parcel_width:
+                # Ramp down the flux as the parcel gets really close to the
+                # s/c, to avoid flashiness, etc.
+                flux *= d_sc / parcel_width
+            # Note: don't scale for the s/c-parcel distance---a longer distance
+            # means 1/r^2 falloff in flux but an r^2 increase in plasma volume
+            # along the LOS 
+            flux *= 1 / (p.r/rsun)**2
+            
+            flux[np.isnan(flux)] = 0
+            
+            if psychadelic:
+                # Add a dimension and assign a random color to the parcel.
+                # Ensure the same color is chosen for each frame.
+                np.random.seed(id(p) % (2**32 - 1))
+                color = np.random.random(3)
+                flux = flux[:, :, None] * color[None, None, :]
+            output_image += flux
     
     if celestial_wcs:
         image_wcs.wcs.ctype = f"RA---{projection}", f"DEC--{projection}"
@@ -616,15 +644,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         cdelt = image_wcs.wcs.cdelt[0]
         image_wcs.wcs.cdelt = -cdelt, cdelt
     else:
-        date = astropy.time.Time(t0, format='unix').fits
         image_wcs.wcs.dateobs = date
         image_wcs.wcs.dateavg = date
-        c = astropy.coordinates.SkyCoord(sc.x, sc.y, sc.z,
-                     frame='heliocentricinertial',
-                     representation_type='cartesian',
-                     obstime=date,
-                     unit='m')
-        c = c.transform_to('heliographic_stonyhurst')
+        c = sc_coord.transform_to('heliographic_stonyhurst')
         image_wcs.wcs.aux.hgln_obs = c.lon.to(u.deg).value
         image_wcs.wcs.aux.hglt_obs = c.lat.to(u.deg).value
         image_wcs.wcs.aux.dsun_obs = c.radius.to(u.m).value

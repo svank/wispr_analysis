@@ -1,5 +1,7 @@
+import astropy.units as u
 import numpy as np
 import pytest
+import scipy.ndimage
 
 from .. import radiants, synthetic_data as sd
 
@@ -27,7 +29,8 @@ def generate_strips():
     strips = []
     for t in ts:
         strip, _ = sd.synthesize_image(sc, parcels, t, output_size_x=45,
-                output_size_y=1, projection='CAR', fov=fov)
+                output_size_y=1, projection='CAR', fov=fov, parcel_width=1*u.m)
+        strip = scipy.ndimage.gaussian_filter(strip, 0.7)
         strips.append(strip)
     strips = np.vstack(strips)
     
@@ -76,11 +79,11 @@ def test_find_radiant():
     np.testing.assert_array_equal(ts[21:-21], rad_ts)
     
     np.testing.assert_array_equal(rads,
-            np.array([0,
-                     -1.5909090909090935,
-                     -1.5909090909090935,
-                     -1.5909090909090935,
-                     -1.5909090909090935,
-                     -1.5909090909090935,
-                     -1.5909090909090935,
-                     -1.5909090909090935]))
+            np.array([-1.5909090909090935,
+                      -1.5909090909090935,
+                      -1.5909090909090935,
+                      -1.5909090909090935,
+                      -1.5909090909090935,
+                      -1.5909090909090935,
+                      -1.5909090909090935,
+                      -1.5909090909090935]))

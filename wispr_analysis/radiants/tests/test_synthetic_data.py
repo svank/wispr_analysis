@@ -1,6 +1,7 @@
 from .. import synthetic_data as sd
 
 
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -122,7 +123,8 @@ def test_synthesize_image():
     p4 = p2.copy()
     p4.t_max = -99999
     
-    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4], 1, fov=140)
+    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4], 1, fov=140,
+                                     parcel_width=1*u.m)
     
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1, projection=wcs)
