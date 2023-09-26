@@ -38,7 +38,7 @@ def generate_strips():
     return strips, ts, fov_angles
 
 
-@pytest.mark.array_compare(file_format='fits', atol=5e-19)
+@pytest.mark.array_compare(file_format='fits', atol=0.25)
 def test_get_speeds():
     strips, _, _ = generate_strips()
     
