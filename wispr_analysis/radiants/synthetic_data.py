@@ -552,9 +552,16 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     
     x = np.arange(output_image.shape[1])
     y = np.arange(output_image.shape[0])
-    x, y = np.meshgrid(x, y)
+    
+    do_interp = len(x) > 100 and len(y) > 100
+    if do_interp:
+        slice = np.s_[1::3]
+    else:
+        slice = np.s_[::1]
+    xx, yy = np.meshgrid(x[slice], y[slice])
+    xx_full, yy_full = np.meshgrid(x, y)
     # Compute the LOS direction of each pixel (as helioprojective coordinates)
-    los = image_wcs.pixel_to_world(x, y)
+    los = image_wcs.pixel_to_world(xx, yy)
     Tx, Ty = los.Tx, los.Ty
     obstime = date
     sc_coord = astropy.coordinates.SkyCoord(
@@ -570,8 +577,26 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     los = np.transpose(los, axes=(1,2,0))
     sc_pos = np.array([sc.x, sc.y, sc.z]).flatten()
     # Pre-compute x for closest-approach finding
-    x = los - sc_pos
-    x_over_xdotx = x / np.sum(x**2, axis=-1, keepdims=True)
+    x_old = los - sc_pos
+    x_over_xdotx = x_old / np.sum(x_old**2, axis=-1, keepdims=True)
+    
+    if do_interp:
+        x_new = np.empty((*yy_full.shape, 3))
+        x_new[..., 0] = scipy.interpolate.RegularGridInterpolator(
+            (y[slice], x[slice]), x_old[..., 0], method='linear',
+            bounds_error=False, fill_value=None)((yy_full, xx_full))
+        x_new[..., 1] = scipy.interpolate.RegularGridInterpolator(
+            (y[slice], x[slice]), x_old[..., 1], method='linear',
+            bounds_error=False, fill_value=None)((yy_full, xx_full))
+        x_new[..., 2] = scipy.interpolate.RegularGridInterpolator(
+            (y[slice], x[slice]), x_old[..., 2], method='linear',
+            bounds_error=False, fill_value=None)((yy_full, xx_full))
+        x_over_xdotx = scipy.interpolate.RegularGridInterpolator(
+            (y[slice], x[slice]), x_over_xdotx, method='linear',
+            bounds_error=False, fill_value=None)((yy_full, xx_full))
+        x = x_new
+    else:
+        x = x_old
     
     # Find the center of each parcel as a pixel position
     parcel_poses = np.empty((len(parcels), 3))
