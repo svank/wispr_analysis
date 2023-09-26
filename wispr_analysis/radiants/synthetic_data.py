@@ -6,6 +6,7 @@ import astropy.coordinates
 import astropy.time
 import astropy.units as u
 from astropy.wcs import WCS
+import numba
 import numpy as np
 import scipy
 import sunpy.coordinates
@@ -482,7 +483,7 @@ def hpc_to_elpa(Tx, Ty):
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
-        psychadelic=False, celestial_wcs=False, fixed_fov_range=None):
+        celestial_wcs=False, fixed_fov_range=None):
     """Produce a synthetic WISPR image
 
     Parameters
@@ -504,8 +505,6 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     image_wcs : ``WCS``, optional
         The WCS to use for the output image. If not provided, a WISPR-like WCS
         is generated
-    psychadelic : bool, optional
-        Whether to render each parcel in a unique color
     celestial_wcs : bool, optional
         Whether to convert the output WCS to RA/Dec
 
@@ -549,10 +548,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.cunit = "deg", "deg"
         image_wcs.array_shape = (output_size_y, output_size_x)
     
-    if psychadelic:
-        output_image = np.zeros((output_size_y, output_size_x, 3))
-    else:
-        output_image = np.zeros((output_size_y, output_size_x))
+    output_image = np.zeros((output_size_y, output_size_x))
     
     x = np.arange(output_image.shape[1])
     y = np.arange(output_image.shape[0])
@@ -576,63 +572,29 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     # Pre-compute x for closest-approach finding
     x = los - sc_pos
     x_over_xdotx = x / np.sum(x**2, axis=-1, keepdims=True)
-   
-    for parcel in parcels:
+    
+    # Find the center of each parcel as a pixel position
+    parcel_poses = np.empty((len(parcels), 3))
+    for i, parcel in enumerate(parcels):
         with parcel.at_temp(t0) as p:
-            parcel_pos = np.array([p.x, p.y, p.z]).flatten()
-            # Check if this time point is valid for this parcel
-            if np.isnan(parcel_pos[0]):
-                continue
-            
-            # Compute the closest-approach distance between each LOS segment
-            # and the parcel center, following
-            # https://stackoverflow.com/a/50728570.
-            # x is the projection of the parcel's position on the line between
-            # the s/c and a distant point, and t is the fractional position of
-            # the closest approach along that line segment.
-            t = np.dot(x_over_xdotx, parcel_pos - sc_pos)
-            
-            # Where the closest approach isn't along that segment (i.e. it's
-            # behind the s/c), flag it
-            t[t<0] = np.nan
-            t[t>1] = np.nan
-            
-            if np.all(np.isnan(t)):
-                continue
-
-            # Compute the actual coordinates of the closest-approach point
-            closest_approach = (t.reshape((*t.shape, 1)) * x + sc_pos)
-            # Compute how close the closest approach is to the parcel center
-            d_p = np.sqrt(
-                np.sum(np.square(closest_approach - parcel_pos), axis=-1))
-            # Truncate the gaussian
-            d_p[d_p > 2 * parcel_width] = np.nan
-            
-            if np.all(np.isnan(d_p)):
-                continue
-            
-            flux = np.exp(-d_p**2 / (parcel_width/6)**2 / 2)
-            rsun = u.R_sun.to(u.m)
-            # Scale for the Sun-parcel distance and the parcel-s/c distance
-            d_sc = np.linalg.norm(sc_pos - parcel_pos)
-            if d_sc < parcel_width:
-                # Ramp down the flux as the parcel gets really close to the
-                # s/c, to avoid flashiness, etc.
-                flux *= d_sc / parcel_width
-            # Note: don't scale for the s/c-parcel distance---a longer distance
-            # means 1/r^2 falloff in flux but an r^2 increase in plasma volume
-            # along the LOS 
-            flux *= 1 / (p.r/rsun)**2
-            
-            flux[np.isnan(flux)] = 0
-            
-            if psychadelic:
-                # Add a dimension and assign a random color to the parcel.
-                # Ensure the same color is chosen for each frame.
-                np.random.seed(id(p) % (2**32 - 1))
-                color = np.random.random(3)
-                flux = flux[:, :, None] * color[None, None, :]
-            output_image += flux
+            parcel_poses[i] = p.x[0], p.y[0], p.z[0]
+    p_coord = astropy.coordinates.SkyCoord(
+        parcel_poses[..., 0], parcel_poses[..., 1], parcel_poses[..., 2],
+        frame='heliocentricinertial', representation_type='cartesian',
+        unit='m', obstime=obstime, observer=sc_coord)
+    px, py = image_wcs.world_to_pixel(p_coord)
+    np.nan_to_num(px, copy=False)
+    np.nan_to_num(py, copy=False)
+    px = px.astype(int)
+    py = py.astype(int)
+    
+    for i in range(len(parcels)):
+        # Draw each parcel onto the output canvas
+        parcel_pos = parcel_poses[i]
+        r = np.linalg.norm(parcel_pos)
+        _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
+                               parcel_width, output_image,
+                               r, px[i], py[i])
     
     if celestial_wcs:
         image_wcs.wcs.ctype = f"RA---{projection}", f"DEC--{projection}"
@@ -665,6 +627,133 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.crpix = crpix[0] + add_left[0], crpix[1]
         
     return output_image, image_wcs
+
+
+@numba.njit(cache=True)
+def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
+                           output_image, p_r, start_x, start_y):
+    # Check if this time point is valid for this parcel
+    if np.isnan(parcel_pos[0]):
+        return
+    
+    d_sc2 = np.sum((parcel_pos - sc_pos)**2)
+    
+    # Clamp the starting point to the image bounds
+    start_x = max(0, start_x)
+    start_x = min(output_image.shape[1], start_x)
+    start_y = max(0, start_y)
+    start_y = min(output_image.shape[0], start_y)
+    
+    # Iterate down from the start point
+    for i in range(start_y, output_image.shape[0]):
+        n = 0
+        # Iterate right from the start point
+        for j in range(start_x, output_image.shape[1]):
+            if _synth_data_one_pixel(
+                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
+                    parcel_width, d_sc2, p_r, output_image):
+                # Flux was contributed
+                n += 1
+                continue
+            # Flux was not contributed---we've reached the right-hand edge of
+            # the parcel in this row
+            break
+        
+        # Iterate left from the start point
+        for j in range(start_x-1, -1, -1):
+            if _synth_data_one_pixel(
+                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
+                    parcel_width, d_sc2, p_r, output_image):
+                # Flux was contributed
+                n += 1
+                continue
+            # Flux was not contributed---we've reached the left-hand edge of
+            # the parcel in this row
+            break
+        if n == 0:
+            # No flux was contributed in this row---we're at the bottom edge of
+            # this parcel.
+            break
+    
+    # Iterate up from the start point
+    for i in range(start_y-1, -1, -1):
+        n = 0
+        # Iterate right from the start point
+        for j in range(start_x, output_image.shape[1]):
+            if _synth_data_one_pixel(
+                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
+                    parcel_width, d_sc2, p_r, output_image):
+                # Flux was contributed
+                n += 1
+                continue
+            # Flux was not contributed---we've reached the right-hand edge of
+            # the parcel in this row
+            break
+        
+        for j in range(start_x-1, -1, -1):
+            if _synth_data_one_pixel(
+                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
+                    parcel_width, d_sc2, p_r, output_image):
+                # Flux was contributed
+                n += 1
+                continue
+            # Flux was not contributed---we've reached the left-hand edge of
+            # the parcel in this row
+            break
+        if n == 0:
+            # No flux was contributed in this row---we're at the top edge of
+            # this parcel.
+            break
+            
+            
+@numba.njit(cache=True)
+def _synth_data_one_pixel(i, j, x, x_over_xdotx, parcel_pos, sc_pos,
+                                 parcel_width, d_sc2, p_r, output_image):
+    # Compute the closest-approach distance between each LOS segment
+    # and the parcel center, following
+    # https://stackoverflow.com/a/50728570. x is the projection of the
+    # parcel's position on the line between the s/c and a distant
+    # point, and t is the fractional position of the closest approach
+    # along that line segment.
+    t = (x_over_xdotx[i, j, 0] * (parcel_pos[0] - sc_pos[0])
+        + x_over_xdotx[i, j, 1] * (parcel_pos[1] - sc_pos[1])
+        + x_over_xdotx[i, j, 2] * (parcel_pos[2] - sc_pos[2]))
+    
+    # Where the closest approach isn't along that segment (i.e. it's
+    # behind the s/c), flag it
+    if t < 0 or t > 1:
+        return False
+    
+    # Compute the actual coordinates of the closest-approach point
+    # This is how we would do it, but let's not save intermediary values
+    # closest_approach = t * x[i, j] + sc_pos
+    
+    # Compute how close the closest approach is to the parcel center
+    d_p = np.sqrt(
+              (t * x[i, j, 0] + sc_pos[0] - parcel_pos[0])**2
+            + (t * x[i, j, 1] + sc_pos[1] - parcel_pos[1])**2
+            + (t * x[i, j, 2] + sc_pos[2] - parcel_pos[2])**2
+            )
+    
+    # Truncate the gaussian
+    if d_p > parcel_width:
+        return False
+    
+    flux = np.exp(-d_p**2 / (parcel_width/6)**2 / 2)
+    # Scale for the Sun-parcel distance and the parcel-s/c distance
+    if d_sc2 < parcel_width**2:
+        # Ramp down the flux as the parcel gets really close to the
+        # s/c, to avoid flashiness, etc.
+        flux *= np.sqrt(d_sc2) / parcel_width
+    # Note: don't scale for the s/c-parcel distance---a longer distance
+    # means 1/r^2 falloff in flux but an r^2 increase in plasma volume
+    # along the LOS 
+    rsun = 695700000.0 # m
+    flux *= 1 / (p_r / rsun)**2
+    
+    output_image[i, j] += flux
+    
+    return True
 
 
 def calculate_radiant(sc, parcel, t0=0):
