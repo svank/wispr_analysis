@@ -482,7 +482,8 @@ class BaseJmap:
     def plot(self,
              bundle: "InputDataBundle"=None,
              ax=None, label_vr=False, vmin=None, vmax=None,
-             pmin=5, pmax=95, gamma=1/2.2, interactive=False):
+             pmin=5, pmax=95, gamma=1/2.2, interactive=False,
+             cmap=None):
         min, max = np.nanpercentile(self.slices, [pmin, pmax])
         if vmin is None:
             vmin = min
@@ -510,7 +511,10 @@ class BaseJmap:
             image = image[:, :-1]
             angles = angles[:-1]
         
-        cmap = copy.deepcopy(plot_utils.wispr_cmap)
+        if cmap is None:
+            cmap = copy.deepcopy(plot_utils.wispr_cmap)
+        else:
+            cmap = copy.deepcopy(plt.get_cmap(cmap))
         cmap.set_bad("#4d4540")
         image = image.T
         dates = plot_utils.x_axis_dates(self.times, ax=ax)
