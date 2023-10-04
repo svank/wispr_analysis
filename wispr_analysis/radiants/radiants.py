@@ -1,8 +1,13 @@
+from astropy.coordinates import angular_separation, SkyCoord
+from astropy.io import fits
+import astropy.units as u
 import numpy as np
 import scipy.ndimage
 import scipy.signal
+from sunpy.coordinates import NorthOffsetFrame, HeliocentricInertial
 
-from .. import utils
+from .. import planets, utils
+from . import synthetic_data as sd
 
 
 def get_speeds(strips, spatial_axis=None, temporal_axis=None, dx=None,
@@ -150,3 +155,60 @@ def find_radiant(strips, t, fov_angles, window_size=41, v_halfwindow=1,
                 all_stat_energy=all_stat_energy)
         return computed_radiants, computed_radiants_ts, extras
     return computed_radiants, computed_radiants_ts
+
+
+def calc_fixed_angle_radiant(inputs, plasma_v, as_elongation=False):
+    ready_inputs = []
+    for input in inputs:
+        if isinstance(input, str):
+            with utils.ignore_fits_warnings():
+                hdr = fits.getheader(input)
+                x, y, z = hdr['hcix_obs'], hdr['hciy_obs'], hdr['hciz_obs']
+                vx, vy, vz = hdr['hcix_vob'], hdr['hciy_vob'], hdr['hciz_vob']
+                ready_inputs.append((x, y, z, vx, vy, vz))
+        else:
+            ready_inputs.append(input)
+    
+    orbital_plane = planets.get_orbital_plane('psp', '2020-01-01 12:12:12')
+    orbital_north = orbital_plane.data[0].cross(orbital_plane.data[20])
+    orbital_north = SkyCoord(orbital_north,
+                             representation_type='cartesian',
+                             frame=HeliocentricInertial)
+    orbital_frame = NorthOffsetFrame(north=orbital_north)
+
+    if not isinstance(plasma_v, u.Quantity):
+        plasma_v *= u.m / u.s
+    angles = []
+    for x, y, z, vx, vy, vz in ready_inputs:
+        sc_coord = SkyCoord(
+            x=x*u.m, y=y*u.m, z=z*u.m,
+            v_x=vx*u.m/u.s, v_y=vy*u.m/u.s, v_z=vz*u.m/u.s,
+            representation_type='cartesian',
+            frame='heliocentricinertial').transform_to(orbital_frame).cartesian
+        sc = sd.LinearThing(
+            x=sc_coord.x,
+            y=sc_coord.y,
+            z=sc_coord.z,
+            vx=sc_coord.differentials['s'].d_x,
+            vy=sc_coord.differentials['s'].d_y,
+            vz=sc_coord.differentials['s'].d_z,
+            t=0*u.s)
+        vx = plasma_v * sc.x / sc.r
+        vy = plasma_v * sc.y / sc.r
+        vz = plasma_v * sc.z / sc.r
+        p = sd.LinearThing(
+            x=sc.x, y=sc.y, z=sc.z, vx=vx, vy=vy, vz=vz, t=0*u.s)
+        sc.set_t(-1*u.hr)
+        p.set_t(-1*u.hr)
+        diff = p - sc
+        angle = np.arctan2(diff.y, diff.x)
+        if as_elongation:
+            sc.set_t(0*u.s)
+            angle = angular_separation(angle, 0, np.arctan2(-sc.y, -sc.x), 0)
+            angle = angle.to(u.deg).value
+        else:
+            # Negative to achieve a value that increases in the same direction as
+            # elongation.
+            angle = -angle.to(u.deg).value
+        angles.append(angle)
+    return np.array(angles)
