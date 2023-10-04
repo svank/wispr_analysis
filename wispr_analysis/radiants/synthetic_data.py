@@ -483,7 +483,7 @@ def hpc_to_elpa(Tx, Ty):
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
-        celestial_wcs=False, fixed_fov_range=None):
+        celestial_wcs=False, fixed_fov_range=None, output_quantity='flux'):
     """Produce a synthetic WISPR image
 
     Parameters
@@ -507,6 +507,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         is generated
     celestial_wcs : bool, optional
         Whether to convert the output WCS to RA/Dec
+    output_quantity : str
+        The quantity to show in the output image. Allowed values are 'flux' and 'distance'.
 
     Returns
     -------
@@ -515,6 +517,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     image_wcs : ``WCS``
         The corresponding WCS
     """
+    output_quantity = output_quantity.lower()
     sc = sc.at(t0)
     date = astropy.time.Time(t0, format='unix').fits
     if isinstance(parcel_width, u.Quantity):
@@ -548,7 +551,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.cunit = "deg", "deg"
         image_wcs.array_shape = (output_size_y, output_size_x)
     
-    output_image = np.zeros((output_size_y, output_size_x))
+    if output_quantity == 'flux':
+        output_image = np.zeros((output_size_y, output_size_x))
+    elif output_quantity == 'distance':
+        output_image = np.full((output_size_y, output_size_x), np.inf)
     
     x = np.arange(output_image.shape[1])
     y = np.arange(output_image.shape[0])
@@ -613,13 +619,24 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     px = px.astype(int)
     py = py.astype(int)
     
+    try:
+        output_quantity_flag = {
+            'flux': 1,
+            'distance': 2}[output_quantity]
+    except KeyError:
+        raise ValueError(
+            f"Invalid value {output_quantity} for output_quantity")
+    
     for i in range(len(parcels)):
         # Draw each parcel onto the output canvas
         parcel_pos = parcel_poses[i]
         r = np.linalg.norm(parcel_pos)
         _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
                                parcel_width, output_image,
-                               r, px[i], py[i])
+                               r, px[i], py[i], output_quantity_flag)
+    
+    if output_quantity == 'distance':
+        output_image[np.isinf(output_image)] = np.nan
     
     if celestial_wcs:
         image_wcs.wcs.ctype = f"RA---{projection}", f"DEC--{projection}"
@@ -656,12 +673,13 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
 
 @numba.njit(cache=True)
 def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
-                           output_image, p_r, start_x, start_y):
+                           output_image, p_r, start_x, start_y,
+                           output_quantity_flag=1):
     # Check if this time point is valid for this parcel
     if np.isnan(parcel_pos[0]):
         return
     
-    d_sc2 = np.sum((parcel_pos - sc_pos)**2)
+    d_sc = np.sqrt(np.sum((parcel_pos - sc_pos)**2))
     
     # Clamp the starting point to the image bounds
     start_x = max(0, start_x)
@@ -676,7 +694,8 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc2, p_r, output_image):
+                    parcel_width, d_sc, p_r, output_image,
+                    output_quantity_flag):
                 # Flux was contributed
                 n += 1
                 continue
@@ -688,7 +707,8 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc2, p_r, output_image):
+                    parcel_width, d_sc, p_r, output_image,
+                    output_quantity_flag):
                 # Flux was contributed
                 n += 1
                 continue
@@ -707,7 +727,8 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc2, p_r, output_image):
+                    parcel_width, d_sc, p_r, output_image,
+                    output_quantity_flag):
                 # Flux was contributed
                 n += 1
                 continue
@@ -718,7 +739,8 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc2, p_r, output_image):
+                    parcel_width, d_sc, p_r, output_image,
+                    output_quantity_flag):
                 # Flux was contributed
                 n += 1
                 continue
@@ -733,7 +755,8 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
             
 @numba.njit(cache=True)
 def _synth_data_one_pixel(i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                                 parcel_width, d_sc2, p_r, output_image):
+                          parcel_width, d_sc, p_r, output_image,
+                          output_quantity_flag=1):
     # Compute the closest-approach distance between each LOS segment
     # and the parcel center, following
     # https://stackoverflow.com/a/50728570. x is the projection of the
@@ -764,19 +787,22 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, parcel_pos, sc_pos,
     if d_p > parcel_width:
         return False
     
-    flux = np.exp(-d_p**2 / (parcel_width/6)**2 / 2)
-    # Scale for the Sun-parcel distance and the parcel-s/c distance
-    if d_sc2 < parcel_width**2:
-        # Ramp down the flux as the parcel gets really close to the
-        # s/c, to avoid flashiness, etc.
-        flux *= np.sqrt(d_sc2) / parcel_width
-    # Note: don't scale for the s/c-parcel distance---a longer distance
-    # means 1/r^2 falloff in flux but an r^2 increase in plasma volume
-    # along the LOS 
-    rsun = 695700000.0 # m
-    flux *= 1 / (p_r / rsun)**2
-    
-    output_image[i, j] += flux
+    if output_quantity_flag == 1:
+        flux = np.exp(-d_p**2 / (parcel_width/6)**2 / 2)
+        # Scale for the Sun-parcel distance and the parcel-s/c distance
+        if d_sc < parcel_width:
+            # Ramp down the flux as the parcel gets really close to the
+            # s/c, to avoid flashiness, etc.
+            flux *= d_sc / parcel_width
+        # Note: don't scale for the s/c-parcel distance---a longer distance
+        # means 1/r^2 falloff in flux but an r^2 increase in plasma volume
+        # along the LOS 
+        rsun = 695700000.0 # m
+        flux *= 1 / (p_r / rsun)**2
+        
+        output_image[i, j] += flux
+    elif output_quantity_flag == 2:
+        output_image[i, j] = min(output_image[i, j], d_sc)
     
     return True
 
