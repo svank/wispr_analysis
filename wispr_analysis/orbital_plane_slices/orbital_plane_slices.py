@@ -30,6 +30,7 @@ def _extract_slice(image, wcs, n, is_inner):
                                   roundtrip_coords=False,
                                   kernel_width=2.5,
                                   sample_region_width=8,
+                                  bad_value_mode='ignore',
                                   )
     slice = slice[0]
     # Turn infs into nans
