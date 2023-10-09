@@ -83,6 +83,7 @@ def extract_slices(
         venus_angles=venus_angles,
         hpcs=hpcs,
         is_inner=bundle.is_inner,
+        quantity=bundle.quantity,
     )
 
 
@@ -206,7 +207,8 @@ def load_files(files):
                            wcses=wcses,
                            times=times,
                            level=header['level'],
-                           is_inner=is_inner)
+                           is_inner=is_inner,
+                           quantity='flux')
 
 
 @dataclasses.dataclass
@@ -216,6 +218,7 @@ class InputDataBundle:
     times: np.ndarray
     is_inner: bool
     level: str
+    quantity: str
 
 
 @dataclasses.dataclass
@@ -227,6 +230,7 @@ class BaseJmap:
     venus_elongations: np.ndarray
     venus_angles: np.ndarray
     is_inner: bool
+    quantity: str
     title_stub: str = 'Orbital-plane slices'
 
     _title: list[str] = None
@@ -483,11 +487,15 @@ class BaseJmap:
     def plot(self,
              bundle: "InputDataBundle"=None,
              ax=None, label_vr=False, vmin=None, vmax=None,
-             pmin=5, pmax=95, gamma=1/2.2, interactive=False,
+             pmin=5, pmax=95, gamma=None, interactive=False,
              cmap=None):
         min, max = np.nanpercentile(self.slices, [pmin, pmax])
         if vmin is None:
-            vmin = min
+            if self.quantity == 'distance':
+                # Sensible, also workaround mpl bug #25239
+                vmin = 0
+            else:
+                vmin = min
         if vmax is None:
             vmax = max
 
@@ -513,10 +521,23 @@ class BaseJmap:
             angles = angles[:-1]
         
         if cmap is None:
-            cmap = copy.deepcopy(plot_utils.wispr_cmap)
+            if self.quantity == 'flux':
+                cmap = copy.deepcopy(plot_utils.wispr_cmap)
+            elif self.quantity == 'distance':
+                cmap = copy.deepcopy(plt.get_cmap('viridis_r'))
+            else:
+                raise ValueError("Invalid quantity")
         else:
             cmap = copy.deepcopy(plt.get_cmap(cmap))
         cmap.set_bad("#4d4540")
+        if gamma is None:
+            if self.quantity == 'flux':
+                gamma = 1/2.2
+            elif self.quantity == 'distance':
+                gamma = 1
+            else:
+                raise ValueError("Invalid quantity")
+        
         image = image.T
         dates = plot_utils.x_axis_dates(self.times, ax=ax)
         x = dates
@@ -692,7 +713,9 @@ class PlainJMap(BaseJmap):
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
             venus_angles=copy.deepcopy(self.venus_angles),
-            is_inner=self.is_inner)
+            is_inner=self.is_inner,
+            quantity=self.quantity,
+            )
         outmap.venus_angles[outmap.venus_angles < angle_start] += 360
         outmap.venus_angles[outmap.venus_angles > angle_stop] -= 360
         outmap._title = copy.deepcopy(self._title)
@@ -759,6 +782,7 @@ class DerotatedJMap(BaseJmap):
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
             venus_angles=copy.deepcopy(self.venus_angles),
+            quantity=self.quantity,
             )
         outmap._subtitles.append(self._title)
         outmap._subtitles.append(other._title)
