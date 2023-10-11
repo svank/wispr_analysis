@@ -22,6 +22,9 @@ from tqdm.contrib.concurrent import process_map
 from .. import planets, plot_utils, utils
 
 
+FIXED_ANGLE_TARGET_RANGE = (80, 460)
+
+
 def _extract_slice(image, wcs, n, is_inner):
     output_wcs = OrbitalSliceWCS(wcs, n, is_inner)
     slice = reproject.reproject_adaptive((image, wcs), output_wcs, (1, n),
@@ -41,8 +44,7 @@ def _extract_slice(image, wcs, n, is_inner):
             output_wcs.last_venus_elongation, output_wcs.last_venus_angle)
 
 
-def extract_slices(
-        bundle: "InputDataBundle", n, title="Orbital plane slices"):
+def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices"):
     slices = []
     fixed_angles = []
     venus_elongations = []
@@ -162,6 +164,9 @@ class OrbitalSliceWCS(utils.FakeWCS):
         # Negative here just to choose a frame where the fixed-frame angle
         # increases in the same direction as elongation
         self.last_fixed_angles = -angles.to(u.deg).value
+        self.last_fixed_angles %= 360
+        self.last_fixed_angles[
+            self.last_fixed_angles < FIXED_ANGLE_TARGET_RANGE[0]] += 360
 
         x, y = self.input_wcs.world_to_pixel(points)
 
@@ -225,6 +230,7 @@ class InputDataBundle:
 class BaseJmap:
     slices: np.ndarray
     angles: np.ndarray
+    fixed_angles: np.ndarray
     times: np.ndarray
     transformer: OrbitalSliceWCS
     venus_elongations: np.ndarray
@@ -365,6 +371,15 @@ class BaseJmap:
         self.slices = reproject.reproject_adaptive(
             (self.slices, wcs),
             wcs, (len(new_t), self.slices.shape[-1]),
+            boundary_mode='ignore',
+            bad_value_mode='ignore',
+            center_jacobian=False,
+            roundtrip_coords=False,
+            return_footprint=False)
+        
+        self.fixed_angles = reproject.reproject_adaptive(
+            (self.fixed_angles, wcs),
+            wcs, (len(new_t), self.fixed_angles.shape[-1]),
             boundary_mode='ignore',
             bad_value_mode='ignore',
             center_jacobian=False,
@@ -656,49 +671,75 @@ class ResampleTimeWCS(utils.FakeWCS):
         return world_arrays
 
 
-class DerotateWCS(utils.FakeWCS):
-    def __init__(self, fixed_angles, angle_start, angle_stop, n):
+class DerotatedFixedAngleWCS(utils.FakeWCS):
+    def __init__(self, angle_start, angle_stop, n):
         super().__init__(None)
-        self.fixed_angles = fixed_angles
         self.angle_start = angle_start
         self.angle_stop = angle_stop
         self.n = n
         
     def pixel_to_world_values(self, *pixel_arrays):
+        # Convert derotated-Jmap pixel coordinates to fixed-angle coordinates,
+        # which is easy and linear
         out_angles = (
             pixel_arrays[0] * (self.angle_stop - self.angle_start)
             / (self.n-1) + self.angle_start)
-        fa = self.fixed_angles % 360
-        fa[fa < self.angle_start] += 360
-        px_in = np.interp(
-            out_angles,
-            fa,
-            np.arange(len(self.fixed_angles)),
-            left=np.nan, right=np.nan)
-        return px_in, pixel_arrays[1].copy()
+        return out_angles, pixel_arrays[1].copy()
     
     def world_to_pixel_values(self, *world_arrays):
-        return world_arrays
+        # Convert fixed-angle coordinates to derotated-Jmap pixel coordinates,
+        # which is easy and linear
+        out_pixels = ((world_arrays[0] - self.angle_start)
+                      * (self.n-1) / (self.angle_stop - self.angle_start))
+        return out_pixels, world_arrays[1].copy()
+    
+
+class RotatedFixedAngleWCS(utils.FakeWCS):
+    def __init__(self, fixed_angles, angle_start):
+        super().__init__(None)
+        self.fixed_angles = fixed_angles
+        self.angle_start = angle_start
+        
+    def pixel_to_world_values(self, *pixel_arrays):
+        # Convert rotated-Jmap pixel coordinates to fixed-angle
+        # coordinates---we know what the FA value is for each pixel center, so
+        # we just interpolate our target pixel coordinates against that.
+        out = np.interp(
+            pixel_arrays[0],
+            np.arange(len(self.fixed_angles)),
+            self.fixed_angles,
+            left=np.nan, right=np.nan)
+        return out, pixel_arrays[1].copy()
+    
+    def world_to_pixel_values(self, *world_arrays):
+        # Convert fixed-angle coordinates to rotated-Jmap pixel
+        # coordinates---we know what the FA value is for each pixel center, so
+        # we just interpolate our target FA coordinates against that.
+        out = np.interp(
+            world_arrays[0],
+            self.fixed_angles,
+            np.arange(len(self.fixed_angles)),
+            left=np.nan, right=np.nan)
+        return out, world_arrays[1].copy()
 
 
 class PlainJMap(BaseJmap):
     xlabel = "Elongation"
 
-    def __init__(self, *, fixed_angles, hpcs, **kwargs):
+    def __init__(self, *, hpcs, **kwargs):
         super().__init__(**kwargs)
-        self.fixed_angles = fixed_angles
         self.hpcs = hpcs
 
     def derotate(self, n) -> "DerotatedJMap":
-        angle_start = 80
-        angle_stop = 460
+        angle_start, angle_stop = FIXED_ANGLE_TARGET_RANGE
         output = np.empty((self.slices.shape[0], n))
+        derotated_wcs = DerotatedFixedAngleWCS(angle_start, angle_stop, n)
         for i, (slice, fixed_angles) in enumerate(
                 zip(self.slices, self.fixed_angles)):
-            wcs = DerotateWCS(fixed_angles, angle_start, angle_stop, n)
+            rotated_wcs = RotatedFixedAngleWCS(fixed_angles, angle_start)
             output[i] = reproject.reproject_adaptive(
-                (slice.reshape((1, slice.size)), wcs),
-                wcs, (1, n),
+                (slice.reshape((1, slice.size)), rotated_wcs),
+                derotated_wcs, (1, n),
                 boundary_mode='ignore',
                 bad_value_mode='ignore',
                 center_jacobian=False,
@@ -707,6 +748,7 @@ class PlainJMap(BaseJmap):
         outmap = DerotatedJMap(
             slices=output,
             angles=np.linspace(angle_start, angle_stop, n),
+            fixed_angles=self.fixed_angles.copy(),
             source_jmap=self,
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
@@ -716,8 +758,6 @@ class PlainJMap(BaseJmap):
             is_inner=self.is_inner,
             quantity=self.quantity,
             )
-        outmap.venus_angles[outmap.venus_angles < angle_start] += 360
-        outmap.venus_angles[outmap.venus_angles > angle_stop] -= 360
         outmap._title = copy.deepcopy(self._title)
         outmap._title.append("derotated")
         outmap._subtitles = copy.deepcopy(self._subtitles)
@@ -777,6 +817,7 @@ class DerotatedJMap(BaseJmap):
             slices=slices,
             source_jmaps=source_jmaps,
             angles=copy.deepcopy(self.angles),
+            fixed_angles=self.fixed_angles.copy(),
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
             title_stub=self.title_stub,
@@ -787,6 +828,42 @@ class DerotatedJMap(BaseJmap):
         outmap._subtitles.append(self._title)
         outmap._subtitles.append(other._title)
         outmap._title = ['Merged']
+        return outmap
+    
+    def rotate(self) -> "PlainJMap":
+        angle_start = self.angles[0]
+        angle_stop = self.angles[-1]
+        n = len(self.angles)
+        output = np.empty(
+            (self.slices.shape[0], self.source_jmap.slices.shape[1]))
+        derotated_wcs = DerotatedFixedAngleWCS(angle_start, angle_stop, n)
+        for i, (slice, fixed_angles) in enumerate(
+                zip(self.slices, self.fixed_angles)):
+            rotated_wcs = RotatedFixedAngleWCS(fixed_angles, angle_start)
+            output[i] = reproject.reproject_adaptive(
+                (slice.reshape((1, slice.size)), derotated_wcs),
+                rotated_wcs, (1, len(fixed_angles)),
+                boundary_mode='ignore',
+                bad_value_mode='ignore',
+                center_jacobian=False,
+                return_footprint=False,
+                roundtrip_coords=False)
+        outmap = PlainJMap(
+            slices=output,
+            angles=self.source_jmap.angles,
+            fixed_angles=self.fixed_angles.copy(),
+            times=copy.deepcopy(self.times),
+            transformer=copy.deepcopy(self.transformer),
+            title_stub=self.title_stub,
+            venus_elongations=copy.deepcopy(self.venus_elongations),
+            venus_angles=copy.deepcopy(self.venus_angles),
+            is_inner=self.is_inner,
+            quantity=self.quantity,
+            hpcs=None,
+            )
+        outmap._title = copy.deepcopy(self._title)
+        outmap._title.append("Re-rotated")
+        outmap._subtitles = copy.deepcopy(self._subtitles)
         return outmap
 
 

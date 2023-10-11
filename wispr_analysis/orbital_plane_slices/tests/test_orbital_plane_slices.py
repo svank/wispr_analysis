@@ -318,3 +318,48 @@ def test_jmap_derotate(jmap):
     np.testing.assert_array_equal(
         derotated.venus_angles, jmap.venus_angles)
     return derotated.slices
+
+
+@pytest.mark.array_compare
+def test_jmap_rerotate(jmap):
+    derotated = jmap.derotate(101)
+    re_rotated = derotated.rotate()
+    assert derotated is not re_rotated
+    assert derotated is not jmap
+    assert "derotated" in re_rotated.title
+    assert "Re-rotated" in re_rotated.title
+    assert jmap.title in re_rotated.title
+    assert derotated.title in re_rotated.title
+    np.testing.assert_array_equal(
+        re_rotated.times, jmap.times)
+    np.testing.assert_array_equal(
+        re_rotated.venus_elongations, jmap.venus_elongations)
+    np.testing.assert_array_equal(
+        re_rotated.venus_angles, jmap.venus_angles)
+    np.testing.assert_array_equal(
+        re_rotated.angles, jmap.angles)
+    return re_rotated.slices
+
+
+def test_DerotatedFixedAngleWCS_roundtrip():
+    wcs = ops.DerotatedFixedAngleWCS(100, 238, 127)
+    input_pixels = np.arange(-2, 130)
+    world = wcs.pixel_to_world_values(input_pixels, np.ones_like(input_pixels))
+    output_pixels, _ = wcs.world_to_pixel_values(*world)
+    np.testing.assert_allclose(input_pixels, output_pixels, equal_nan=True)
+
+
+def test_RotatedFixedAngleWCS_roundtrip():
+    x = np.linspace(0, 1, 121)
+    # Make something non-linear
+    fixed_angles = 85 + x * 50 + 0.1 * x**2
+    wcs = ops.RotatedFixedAngleWCS(fixed_angles, 80)
+    input_pixels = np.arange(-2, 130)
+    world = wcs.pixel_to_world_values(input_pixels, np.ones_like(input_pixels))
+    output_pixels, _ = wcs.world_to_pixel_values(*world)
+    
+    # Prep comparison to handle the out-of-bounds pixels that come out as nan
+    input_pixels = input_pixels.astype(float)
+    input_pixels[input_pixels < 0] = np.nan
+    input_pixels[input_pixels >= len(x)] = np.nan
+    np.testing.assert_allclose(input_pixels, output_pixels, equal_nan=True)
