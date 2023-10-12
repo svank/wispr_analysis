@@ -86,6 +86,7 @@ def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices"):
         hpcs=hpcs,
         is_inner=bundle.is_inner,
         quantity=bundle.quantity,
+        encounter=bundle.encounter,
     )
 
 
@@ -206,14 +207,16 @@ def load_files(files):
                 wcses.append(WCS(header, hdul))
     
     times = np.array(utils.to_timestamp(files, read_headers=True))
-
+    
+    E = utils.extract_encounter_number(files[0], as_int=True)
     is_inner = header['detector'] == 1
     return InputDataBundle(images=images,
                            wcses=wcses,
                            times=times,
                            level=header['level'],
                            is_inner=is_inner,
-                           quantity='flux')
+                           quantity='flux',
+                           encounter=E)
 
 
 @dataclasses.dataclass
@@ -224,6 +227,7 @@ class InputDataBundle:
     is_inner: bool
     level: str
     quantity: str
+    encounter: int
 
 
 @dataclasses.dataclass
@@ -237,6 +241,7 @@ class BaseJmap:
     venus_angles: np.ndarray
     is_inner: bool
     quantity: str
+    encounter: int
     title_stub: str = 'Orbital-plane slices'
 
     _title: list[str] = None
@@ -503,7 +508,7 @@ class BaseJmap:
              bundle: "InputDataBundle"=None,
              ax=None, label_vr=False, vmin=None, vmax=None,
              pmin=5, pmax=95, gamma=None, interactive=False,
-             cmap=None):
+             cmap=None, rel_dates=False, show_full_array=False):
         min, max = np.nanpercentile(self.slices, [pmin, pmax])
         if vmin is None:
             if self.quantity == 'distance':
@@ -525,15 +530,16 @@ class BaseJmap:
         elif ax is None:
             ax = plt.gca()
         
-        # Trim all-nan angular positions
         angles = self.angles
         image = self.slices
-        while np.all(np.isnan(image[:, 0])):
-            image = image[:, 1:]
-            angles = angles[1:]
-        while np.all(np.isnan(image[:, -1])):
-            image = image[:, :-1]
-            angles = angles[:-1]
+        if not show_full_array:
+            # Trim all-nan angular positions
+            while np.all(np.isnan(image[:, 0])):
+                image = image[:, 1:]
+                angles = angles[1:]
+            while np.all(np.isnan(image[:, -1])):
+                image = image[:, :-1]
+                angles = angles[:-1]
         
         if cmap is None:
             if self.quantity == 'flux':
@@ -554,10 +560,17 @@ class BaseJmap:
                 raise ValueError("Invalid quantity")
         
         image = image.T
-        dates = plot_utils.x_axis_dates(self.times, ax=ax)
-        x = dates
+        if rel_dates:
+            perihelion = planets.perihelia[self.encounter]
+            perihelion = utils.to_timestamp(perihelion.replace(' ', 'T'))
+            x = self.times - perihelion
+            x /= 3600 * 24
+            ax.set_xlabel("Days after perihelion")
+        else:
+            dates = plot_utils.x_axis_dates(self.times, ax=ax)
+            x = dates
         y = angles
-        ax.set_ylabel(self.xlabel)
+        ax.set_ylabel(self.ylabel)
         ax.yaxis.set_major_formatter(
             matplotlib.ticker.StrMethodFormatter("{x:.0f}°"))
         im = ax.pcolormesh(x, y, image,
@@ -589,6 +602,9 @@ class BaseJmap:
             ax2.set_xlabel("S/C radial velocity (km/s)")
         
         if interactive:
+            if rel_dates:
+                raise ValueError(
+                    "Interactive mode does not support relative dates")
             if isinstance(bundle, InputDataBundle):
                 b = bundle
             else:
@@ -724,7 +740,7 @@ class RotatedFixedAngleWCS(utils.FakeWCS):
 
 
 class PlainJMap(BaseJmap):
-    xlabel = "Elongation"
+    ylabel = "Elongation"
 
     def __init__(self, *, hpcs, **kwargs):
         super().__init__(**kwargs)
@@ -757,6 +773,7 @@ class PlainJMap(BaseJmap):
             venus_angles=copy.deepcopy(self.venus_angles),
             is_inner=self.is_inner,
             quantity=self.quantity,
+            encounter=self.encounter,
             )
         outmap._title = copy.deepcopy(self._title)
         outmap._title.append("derotated")
@@ -787,7 +804,7 @@ class PlainJMap(BaseJmap):
 
 
 class DerotatedJMap(BaseJmap):
-    xlabel = "Fixed-frame angular position"
+    ylabel = "Fixed-frame angular position"
     
     def __init__(self, *, source_jmap: "PlainJMap", **kwargs):
         super().__init__(**kwargs)
@@ -824,6 +841,7 @@ class DerotatedJMap(BaseJmap):
             venus_elongations=copy.deepcopy(self.venus_elongations),
             venus_angles=copy.deepcopy(self.venus_angles),
             quantity=self.quantity,
+            encounter=self.encounter,
             )
         outmap._subtitles.append(self._title)
         outmap._subtitles.append(other._title)
@@ -860,6 +878,7 @@ class DerotatedJMap(BaseJmap):
             is_inner=self.is_inner,
             quantity=self.quantity,
             hpcs=None,
+            encounter=self.encounter,
             )
         outmap._title = copy.deepcopy(self._title)
         outmap._title.append("Re-rotated")

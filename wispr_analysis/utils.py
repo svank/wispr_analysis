@@ -60,8 +60,12 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
         dt = datetime.strptime(
                 datestring, "%Y%m%dT%H%M%S")
     except ValueError:
-        dt = datetime.strptime(
-                datestring, "%Y-%m-%dT%H:%M:%S.%f")
+        try:
+            dt = datetime.strptime(
+                    datestring, "%Y-%m-%dT%H:%M:%S.%f")
+        except ValueError:
+            dt = datetime.strptime(
+                    datestring, "%Y-%m-%dT%H:%M:%S")
     dt = dt.replace(tzinfo=timezone.utc)
     if as_datetime:
         return dt
