@@ -14,6 +14,33 @@ planets = [
         'Jupiter', 'Saturn', 'Uranus', 'Neptune']
 
 
+perihelia = {
+    1: '2018-11-06 03:27:00',
+    2: '2019-04-04 22:39:00',
+    3: '2019-09-01 17:50:00',
+    4: '2020-01-29 09:37:00',
+    5: '2020-06-07 08:23:00',
+    6: '2020-09-27 09:16:00',
+    7: '2021-01-17 17:40:00',
+    8: '2021-04-29 08:48:00',
+    9: '2021-08-09 19:11:00',
+    10: '2021-11-21 08:23:00',
+    11: '2022-02-25 15:38:00',
+    12: '2022-06-01 22:51:00',
+    13: '2022-09-06 06:04:00',
+    14: '2022-12-11 13:16:00',
+    15: '2023-03-17 20:30:00',
+    16: '2023-06-22 03:46:00',
+    17: '2023-09-27 23:28:00',
+    18: '2023-12-29 00:54:00',
+    19: '2024-03-30 02:20:00',
+    20: '2024-06-30 03:46:00',
+    21: '2024-09-30 05:13:00',
+    22: '2024-12-24 11:41:00',
+    23: '2025-03-22 22:25:00',
+    24: '2025-06-19 09:09:00'}
+
+
 def load_kernels(kernel_dir='spice_kernels', force=False):
     """
     Recursively scans a directory and loading each file as a SPICE kernel.
@@ -93,7 +120,7 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
     
     if sc_pos is None:
         spacecraft_id = '-96'
-        state, ltime = spice.spkezr(spacecraft_id, et, 'HCI', 'None', 'Sun')
+        state, _ = spice.spkezr(spacecraft_id, et, 'HCI', 'None', 'Sun')
         sc_pos = state[:3]
     
     planet_poses = []
@@ -102,7 +129,7 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
             continue
         if planet not in ("Mercury", "Venus", "Earth"):
             planet = planet + " Barycenter"
-        state, ltime = spice.spkezr(planet, et, 'HCI', 'None', 'Sun')
+        state, _ = spice.spkezr(planet, et, 'HCI', 'None', 'Sun')
         planet_poses.append(_to_hp(state[:3], sc_pos, date))
     return planet_poses
 
@@ -136,8 +163,10 @@ def format_date(date):
     ----------
     date : ``str`` or FITS header or ``float``
         The date of the observation. If a FITS header, DATE-AVG is extracted
-        and used. If a string, passed through unaltered. If a number,
-        interpreted as a UTC timestamp.
+        and used. If a string, passed through unaltered, unless the string is
+        'E##', then it is interpreted as the perihelion date for that
+        encounter. If a number, interpreted as an encounter number if an
+        ``int`` < 30, or else as a UTC timestamp.
     
     Returns
     -------
@@ -145,15 +174,27 @@ def format_date(date):
         The date in "YYYY-MM-DD HH:MM:SS.SSS" format
     """
     if isinstance(date, (int, float)):
-        date = datetime.fromtimestamp(
-            date, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(date, int) and date < 30:
+            try:
+                date = perihelia[date]
+            except KeyError:
+                raise ValueError("Invalid encounter number")
+        else:
+            date = datetime.fromtimestamp(
+                date, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    elif isinstance(date, str) and date[0] == 'E' and len(date) == 3:
+        E = int(date[1:])
+        try:
+            date = perihelia[E]
+        except KeyError:
+            raise ValueError("Invalid encounter number")
     elif not isinstance(date, str):
         # Treat as FITS header
         date = date['date-avg'].replace('T', ' ')
     return date
 
 
-def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_orbit=True):
+def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_orbit=True, npts=720):
     """
     Generates coordinates of a set of points along an orbital plane
     
@@ -169,6 +210,15 @@ def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_
         The (x,y,z) coordinates of the observer. If given, returned coordinates
         are Helioprojective. If not given, returned coordinates are
         HeliocentricIntertial.
+    return_times : ``bool``
+        If True, the times of each point in the orbit are returned in addition
+        to the points themselves.
+    expand_psp_orbit : ``bool``
+        Only takes effect if ``body`` and ``observer`` are both 'PSP'. If True,
+        the PSP orbit is expanded radially so that the helioprojective
+        coordinates of PSP's orbit near PSP come out sensibly.
+    npts : ``int``
+        Number of points along the orbit to calculate
     """
     date = format_date(date)
     load_kernels()
@@ -183,7 +233,7 @@ def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_
     a = elts[0] / (1 - elts[1])
     period = 2*np.pi * np.sqrt(a**3 / mu)
     
-    times = et + np.linspace(-period//2, period//2, 720)
+    times = et + np.linspace(-period//2, period//2, npts)
     
     coords = []
     for t in times:

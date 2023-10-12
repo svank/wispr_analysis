@@ -46,3 +46,6 @@ def test_formate_date():
     assert t1 == t2
     
     assert planets.format_date('hi') == 'hi'
+    
+    assert planets.format_date('E07') == '2021-01-17 17:40:00'
+    assert planets.format_date(7) == '2021-01-17 17:40:00'
