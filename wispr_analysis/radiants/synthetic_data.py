@@ -483,7 +483,8 @@ def hpc_to_elpa(Tx, Ty):
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
-        celestial_wcs=False, fixed_fov_range=None, output_quantity='flux'):
+        celestial_wcs=False, fixed_fov_range=None, output_quantity='flux',
+        point_forward=False):
     """Produce a synthetic WISPR image
 
     Parameters
@@ -505,10 +506,14 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     image_wcs : ``WCS``, optional
         The WCS to use for the output image. If not provided, a WISPR-like WCS
         is generated
-    celestial_wcs : bool, optional
+    celestial_wcs : ``bool``, optional
         Whether to convert the output WCS to RA/Dec
-    output_quantity : str
-        The quantity to show in the output image. Allowed values are 'flux' and 'distance'.
+    output_quantity : ``str``
+        The quantity to show in the output image. Allowed values are 'flux' and
+        'distance'.
+    point_forward : ``bool``
+        If True, point the camera in the forward direction, instead of real
+        WISPR Sun-relative pointing.
 
     Returns
     -------
@@ -528,18 +533,26 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     # Build output image WCS
     if image_wcs is None:
         image_wcs = WCS(naxis=2)
-        ## Find elongation of s/c forward direction by computing the angle
-        ## between it and the sunward direction
-        #forward_elongation = angle_between_vectors(sc.vx, sc.vy, -sc.x, -sc.y)
-        ## Set the reference pixel coordinates as the forward-direction
-        ## elongation for longitude, and zero latitude (assume s/c is in
-        ## ecliptic plane)
-        #image_wcs.wcs.crval = forward_elongation[0] * 180 / np.pi, 0
-        
-        # Set the reference pixel coordinates as 61 degrees HPC, which is the
-        # center of WISPR's composite FOV (as detailed in the in-flight
-        # calibration paper)
-        image_wcs.wcs.crval = 61, 0
+        if point_forward:
+            x, y, z = sc.x, sc.y, sc.z
+            sc_soon = sc.at(t0 + 1)
+            xp, yp, zp = sc_soon.x, sc_soon.y, sc_soon.z
+            observer = astropy.coordinates.SkyCoord(
+                x, y, z, representation_type='cartesian', obstime=date,
+                frame='heliocentricinertial', unit='m')
+            forward = astropy.coordinates.SkyCoord(
+                xp, yp, zp, representation_type='cartesian', obstime=date,
+                frame='heliocentricinertial', unit='m', observer=observer)
+            forward = forward.transform_to('helioprojective')
+            
+            # Set the reference pixel coordinates as the forward-direction
+            image_wcs.wcs.crval = (
+                forward.Tx.to(u.deg).value[0], forward.Ty.to(u.deg).value[0])
+        else:
+            # Set the reference pixel coordinates as 61 degrees HPC, which is
+            # the center of WISPR's composite FOV (as detailed in the in-flight
+            # calibration paper)
+            image_wcs.wcs.crval = 61, 0
         
         # Set the reference pixel to be the central pixel of the image
         image_wcs.wcs.crpix = output_size_x/2 + .5, output_size_y/2 + .5

@@ -140,6 +140,36 @@ def test_synthesize_image():
     return fig
 
 
+@pytest.mark.mpl_image_compare
+def test_synthesize_image_point_forward():
+    sc = sd.LinearThing(x=-10, y=-10, vx=1, vy=0.2)
+    p = sd.LinearThing(x=-5, y=-12, vx=-.5, vy=-.5)
+    p2 = sd.LinearThing(x=5, y=-8, vx=.5, vy=.5)
+    
+    # Ensure a "behind" parcel doesn't show up
+    p3 = sd.LinearThing(x=-20, y=-20, vx=.5, vy=.5)
+    
+    # Ensure nan positions are handled correctly
+    p4 = p2.copy()
+    p4.t_max = -99999
+    
+    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4], 1, fov=140,
+                                     parcel_width=1*u.m, point_forward=True)
+    
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1, projection=wcs)
+    ax.imshow(np.sqrt(image), origin='lower', cmap='Greys_r')
+    
+    lon, lat = ax.coords
+    lat.set_major_formatter('dd')
+    lon.set_major_formatter('dd')
+    ax.set_xlabel("HP Longitude")
+    ax.set_ylabel("HP Latitude")
+    ax.coords.grid(color='white', alpha=0.7, ls='-')
+    
+    return fig
+
+
 def test_calc_hpc():
     sc = sd.LinearThing(y=-10, vy=10)
     
