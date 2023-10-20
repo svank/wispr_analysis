@@ -44,7 +44,8 @@ def _extract_slice(image, wcs, n, is_inner):
             output_wcs.last_venus_elongation, output_wcs.last_venus_angle)
 
 
-def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices"):
+def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices",
+                   disable_pbar=False):
     slices = []
     fixed_angles = []
     venus_elongations = []
@@ -59,7 +60,7 @@ def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices"):
                     bundle.wcses,
                     repeat(n),
                     repeat(bundle.is_inner),
-                    chunksize=5):
+                    chunksize=5, disable=disable_pbar):
             slices.append(slice)
             fixed_angles.append(fixed_angle)
             hpcs.append(hpc)
@@ -508,8 +509,11 @@ class BaseJmap:
              bundle: "InputDataBundle"=None,
              ax=None, label_vr=False, vmin=None, vmax=None,
              pmin=5, pmax=95, gamma=None, interactive=False,
-             cmap=None, rel_dates=False, show_full_array=False):
-        min, max = np.nanpercentile(self.slices, [pmin, pmax])
+             cmap=None, rel_dates=False, show_full_array=False,
+             scale_factor=1):
+        image = self.slices * scale_factor
+        
+        min, max = np.nanpercentile(image, [pmin, pmax])
         if vmin is None:
             if self.quantity == 'distance':
                 # Sensible, also workaround mpl bug #25239
@@ -531,7 +535,6 @@ class BaseJmap:
             ax = plt.gca()
         
         angles = self.angles
-        image = self.slices
         if not show_full_array:
             # Trim all-nan angular positions
             while np.all(np.isnan(image[:, 0])):
@@ -578,7 +581,10 @@ class BaseJmap:
                            norm=matplotlib.colors.PowerNorm(gamma=gamma,
                                                             vmin=vmin,
                                                             vmax=vmax),
-                           shading='nearest')
+                           shading='nearest',
+                           # Rasterizing ensures the plot looks good when saved
+                           # as a PDF
+                           rasterized=True)
         try:
             plt.sci(im)
         except ValueError:
