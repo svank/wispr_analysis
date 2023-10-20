@@ -278,28 +278,36 @@ class ArrayThing(Thing):
     
     @property
     def x(self):
-        x = scipy.interpolate.interp1d(self.tlist, self.xlist)(self.t)
-        x = self.process_t_bounds(x)
-        return x
+        values = self.process_t_bounds(np.array(self.t))
+        is_good = np.isfinite(values)
+        t_good = values[is_good]
+        x_good = scipy.interpolate.interp1d(self.tlist, self.xlist)(t_good)
+        values[is_good] = x_good
+        return values
     
     @property
     def y(self):
-        y = scipy.interpolate.interp1d(self.tlist, self.ylist)(self.t)
-        y = self.process_t_bounds(y)
-        return y
+        values = self.process_t_bounds(np.array(self.t))
+        is_good = np.isfinite(values)
+        t_good = values[is_good]
+        x_good = scipy.interpolate.interp1d(self.tlist, self.ylist)(t_good)
+        values[is_good] = x_good
+        return values
     
     @property
     def z(self):
-        z = scipy.interpolate.interp1d(self.tlist, self.zlist)(self.t)
-        z = self.process_t_bounds(z)
-        return z
+        values = self.process_t_bounds(np.array(self.t))
+        is_good = np.isfinite(values)
+        t_good = values[is_good]
+        x_good = scipy.interpolate.interp1d(self.tlist, self.zlist)(t_good)
+        values[is_good] = x_good
+        return values
     
     @property
     def vx(self):
         interpolator = scipy.interpolate.interp1d(self.tlist, self.xlist)
         dt = .0001
         vx = self._finite_difference(interpolator, dt)
-        vx = self.process_t_bounds(vx)
         return vx
     
     @property
@@ -307,7 +315,6 @@ class ArrayThing(Thing):
         interpolator = scipy.interpolate.interp1d(self.tlist, self.ylist)
         dt = .0001
         vy = self._finite_difference(interpolator, dt)
-        vy = self.process_t_bounds(vy)
         return vy
     
     @property
@@ -315,32 +322,44 @@ class ArrayThing(Thing):
         interpolator = scipy.interpolate.interp1d(self.tlist, self.zlist)
         dt = .0001
         vz = self._finite_difference(interpolator, dt)
-        vz = self.process_t_bounds(vz)
         return vz
     
     def _finite_difference(self, interpolator, dt):
+        values = self.process_t_bounds(np.array(self.t))
+        is_good = np.isfinite(values)
+        t_good = values[is_good]
         try:
-            y1 = interpolator(self.t - dt/2)
-            y2 = interpolator(self.t + dt/2)
+            y1 = interpolator(t_good - dt/2)
+            y2 = interpolator(t_good + dt/2)
         except ValueError:
             try:
-                y1 = interpolator(self.t)
-                y2 = interpolator(self.t + dt)
+                y1 = interpolator(t_good)
+                y2 = interpolator(t_good + dt)
             except ValueError:
                 try:
-                    y1 = interpolator(self.t - dt)
-                    y2 = interpolator(self.t)
-                except:
+                    y1 = interpolator(t_good - dt)
+                    y2 = interpolator(t_good)
+                except Exception as e:
                     # If out list of times includes both endpoints exactly,
                     # none of these above will work for every time, but one
                     # will work for each time. So compute each time
                     # individually.
+                    if len(values) == 1:
+                        raise e
                     vals = []
-                    for t in self.t:
-                        with self.at_temp(t) as s:
-                            vals.append(s._finite_difference(interpolator, dt))
-                    return np.concatenate(vals)
-        return (y2 - y1) / dt
+                    for t in values:
+                        if np.isfinite(t):
+                            with self.at_temp(t) as s:
+                                vals.append(
+                                    s._finite_difference(interpolator, dt))
+                        else:
+                            vals.append(np.nan)
+                    if isinstance(vals[0], np.ndarray):
+                        return np.concatenate(vals)
+                    else:
+                        return np.array(vals)
+        values[is_good] = (y2 - y1) / dt
+        return values
     
     def offset_by_time(self, dt):
         out = self.copy()

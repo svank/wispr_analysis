@@ -291,3 +291,31 @@ def test_tbounds():
             assert np.isnan(result[0])
             assert np.isnan(result[-1])
             assert not np.any(np.isnan(result[1:-1]))
+
+def test_tbounds_array_range():
+    thing = sd.ArrayThing([-20, 20], t_min=-2, t_max=2)
+    for t in [-25, 25, np.array([-25, -24]), np.array([24, 25])]:
+        assert np.all(np.isnan(thing.at(t).x))
+        assert np.all(np.isnan(thing.at(t).y))
+        assert np.all(np.isnan(thing.at(t).z))
+        assert np.all(np.isnan(thing.at(t).vx))
+        assert np.all(np.isnan(thing.at(t).vy))
+        assert np.all(np.isnan(thing.at(t).vz))
+    
+    thing = sd.ArrayThing([-20, 20])
+    for t in [-25, 25, np.array([-25, -24]), np.array([24, 25])]:
+        match_string = ("A value .* is "
+                       f"{'above' if np.atleast_1d(t)[0] > 0 else 'below'} the "
+                        "interpolation range's")
+        with pytest.raises(ValueError, match=match_string):
+            thing.at(t).x
+        with pytest.raises(ValueError, match=match_string):
+            thing.at(t).y
+        with pytest.raises(ValueError, match=match_string):
+            thing.at(t).z
+        with pytest.raises(ValueError, match=match_string):
+            thing.at(t).vx
+        with pytest.raises(ValueError, match=match_string):
+            thing.at(t).vy
+        with pytest.raises(ValueError, match=match_string):
+            thing.at(t).vz
