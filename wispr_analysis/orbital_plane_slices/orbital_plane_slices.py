@@ -20,13 +20,15 @@ from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from .. import planets, plot_utils, utils
+from ..radiants import synthetic_data
 
 
 FIXED_ANGLE_TARGET_RANGE = (80, 460)
 
 
-def _extract_slice(image, wcs, n, is_inner):
-    output_wcs = OrbitalSliceWCS(wcs, n, is_inner)
+def _extract_slice(image, wcs, n, is_inner, spice_cache_dir):
+    output_wcs = OrbitalSliceWCS(wcs, n, is_inner,
+                                 spice_cache_dir=spice_cache_dir)
     slice = reproject.reproject_adaptive((image, wcs), output_wcs, (1, n),
                                   center_jacobian=False,
                                   return_footprint=False,
@@ -41,36 +43,41 @@ def _extract_slice(image, wcs, n, is_inner):
     fixed_angles = output_wcs.last_fixed_angles[1, 1:-1]
     hpc = output_wcs.last_hpc[1, 1:-1]
     return (slice, fixed_angles, hpc,
-            output_wcs.last_venus_elongation, output_wcs.last_venus_angle)
+            output_wcs.last_venus_elongation, output_wcs.last_venus_angle,
+            output_wcs.last_forward_elongation)
 
 
 def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices",
-                   disable_pbar=False):
+                   disable_pbar=False, spice_cache_dir=None):
     slices = []
     fixed_angles = []
     venus_elongations = []
     venus_angles = []
     hpcs = []
+    forward_elongations = []
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*failed to converge.*')
         warnings.filterwarnings('ignore', message='.*All-NaN slice.*')
-        for slice, fixed_angle, hpc, ve, va in process_map(
+        for slice, fixed_angle, hpc, ve, va, fe in process_map(
                     _extract_slice,
                     bundle.images,
                     bundle.wcses,
                     repeat(n),
                     repeat(bundle.is_inner),
+                    repeat(spice_cache_dir),
                     chunksize=5, disable=disable_pbar):
             slices.append(slice)
             fixed_angles.append(fixed_angle)
             hpcs.append(hpc)
             venus_elongations.append(ve)
             venus_angles.append(va)
+            forward_elongations.append(fe)
 
     slices = np.stack(slices)
     fixed_angles = np.stack(fixed_angles)
     venus_elongations = np.stack(venus_elongations)
     venus_angles = np.stack(venus_angles)
+    forward_elongations = np.stack(forward_elongations)
 
     transformer = OrbitalSliceWCS(
         bundle.wcses[-1], n, bundle.is_inner)
@@ -88,6 +95,7 @@ def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices",
         is_inner=bundle.is_inner,
         quantity=bundle.quantity,
         encounter=bundle.encounter,
+        forward_elongations=forward_elongations,
     )
 
 
@@ -106,7 +114,8 @@ class OrbitalSliceWCS(utils.FakeWCS):
                                      representation_type='cartesian',
                                      frame=HeliocentricInertial)
 
-    def __init__(self, input_wcs, n, is_inner, date_override=None):
+    def __init__(self, input_wcs, n, is_inner, date_override=None,
+                 spice_cache_dir=None):
         super().__init__(input_wcs)
         if is_inner == 'both':
             self.angle_start = 13.5
@@ -119,6 +128,7 @@ class OrbitalSliceWCS(utils.FakeWCS):
             self.angle_stop = 103.75
         self.n = n
         self.last_hpc = None
+        self.spice_cache_dir = spice_cache_dir
         if date_override:
             self.date = date_override
         else:
@@ -138,12 +148,18 @@ class OrbitalSliceWCS(utils.FakeWCS):
                 / (self.n-1) + self.angle_start)
     
     def pixel_to_world_values(self, *pixel_arrays):
-        sc = SkyCoord(self.input_wcs.wcs.aux.hgln_obs * u.deg,
-                      self.input_wcs.wcs.aux.hglt_obs * u.deg,
-                      self.input_wcs.wcs.aux.dsun_obs * u.m,
-                      frame='heliographic_stonyhurst', obstime=self.date)
+        sc = planets.locate_psp(self.date, self.spice_cache_dir)
         sc = sc.transform_to(self.orbital_frame)
         sc_cart = sc.represent_as('cartesian')
+        
+        dt = 1000 * u.s
+        self.last_forward_elongation = synthetic_data.angle_between_vectors(
+            (dt * sc_cart.differentials['s'].d_x).to(u.m).value,
+            (dt * sc_cart.differentials['s'].d_y).to(u.m).value,
+            (dt * sc_cart.differentials['s'].d_z).to(u.m).value,
+            -sc_cart.x.to(u.m).value,
+            -sc_cart.y.to(u.m).value,
+            -sc_cart.z.to(u.m).value) * 180 / np.pi
         
         angle_to_sun = np.arctan2(-sc_cart.y, -sc_cart.x)
         r = sc.distance
@@ -178,7 +194,7 @@ class OrbitalSliceWCS(utils.FakeWCS):
         Ty[~g] = np.nan
         
         venus_pos = planets.locate_planets(
-            self.date, only=['venus'], sc_pos=sc)[0]
+            self.date, only=['venus'], cache_dir=self.spice_cache_dir)[0]
         venus_pos = self.input_wcs.world_to_pixel(venus_pos)
         if not (0 <= venus_pos[0] < self.input_wcs.pixel_shape[0]
                 and 0 <= venus_pos[1] < self.input_wcs.pixel_shape[1]):
@@ -243,6 +259,7 @@ class BaseJmap:
     is_inner: bool
     quantity: str
     encounter: int
+    forward_elongations: np.ndarray
     title_stub: str = 'Orbital-plane slices'
 
     _title: list[str] = None
@@ -397,7 +414,7 @@ class BaseJmap:
         nans = scipy.ndimage.binary_closing(nans, np.ones((3, 3)))
         self.slices[nans] = np.nan
         
-        # Resample the Venus locations
+        # Resample the Venus locations and other quantities
         self.venus_elongations = reproject.reproject_adaptive(
             (self.venus_elongations.reshape((-1, 1)), wcs),
             wcs, (len(new_t), 1),
@@ -417,6 +434,16 @@ class BaseJmap:
             roundtrip_coords=False,
             return_footprint=False)
         self.venus_angles = self.venus_angles[:, 0]
+        
+        self.forward_elongations = reproject.reproject_adaptive(
+            (self.forward_elongations.reshape((-1, 1)), wcs),
+            wcs, (len(new_t), 1),
+            boundary_mode='ignore',
+            bad_value_mode='ignore',
+            center_jacobian=False,
+            roundtrip_coords=False,
+            return_footprint=False)
+        self.forward_elongations = self.forward_elongations[:, 0]
         
         self.times = new_t
         self._title.append(f"resampled dt={new_dt}")
@@ -777,6 +804,7 @@ class PlainJMap(BaseJmap):
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
             venus_angles=copy.deepcopy(self.venus_angles),
+            forward_elongations=copy.deepcopy(self.forward_elongations),
             is_inner=self.is_inner,
             quantity=self.quantity,
             encounter=self.encounter,
@@ -846,6 +874,7 @@ class DerotatedJMap(BaseJmap):
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
             venus_angles=copy.deepcopy(self.venus_angles),
+            forward_elongations=copy.deepcopy(self.forward_elongations),
             quantity=self.quantity,
             encounter=self.encounter,
             )
@@ -881,6 +910,7 @@ class DerotatedJMap(BaseJmap):
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
             venus_angles=copy.deepcopy(self.venus_angles),
+            forward_elongations=copy.deepcopy(self.forward_elongations),
             is_inner=self.is_inner,
             quantity=self.quantity,
             hpcs=None,

@@ -3,6 +3,7 @@ import os
 import pickle
 
 import astropy.coordinates
+import astropy.units as u
 import numpy as np
 import spiceypy as spice
 import sunpy.coordinates
@@ -109,8 +110,9 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
     
     date = format_date(date)
     
-    if cache_dir is not None:
-        cache_path = os.path.join(cache_dir, str(date))
+    cache_fname = f"locate_planets-{date}-{only}.pkl"
+    if cache_dir is not None and sc_pos is None:
+        cache_path = os.path.join(cache_dir, cache_fname)
         if os.path.exists(cache_path):
             with open(cache_path, 'rb') as f:
                 return pickle.load(f)
@@ -118,6 +120,7 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
     load_kernels()
     et = spice.str2et(date)
     
+    sc_pos_orig = sc_pos
     if sc_pos is None:
         spacecraft_id = '-96'
         state, _ = spice.spkezr(spacecraft_id, et, 'HCI', 'None', 'Sun')
@@ -131,7 +134,59 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
             planet = planet + " Barycenter"
         state, _ = spice.spkezr(planet, et, 'HCI', 'None', 'Sun')
         planet_poses.append(_to_hp(state[:3], sc_pos, date))
+    
+    if cache_dir is not None and sc_pos_orig is None:
+        cache_path = os.path.join(cache_dir, cache_fname)
+        with open(cache_path, 'wb') as f:
+            pickle.dump(planet_poses, f)
     return planet_poses
+
+
+def locate_psp(date, cache_dir=None):
+    """
+    Returns the heliocentric coordinate and velocity of PSP
+    
+    Parameters
+    ----------
+    date : ``str`` or FITS header or ``float``
+        The date of the observation. If a FITS header, DATE-AVG is extracted
+        and used. If a string, must be in the format "YYYY-MM-DD HH:MM:SS.SSS".
+        If a number, interpreted as a UTC timestamp. Note that the timestamp in
+        WISPR images is the beginning time, not the average time, so providing
+        the FITS header is preferred.
+    
+    Returns
+    -------
+    psp_pos : ``SkyCoord``
+        A HeliocentricInertial SkyCoord for PSP, with velocity information.
+    """
+    date = format_date(date)
+    
+    cache_fname = f"locate_psp-{date}.pkl"
+    if cache_dir is not None:
+        cache_path = os.path.join(cache_dir, cache_fname)
+        if os.path.exists(cache_path):
+            with open(cache_path, 'rb') as f:
+                return pickle.load(f)
+    
+    load_kernels()
+    et = spice.str2et(date)
+    
+    state, _ = spice.spkezr('-96', et, 'HCI', 'None', 'Sun')
+    x, y, z = state[:3] * u.km
+    vx, vy, vz = state[3:] * u.km / u.s
+    psp_pos = astropy.coordinates.SkyCoord(x=x, y=y, z=z,
+                                           v_x=vx, v_y=vy, v_z=vz,
+                                           representation_type='cartesian',
+                                           frame='heliocentricinertial',
+                                           obstime=date)
+    
+    if cache_dir is not None:
+        cache_path = os.path.join(cache_dir, cache_fname)
+        with open(cache_path, 'wb') as f:
+            pickle.dump(psp_pos, f)
+    
+    return psp_pos
 
 
 def cache_planet_pos(date, cache_dir):
