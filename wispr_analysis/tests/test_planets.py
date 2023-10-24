@@ -1,31 +1,38 @@
 from .. import planets, utils
 
-from datetime import datetime
 import os
 
 from astropy.io import fits
 import pytest
+import numpy as np
+import spiceypy as spice
 
 
-def test_locate_planets_cache(tmp_path, mocker):
-    locate_planets_orig = planets.locate_planets
+@pytest.mark.parametrize('only', [None, 'Venus', ['Venus'], ['Earth', 'Venus']])
+def test_locate_planets_cache(tmp_path, mocker, only):
+    planets.load_kernels(os.path.join(utils.data_path(), 'spice_kernels'))
+    
+    real_spkezr = spice.spkezr
+    def spkezr(id, et, *args, **kwargs):
+        if id == '-96':
+            return (
+                    np.array([2.66925117e+07, -9.53139787e+07, 6.40231055e+06,
+                              1.48270646e+01, 2.61921828e+01, -1.77890244e+00]),
+                    330.85513358725734)
+        # Pass through for planets
+        return real_spkezr(id, et, *args, **kwargs)
+    mocker.patch(
+            planets.__name__+'.spice.spkezr',
+            wraps=spkezr)
     
     t = utils.to_timestamp('psp_L3_wispr_20181101T004548_V3_1221.fits')
-    mocker.patch(
-            planets.__name__ + ".locate_planets",
-            return_value='first_timestamp')
-    planets.cache_planet_pos(t, cache_dir=tmp_path)
+    r1 = planets.locate_planets(t, cache_dir=tmp_path, only=only)
     
-    t2 = t + 20
-    mocker.patch(
-            planets.__name__ + ".locate_planets",
-            return_value='second_timestamp')
-    planets.cache_planet_pos(t2, cache_dir=tmp_path)
+    planets.clear_kernels()
     
-    planets.locate_planets = locate_planets_orig
+    r2 = planets.locate_planets(t, cache_dir=tmp_path, only=only)
     
-    assert planets.locate_planets(t, cache_dir=tmp_path) == 'first_timestamp'
-    assert planets.locate_planets(t2, cache_dir=tmp_path) == 'second_timestamp'
+    assert r1 == r2
 
 
 def test_formate_date():

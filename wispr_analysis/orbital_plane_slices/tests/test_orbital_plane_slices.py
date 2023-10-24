@@ -39,9 +39,7 @@ def jmap(mocker):
     # To speed up the tests we generate a Jmap only once
     global jmap_cache
     if jmap_cache is None:
-        planets.load_kernels(
-            os.path.join(utils.data_path(), 'spice_kernels'),
-            force=True)
+        planets.load_kernels(os.path.join(utils.data_path(), 'spice_kernels'))
         
         dir_path = os.path.join(utils.test_data_path(),
                                 'WISPR_files_with_data_half_size_L3')

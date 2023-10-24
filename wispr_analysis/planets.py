@@ -62,6 +62,12 @@ def load_kernels(kernel_dir='spice_kernels', force=False):
     KERNELS_LOADED = True
 
 
+def clear_kernels():
+    spice.kclear()
+    global KERNELS_LOADED
+    KERNELS_LOADED = False
+
+
 def _to_hp(planet_pos, sc_pos, date):
     if not isinstance(sc_pos, astropy.coordinates.SkyCoord):
         sc_pos = astropy.coordinates.SkyCoord(
@@ -92,9 +98,9 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
         If a number, interpreted as a UTC timestamp. Note that the timestamp in
         WISPR images is the beginning time, not the average time, so providing
         the FITS header is preferred.
-    only : ``list``
-        If provided, a list of specific planets to locate (otherwise, all
-        planets are located). Should be planet names.
+    only : ``list`` or ``str``
+        If provided, a planet or list of specific planets to locate (otherwise,
+        all planets are located). Should be planet names.
     cache_dir : ``str``
         An optional directory to search for cached positions, as saved by
         `cache_planet_pos`.
@@ -106,6 +112,8 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
     """
     if only is None:
         only = planets
+    if isinstance(only, str):
+        only = [only]
     only = set(planet.lower() for planet in only)
     
     date = format_date(date)
