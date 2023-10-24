@@ -157,6 +157,15 @@ def find_radiant(strips, t, fov_angles, window_size=41, v_halfwindow=1,
     return computed_radiants, computed_radiants_ts
 
 
+def calc_elongation_radiant(elongation_of_forward_dir, v_sc, v_p):
+    elongations = np.arange(1, 179, .05)
+    betas = elongation_of_forward_dir - elongations
+    i = np.argmin(np.abs(
+        np.sin(betas * np.pi/180) / np.sin(elongations * np.pi/180)
+        - v_p / v_sc))
+    return elongations[i]
+
+
 def calc_fixed_angle_radiant(inputs, plasma_v, as_elongation=False):
     ready_inputs = []
     for input in inputs:

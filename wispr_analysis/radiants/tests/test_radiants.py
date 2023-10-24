@@ -1,13 +1,16 @@
+import os
+
 import astropy.units as u
 import numpy as np
 import pytest
 import scipy.ndimage
 
 from .. import radiants, synthetic_data as sd
+from ... import planets, utils
 
 
 def generate_strips():
-   # A cloud of parcels
+    # A cloud of parcels
     sc = sd.LinearThing(x=-6, y=-100, vx=3)
     ts = np.linspace(0, 6, 50)
 
@@ -87,3 +90,29 @@ def test_find_radiant():
                       -1.5909090909090935,
                       -1.5909090909090935,
                       -1.5909090909090935]))
+
+
+def test_calc_elongation_radiant():
+    assert (radiants.calc_elongation_radiant(10, 200, 150)
+            == pytest.approx(5.7))
+    assert (radiants.calc_elongation_radiant(30, 200, 150)
+            == pytest.approx(17.2))
+    assert (radiants.calc_elongation_radiant(70, 200, 150)
+            == pytest.approx(40.7))
+    assert (radiants.calc_elongation_radiant(100, 200, 150)
+            == pytest.approx(59.65))
+
+
+def test_calc_fixed_angle_radiant(mocker):
+    planets.load_kernels(os.path.join(utils.data_path(), 'spice_kernels'))
+    mocker.patch(radiants.__name__+'.planets.spice.spkezr',
+                return_value=(
+                    np.array([2.66925117e+07, -9.53139787e+07, 6.40231055e+06,
+                              1.48270646e+01, 2.61921828e+01, -1.77890244e+00]),
+                    330.85513358725734))
+    file = os.path.join(
+        utils.test_data_path(),
+        'WISPR_files_with_data_half_size', '20181101',
+        'psp_L2_wispr_20181101T004548_V3_1221.fits')
+    assert radiants.calc_fixed_angle_radiant(
+        [file], 200) == pytest.approx(-26.89428378)
