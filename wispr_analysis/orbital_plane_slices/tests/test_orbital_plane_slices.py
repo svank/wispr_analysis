@@ -3,6 +3,9 @@ from ... import utils, planets
 
 import os
 
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -33,23 +36,77 @@ jmap_cache = None
 
 @pytest.fixture
 def jmap(mocker):
+    # To speed up the tests we generate a Jmap only once
     global jmap_cache
     if jmap_cache is None:
-        mocker.patch(
-            ops.__name__+'.planets.spice.str2et',
-            return_value=631152801.1839219)
-        mocker.patch(
-            ops.__name__+'.planets.spice.spkezr',
-            return_value=(
-                np.array([2.66925117e+07, -9.53139787e+07, 6.40231055e+06,
-                        1.48270646e+01, 2.61921828e+01, -1.77890244e+00]),
-                330.85513358725734))
-
+        planets.load_kernels(
+            os.path.join(utils.data_path(), 'spice_kernels'),
+            force=True)
+        
         dir_path = os.path.join(utils.test_data_path(),
                                 'WISPR_files_with_data_half_size_L3')
         ifiles, _ = utils.collect_files(dir_path)
         
         bundle = ops.load_files(ifiles)
+        
+        # The PSP SPICE kernels are huge and I don't want them in this repo, so
+        # here we mock up a lot of SPICE calculations.
+        
+        # Load in PSP data from the test files
+        date_to_sc = {}
+        et_to_sc = {}
+        with utils.ignore_fits_warnings():
+            for ifile in ifiles:
+                header = fits.getheader(ifile)
+                date = header['date-avg'].replace('T', ' ')
+                date_to_sc[date] = (
+                    header['hcix_obs'],
+                    header['hciy_obs'],
+                    header['hciz_obs'],
+                    header['hcix_vob'],
+                    header['hciy_vob'],
+                    header['hciz_vob'],
+                    )
+                et = spice.str2et(date)
+                et_to_sc[et] = date_to_sc[date]
+        
+        # The code uses SPICE to load the s/c position and velocity (so that
+        # the synthetic data doesn't have to generate a full header).
+        def locate_psp(date, *args, **kwargs):
+            x, y, z, vx, vy, vz = date_to_sc[date]
+            return SkyCoord(
+                        x=x*u.m,
+                        y=y*u.m,
+                        z=z*u.m,
+                        v_x=vx*u.m/u.s,
+                        v_y=vy*u.m/u.s,
+                        v_z=vz*u.m/u.s,
+                        frame='heliocentricinertial', obstime=date,
+                        representation_type='cartesian')
+        mocker.patch(
+            ops.__name__+'.planets.locate_psp',
+            wraps=locate_psp)
+        
+        # This function needs to be mocked when it's run for PSP, but allowed
+        # to go to SPICE for planets.
+        real_spkezr = spice.spkezr
+        def spkezr(id, et, *args, **kwargs):
+            if id == '-96':
+                if et == spice.str2et('2020-01-01 12:12:12'):
+                    # This is used for determining orbital north
+                    return (
+                        np.array([2.66925117e+07, -9.53139787e+07, 6.40231055e+06,
+                                1.48270646e+01, 2.61921828e+01, -1.77890244e+00]),
+                        330.85513358725734)
+                x, y, z, vx, vy, vz = et_to_sc[et]
+                # Convert to km
+                return (x/1000, y/1000, z/1000, vx/1000, vy/1000, vz/1000), 0
+            # Pass through for planets
+            return real_spkezr(id, et, *args, **kwargs)
+        
+        mocker.patch(
+            ops.__name__+'.planets.spice.spkezr',
+            wraps=spkezr)
         
         jmap_cache = ops.extract_slices(bundle, 100, 'test')
         
@@ -68,43 +125,8 @@ def test_extract_slices_angles(jmap):
 
 
 @pytest.mark.array_compare
-def test_extract_slices_venus(mocker):
-    try:
-        # For this test we need enough kernels loaded to locate Venus, but
-        # still need to mock things out when loading PSP's position, since
-        # those kernels are very large.
-        planets.load_kernels(
-            os.path.join(utils.data_path(), 'spice_kernels'),
-            force=True)
-        spkezr = ops.planets.spice.spkezr
-        str2et = ops.planets.spice.str2et
-        mocker.patch(
-            ops.__name__+'.planets.spice.str2et',
-            return_value=631152801.1839219)
-        mocker.patch(
-            ops.__name__+'.planets.spice.spkezr',
-            return_value=(
-                np.array([2.66925117e+07, -9.53139787e+07, 6.40231055e+06,
-                        1.48270646e+01, 2.61921828e+01, -1.77890244e+00]),
-                330.85513358725734))
-        # Do the part that requires PSP's position
-        ops.OrbitalSliceWCS._init_orbital_north()
-        # Un-mock the functions
-        ops.planets.spice.spkezr = spkezr
-        ops.planets.spice.str2et = str2et
-        
-        dir_path = os.path.join(utils.test_data_path(),
-                                'WISPR_files_with_data_half_size_L3')
-        ifiles, _ = utils.collect_files(dir_path)
-        
-        bundle = ops.load_files(ifiles)
-        
-        jmap = ops.extract_slices(bundle, 100, 'test')
-        assert jmap.title_stub == 'test'
-        
-        return np.stack((jmap.venus_elongations, jmap.venus_angles))
-    finally:
-        spice.kclear()
+def test_extract_slices_venus(jmap):
+    return np.stack((jmap.venus_elongations, jmap.venus_angles))
 
 
 def test_jmap_trim_nans(jmap):
@@ -181,44 +203,9 @@ def test_resample_time(jmap, explicit_times):
 
 
 @pytest.mark.array_compare
-def test_resample_time_venus(mocker):
-    try:
-        # For this test we need enough kernels loaded to locate Venus, but
-        # still need to mock things out when loading PSP's position, since
-        # those kernels are very large.
-        planets.load_kernels(
-            os.path.join(utils.data_path(), 'spice_kernels'),
-            force=True)
-        spkezr = ops.planets.spice.spkezr
-        str2et = ops.planets.spice.str2et
-        mocker.patch(
-            ops.__name__+'.planets.spice.str2et',
-            return_value=631152801.1839219)
-        mocker.patch(
-            ops.__name__+'.planets.spice.spkezr',
-            return_value=(
-                np.array([2.66925117e+07, -9.53139787e+07, 6.40231055e+06,
-                        1.48270646e+01, 2.61921828e+01, -1.77890244e+00]),
-                330.85513358725734))
-        # Do the part that requires PSP's position
-        ops.OrbitalSliceWCS._init_orbital_north()
-        # Un-mock the functions
-        ops.planets.spice.spkezr = spkezr
-        ops.planets.spice.str2et = str2et
-        
-        dir_path = os.path.join(utils.test_data_path(),
-                                'WISPR_files_with_data_half_size_L3')
-        ifiles, _ = utils.collect_files(dir_path)
-        
-        bundle = ops.load_files(ifiles)
-        
-        jmap = ops.extract_slices(bundle, 100, 'test')
-        
-        jmap.resample_time(250)
-        
-        return np.stack((jmap.venus_elongations, jmap.venus_angles))
-    finally:
-        spice.kclear()
+def test_resample_time_venus(jmap):
+    jmap.resample_time(250)
+    return np.stack((jmap.venus_elongations, jmap.venus_angles))
 
 
 def test_clamp(jmap):
@@ -259,44 +246,9 @@ def test_gaussian_filter(jmap):
 
 
 @pytest.mark.array_compare
-def test_mask_venus(mocker):
-    try:
-        # For this test we need enough kernels loaded to locate Venus, but
-        # still need to mock things out when loading PSP's position, since
-        # those kernels are very large.
-        planets.load_kernels(
-            os.path.join(utils.data_path(), 'spice_kernels'),
-            force=True)
-        spkezr = ops.planets.spice.spkezr
-        str2et = ops.planets.spice.str2et
-        mocker.patch(
-            ops.__name__+'.planets.spice.str2et',
-            return_value=631152801.1839219)
-        mocker.patch(
-            ops.__name__+'.planets.spice.spkezr',
-            return_value=(
-                np.array([2.66925117e+07, -9.53139787e+07, 6.40231055e+06,
-                        1.48270646e+01, 2.61921828e+01, -1.77890244e+00]),
-                330.85513358725734))
-        # Do the part that requires PSP's position
-        ops.OrbitalSliceWCS._init_orbital_north()
-        # Un-mock the functions
-        ops.planets.spice.spkezr = spkezr
-        ops.planets.spice.str2et = str2et
-        
-        dir_path = os.path.join(utils.test_data_path(),
-                                'WISPR_files_with_data_half_size_L3')
-        ifiles, _ = utils.collect_files(dir_path)
-        
-        bundle = ops.load_files(ifiles)
-        
-        jmap = ops.extract_slices(bundle, 100, 'test')
-        
-        jmap.mask_venus(3)
-        
-        return jmap.slices
-    finally:
-        spice.kclear()
+def test_mask_venus(jmap):
+    jmap.mask_venus(3)
+    return jmap.slices
 
 
 @pytest.mark.mpl_image_compare
