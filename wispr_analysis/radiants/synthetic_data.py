@@ -503,7 +503,7 @@ def hpc_to_elpa(Tx, Ty):
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
         celestial_wcs=False, fixed_fov_range=None, output_quantity='flux',
-        point_forward=False):
+        point_forward=False, dmin=None, dmax=None):
     """Produce a synthetic WISPR image
 
     Parameters
@@ -533,6 +533,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     point_forward : ``bool``
         If True, point the camera in the forward direction, instead of real
         WISPR Sun-relative pointing.
+    dmin, dmax : ``float``
+        If given, only render parcels when their distance to the camera is
+        within this range.
 
     Returns
     -------
@@ -662,10 +665,14 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     for i in range(len(parcels)):
         # Draw each parcel onto the output canvas
         parcel_pos = parcel_poses[i]
+        d_sc = np.linalg.norm(parcel_pos - sc_pos)
+        if (dmin is not None and d_sc < dmin
+                or dmax is not None and d_sc > dmax):
+            continue
         r = np.linalg.norm(parcel_pos)
         _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
                                parcel_width, output_image,
-                               r, px[i], py[i], output_quantity_flag)
+                               r, d_sc, px[i], py[i], output_quantity_flag)
     
     if output_quantity == 'distance':
         output_image[np.isinf(output_image)] = np.nan
@@ -705,13 +712,11 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
 
 @numba.njit(cache=True)
 def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
-                           output_image, p_r, start_x, start_y,
+                           output_image, p_r, d_sc, start_x, start_y,
                            output_quantity_flag=1):
     # Check if this time point is valid for this parcel
     if np.isnan(parcel_pos[0]):
         return
-    
-    d_sc = np.sqrt(np.sum((parcel_pos - sc_pos)**2))
     
     # Clamp the starting point to the image bounds
     start_x = max(0, start_x)

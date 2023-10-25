@@ -123,8 +123,15 @@ def test_synthesize_image():
     p4 = p2.copy()
     p4.t_max = -99999
     
-    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4], 1, fov=140,
-                                     parcel_width=1*u.m)
+    # Make a close parcel we can filter out
+    p5 = sd.LinearThing(x=-9, y=-9.8, vx=sc.vx, vy=sc.vy)
+    
+    # And a far parcel we can filter out
+    p6 = sd.LinearThing(x=-10+100, y=-10+.2*100, vx=sc.vx, vy=sc.vy)
+    
+    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4, p5, p6], 1, fov=140,
+                                     parcel_width=1*u.m,
+                                     dmin=2, dmax=90)
     
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1, projection=wcs)
