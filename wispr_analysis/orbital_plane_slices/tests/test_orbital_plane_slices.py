@@ -119,12 +119,17 @@ def test_extract_slices(jmap):
 
 @pytest.mark.array_compare
 def test_extract_slices_angles(jmap):
-    return np.vstack((jmap.angles, jmap.fixed_angles))
+    fixed_angles = [
+        ops.elongation_to_fixed_angle(jmap.angles, jmap.fas_of_sun[i]) 
+        for i in range(len(jmap.fas_of_sun))]
+    return np.vstack((jmap.angles, fixed_angles))
 
 
 @pytest.mark.array_compare
 def test_extract_slices_venus(jmap):
-    return np.stack((jmap.venus_elongations, jmap.venus_angles))
+    venus_angles = [ops.elongation_to_fixed_angle(ve, fa)
+                    for ve, fa in zip(jmap.venus_elongations, jmap.fas_of_sun)]
+    return np.stack((jmap.venus_elongations, venus_angles))
 
 
 def test_jmap_trim_nans(jmap):
@@ -203,7 +208,9 @@ def test_resample_time(jmap, explicit_times):
 @pytest.mark.array_compare
 def test_resample_time_venus(jmap):
     jmap.resample_time(250)
-    return np.stack((jmap.venus_elongations, jmap.venus_angles))
+    venus_angles = [ops.elongation_to_fixed_angle(ve, fa)
+                    for ve, fa in zip(jmap.venus_elongations, jmap.fas_of_sun)]
+    return np.stack((jmap.venus_elongations, venus_angles))
 
 
 def test_clamp(jmap):
@@ -265,8 +272,6 @@ def test_jmap_derotate(jmap):
         derotated.times, jmap.times)
     np.testing.assert_array_equal(
         derotated.venus_elongations, jmap.venus_elongations)
-    np.testing.assert_array_equal(
-        derotated.venus_angles, jmap.venus_angles)
     return derotated.slices
 
 
@@ -285,8 +290,6 @@ def test_jmap_rerotate(jmap):
     np.testing.assert_array_equal(
         re_rotated.venus_elongations, jmap.venus_elongations)
     np.testing.assert_array_equal(
-        re_rotated.venus_angles, jmap.venus_angles)
-    np.testing.assert_array_equal(
         re_rotated.angles, jmap.angles)
     return re_rotated.slices
 
@@ -303,7 +306,9 @@ def test_RotatedFixedAngleWCS_roundtrip():
     x = np.linspace(0, 1, 121)
     # Make something non-linear
     fixed_angles = 85 + x * 50 + 0.1 * x**2
-    wcs = ops.RotatedFixedAngleWCS(fixed_angles, 80)
+    fa_of_sun = 25
+    elongations = ops.fixed_angle_to_elongation(fixed_angles, fa_of_sun)
+    wcs = ops.RotatedFixedAngleWCS(fa_of_sun, elongations, 80)
     input_pixels = np.arange(-2, 130)
     world = wcs.pixel_to_world_values(input_pixels, np.ones_like(input_pixels))
     output_pixels, _ = wcs.world_to_pixel_values(*world)

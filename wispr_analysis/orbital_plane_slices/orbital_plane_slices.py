@@ -26,6 +26,32 @@ from ..radiants import synthetic_data
 FIXED_ANGLE_TARGET_RANGE = (80, 460)
 
 
+def elongation_to_fixed_angle(elongation, fa_of_sun):
+    fa = fa_of_sun - np.atleast_1d(elongation)
+    # Negative here just to choose a frame where the fixed-frame angle
+    # increases in the same direction as elongation
+    fa = -fa
+    fa %= 360
+    # We choose a portion of the period domain that's convenient for typical
+    # WISPR data sets.
+    fa[fa < FIXED_ANGLE_TARGET_RANGE[0]] += 360
+    if (isinstance(elongation, (int, float))
+            or isinstance(elongation, np.ndarray) and elongation.shape == ()):
+        fa = fa[0]
+    return fa
+
+
+def fixed_angle_to_elongation(fa, fa_of_sun):
+    fa = np.atleast_1d(fa)
+    elongation = fa + fa_of_sun
+    elongation %= 360
+    elongation[elongation > 180] -= 360
+    if (isinstance(fa, (int, float))
+            or isinstance(fa, np.ndarray) and fa.shape == ()):
+        elongation = elongation[0]
+    return elongation
+
+
 def _extract_slice(image, wcs, n, is_inner, spice_cache_dir):
     output_wcs = OrbitalSliceWCS(wcs, n, is_inner,
                                  spice_cache_dir=spice_cache_dir)
@@ -36,29 +62,29 @@ def _extract_slice(image, wcs, n, is_inner, spice_cache_dir):
                                   kernel_width=2.5,
                                   sample_region_width=8,
                                   bad_value_mode='ignore',
+                                  x_cyclic=is_inner == 'pano',
+                                  despike_jacobian=is_inner == 'pano',
                                   )
     slice = slice[0]
     # Turn infs into nans
     np.nan_to_num(slice, copy=False, nan=np.nan, posinf=np.nan, neginf=np.nan)
-    fixed_angles = output_wcs.last_fixed_angles[1, 1:-1]
     hpc = output_wcs.last_hpc[1, 1:-1]
-    return (slice, fixed_angles, hpc,
-            output_wcs.last_venus_elongation, output_wcs.last_venus_angle,
+    return (slice, output_wcs.last_fa_of_sun, hpc,
+            output_wcs.last_venus_elongation,
             output_wcs.last_forward_elongation)
 
 
 def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices",
                    disable_pbar=False, spice_cache_dir=None):
     slices = []
-    fixed_angles = []
+    fas_of_sun = []
     venus_elongations = []
-    venus_angles = []
     hpcs = []
     forward_elongations = []
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*failed to converge.*')
         warnings.filterwarnings('ignore', message='.*All-NaN slice.*')
-        for slice, fixed_angle, hpc, ve, va, fe in process_map(
+        for slice, fa_of_sun, hpc, ve, fe in process_map(
                     _extract_slice,
                     bundle.images,
                     bundle.wcses,
@@ -67,16 +93,14 @@ def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices",
                     repeat(spice_cache_dir),
                     chunksize=5, disable=disable_pbar):
             slices.append(slice)
-            fixed_angles.append(fixed_angle)
+            fas_of_sun.append(fa_of_sun)
             hpcs.append(hpc)
             venus_elongations.append(ve)
-            venus_angles.append(va)
             forward_elongations.append(fe)
 
     slices = np.stack(slices)
-    fixed_angles = np.stack(fixed_angles)
+    fas_of_sun = np.stack(fas_of_sun)
     venus_elongations = np.stack(venus_elongations)
-    venus_angles = np.stack(venus_angles)
     forward_elongations = np.stack(forward_elongations)
 
     transformer = OrbitalSliceWCS(
@@ -85,12 +109,11 @@ def extract_slices(bundle: "InputDataBundle", n, title="Orbital plane slices",
     return PlainJMap(
         slices=slices,
         angles=transformer.pix_to_elongation(np.arange(n)),
-        fixed_angles=fixed_angles,
+        fas_of_sun=fas_of_sun,
         times=bundle.times,
         transformer=transformer,
         title_stub=title,
         venus_elongations=venus_elongations,
-        venus_angles=venus_angles,
         hpcs=hpcs,
         is_inner=bundle.is_inner,
         quantity=bundle.quantity,
@@ -120,6 +143,9 @@ class OrbitalSliceWCS(utils.FakeWCS):
         if is_inner == 'both':
             self.angle_start = 13.5
             self.angle_stop = 103.75
+        elif is_inner == 'pano':
+            self.angle_start = -180
+            self.angle_stop = 180
         elif is_inner:
             self.angle_start = 13.5
             self.angle_stop = 51.25
@@ -162,12 +188,13 @@ class OrbitalSliceWCS(utils.FakeWCS):
             -sc_cart.z.to(u.m).value) * 180 / np.pi
         
         angle_to_sun = np.arctan2(-sc_cart.y, -sc_cart.x)
-        r = sc.distance
-
+        self.last_fa_of_sun = angle_to_sun.to(u.deg).value
+        
         elongations = self.pix_to_elongation(pixel_arrays[0]) * u.deg
         
         angles = angle_to_sun - elongations
-
+        
+        r = sc.distance
         x = np.cos(angles) * r + sc_cart.x
         y = np.sin(angles) * r + sc_cart.y
         points = SkyCoord(x, y, 0,
@@ -179,17 +206,10 @@ class OrbitalSliceWCS(utils.FakeWCS):
         Tx = points.Tx.to(u.deg).value
         Ty = points.Ty.to(u.deg).value
 
-        # Negative here just to choose a frame where the fixed-frame angle
-        # increases in the same direction as elongation
-        self.last_fixed_angles = -angles.to(u.deg).value
-        self.last_fixed_angles %= 360
-        self.last_fixed_angles[
-            self.last_fixed_angles < FIXED_ANGLE_TARGET_RANGE[0]] += 360
-
         x, y = self.input_wcs.world_to_pixel(points)
 
-        g = ((x > 0) * (x < self.input_wcs.pixel_shape[0]-1)
-             * (y > 0) * (y < self.input_wcs.pixel_shape[1]-1))
+        g = ((x > -.5) * (x < self.input_wcs.pixel_shape[0]-.5)
+             * (y > -.5) * (y < self.input_wcs.pixel_shape[1]-.5))
         Tx[~g] = np.nan
         Ty[~g] = np.nan
         
@@ -201,9 +221,6 @@ class OrbitalSliceWCS(utils.FakeWCS):
             venus_pos = np.nan, np.nan
         self.last_venus_elongation = np.interp(
             venus_pos[0], x[1], elongations[1].value,
-            left=np.nan, right=np.nan)
-        self.last_venus_angle = np.interp(
-            venus_pos[0], x[1], self.last_fixed_angles[1],
             left=np.nan, right=np.nan)
         
         return Tx, Ty
@@ -251,11 +268,10 @@ class InputDataBundle:
 class BaseJmap:
     slices: np.ndarray
     angles: np.ndarray
-    fixed_angles: np.ndarray
+    fas_of_sun: np.ndarray
     times: np.ndarray
     transformer: OrbitalSliceWCS
     venus_elongations: np.ndarray
-    venus_angles: np.ndarray
     is_inner: bool
     quantity: str
     encounter: int
@@ -399,15 +415,6 @@ class BaseJmap:
             center_jacobian=False,
             roundtrip_coords=False,
             return_footprint=False)
-        
-        self.fixed_angles = reproject.reproject_adaptive(
-            (self.fixed_angles, wcs),
-            wcs, (len(new_t), self.fixed_angles.shape[-1]),
-            boundary_mode='ignore',
-            bad_value_mode='ignore',
-            center_jacobian=False,
-            roundtrip_coords=False,
-            return_footprint=False)
 
         # Clear out little extra bits that show up around imager gaps
         nans = np.isnan(self.slices)
@@ -425,16 +432,6 @@ class BaseJmap:
             return_footprint=False)
         self.venus_elongations = self.venus_elongations[:, 0]
         
-        self.venus_angles = reproject.reproject_adaptive(
-            (self.venus_angles.reshape((-1, 1)), wcs),
-            wcs, (len(new_t), 1),
-            boundary_mode='ignore',
-            bad_value_mode='ignore',
-            center_jacobian=False,
-            roundtrip_coords=False,
-            return_footprint=False)
-        self.venus_angles = self.venus_angles[:, 0]
-        
         self.forward_elongations = reproject.reproject_adaptive(
             (self.forward_elongations.reshape((-1, 1)), wcs),
             wcs, (len(new_t), 1),
@@ -444,6 +441,16 @@ class BaseJmap:
             roundtrip_coords=False,
             return_footprint=False)
         self.forward_elongations = self.forward_elongations[:, 0]
+        
+        self.fas_of_sun = reproject.reproject_adaptive(
+            (self.fas_of_sun.reshape((-1, 1)), wcs),
+            wcs, (len(new_t), 1),
+            boundary_mode='ignore',
+            bad_value_mode='ignore',
+            center_jacobian=False,
+            roundtrip_coords=False,
+            return_footprint=False)
+        self.forward_elongations = self.fas_of_sun[:, 0]
         
         self.times = new_t
         self._title.append(f"resampled dt={new_dt}")
@@ -744,30 +751,33 @@ class DerotatedFixedAngleWCS(utils.FakeWCS):
     
 
 class RotatedFixedAngleWCS(utils.FakeWCS):
-    def __init__(self, fixed_angles, angle_start):
+    def __init__(self, fa_of_sun, elongations, angle_start):
         super().__init__(None)
-        self.fixed_angles = fixed_angles
+        self.fa_of_sun = fa_of_sun
+        self.elongations = elongations
         self.angle_start = angle_start
         
     def pixel_to_world_values(self, *pixel_arrays):
         # Convert rotated-Jmap pixel coordinates to fixed-angle
-        # coordinates---we know what the FA value is for each pixel center, so
-        # we just interpolate our target pixel coordinates against that.
-        out = np.interp(
+        # coordinates---we know what the elongation is for each pixel center,
+        # so we interpolate that and then convert it.
+        elongations = np.interp(
             pixel_arrays[0],
-            np.arange(len(self.fixed_angles)),
-            self.fixed_angles,
+            np.arange(len(self.elongations)),
+            self.elongations,
             left=np.nan, right=np.nan)
-        return out, pixel_arrays[1].copy()
+        fas = elongation_to_fixed_angle(elongations, self.fa_of_sun)
+        return fas, pixel_arrays[1].copy()
     
     def world_to_pixel_values(self, *world_arrays):
         # Convert fixed-angle coordinates to rotated-Jmap pixel
-        # coordinates---we know what the FA value is for each pixel center, so
-        # we just interpolate our target FA coordinates against that.
+        # coordinates---we know what the elongation is for each pixel center,
+        # so we convert the FA and then interpolate to a pixel location.
+        elongation = fixed_angle_to_elongation(world_arrays[0], self.fa_of_sun)
         out = np.interp(
-            world_arrays[0],
-            self.fixed_angles,
-            np.arange(len(self.fixed_angles)),
+            elongation,
+            self.elongations,
+            np.arange(len(self.elongations)),
             left=np.nan, right=np.nan)
         return out, world_arrays[1].copy()
 
@@ -783,9 +793,10 @@ class PlainJMap(BaseJmap):
         angle_start, angle_stop = FIXED_ANGLE_TARGET_RANGE
         output = np.empty((self.slices.shape[0], n))
         derotated_wcs = DerotatedFixedAngleWCS(angle_start, angle_stop, n)
-        for i, (slice, fixed_angles) in enumerate(
-                zip(self.slices, self.fixed_angles)):
-            rotated_wcs = RotatedFixedAngleWCS(fixed_angles, angle_start)
+        for i, (slice, fa_of_sun) in enumerate(
+                zip(self.slices, self.fas_of_sun)):
+            rotated_wcs = RotatedFixedAngleWCS(
+                fa_of_sun, self.angles, angle_start)
             output[i] = reproject.reproject_adaptive(
                 (slice.reshape((1, slice.size)), rotated_wcs),
                 derotated_wcs, (1, n),
@@ -797,13 +808,12 @@ class PlainJMap(BaseJmap):
         outmap = DerotatedJMap(
             slices=output,
             angles=np.linspace(angle_start, angle_stop, n),
-            fixed_angles=self.fixed_angles.copy(),
+            fas_of_sun=self.fas_of_sun.copy(),
             source_jmap=self,
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
-            venus_angles=copy.deepcopy(self.venus_angles),
             forward_elongations=copy.deepcopy(self.forward_elongations),
             is_inner=self.is_inner,
             quantity=self.quantity,
@@ -820,7 +830,8 @@ class PlainJMap(BaseJmap):
     def _get_hpc(self, t, angle, bundle, angle_is_fixed=False):
         tindex = int(np.round(np.argmin(np.abs(self.times - t))))
         if angle_is_fixed:
-            angles = self.fixed_angles[tindex]
+            angles = elongation_to_fixed_angle(
+                self.angles, self.fas_of_sun[tindex])
         else:
             angles = self.angles
         for offset in [0, -360, -720]:
@@ -829,6 +840,7 @@ class PlainJMap(BaseJmap):
                 break
         else:
             return None, None, None, None
+        
         aindex = int(np.round(np.argmin(np.abs(angles - angle))))
         return tindex, self.hpcs[tindex][aindex], self.hpcs[tindex], bundle
     
@@ -846,7 +858,9 @@ class DerotatedJMap(BaseJmap):
         self.other_map = None
     
     def _get_venus_angles(self):
-        return self.venus_angles
+        return [
+            elongation_to_fixed_angle(ve, fa_of_sun)
+            for ve, fa_of_sun in zip(self.venus_elongations, self.fas_of_sun)]
     
     def _get_hpc(self, t, fixed_angle, bundle):
         return self.source_jmap._get_hpc(
@@ -868,12 +882,11 @@ class DerotatedJMap(BaseJmap):
             slices=slices,
             source_jmaps=source_jmaps,
             angles=copy.deepcopy(self.angles),
-            fixed_angles=self.fixed_angles.copy(),
+            fas_of_sun=self.fas_of_sun.copy(),
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
-            venus_angles=copy.deepcopy(self.venus_angles),
             forward_elongations=copy.deepcopy(self.forward_elongations),
             quantity=self.quantity,
             encounter=self.encounter,
@@ -890,12 +903,13 @@ class DerotatedJMap(BaseJmap):
         output = np.empty(
             (self.slices.shape[0], self.source_jmap.slices.shape[1]))
         derotated_wcs = DerotatedFixedAngleWCS(angle_start, angle_stop, n)
-        for i, (slice, fixed_angles) in enumerate(
-                zip(self.slices, self.fixed_angles)):
-            rotated_wcs = RotatedFixedAngleWCS(fixed_angles, angle_start)
+        for i, (slice, fa_of_sun) in enumerate(
+                zip(self.slices, self.fas_of_sun)):
+            rotated_wcs = RotatedFixedAngleWCS(
+                fa_of_sun, self.source_jmap.angles, angle_start)
             output[i] = reproject.reproject_adaptive(
                 (slice.reshape((1, slice.size)), derotated_wcs),
-                rotated_wcs, (1, len(fixed_angles)),
+                rotated_wcs, (1, output.shape[1]),
                 boundary_mode='ignore',
                 bad_value_mode='ignore',
                 center_jacobian=False,
@@ -904,12 +918,11 @@ class DerotatedJMap(BaseJmap):
         outmap = PlainJMap(
             slices=output,
             angles=self.source_jmap.angles,
-            fixed_angles=self.fixed_angles.copy(),
+            fas_of_sun=self.fas_of_sun.copy(),
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
             title_stub=self.title_stub,
             venus_elongations=copy.deepcopy(self.venus_elongations),
-            venus_angles=copy.deepcopy(self.venus_angles),
             forward_elongations=copy.deepcopy(self.forward_elongations),
             is_inner=self.is_inner,
             quantity=self.quantity,
