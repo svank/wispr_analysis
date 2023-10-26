@@ -854,7 +854,18 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_width, px_height,
         return False
     
     if output_quantity_flag == 1:
+        # For a distant parcel that's smaller than a pixel, as it passes from
+        # close to LOS A, to in-between, to close to LOS B, the Gaussian
+        # amplitude will oscillate down and up. We *should* be integrating the
+        # 2D gaussian throughout the patch we're seeing in this pixel, but as
+        # more hacky anti-aliasing, let's find the projected pixel width at the
+        # parcel and search within that radius of the closest approach and use
+        # the highest Gaussian value in that region.
+        pixel_size_at_parcel = d_p_sc * (np.tan(px_width * np.pi/180)
+                                         + np.tan(px_height * np.pi/180))
+        d_p_close_app = max(0, d_p_close_app - pixel_size_at_parcel)
         flux = np.exp(-d_p_close_app**2 / (parcel_width/6)**2 / 2)
+        
         if d_p_sc < parcel_width:
             # Ramp down the flux as the parcel gets really close to the
             # s/c, to avoid flashiness, etc. (In reality, once the sc enters

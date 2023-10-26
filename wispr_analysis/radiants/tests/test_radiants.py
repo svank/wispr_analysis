@@ -75,18 +75,17 @@ def test_select_speed_range():
 
 def test_find_radiant():
     strips, ts, fov_angles = generate_strips()
-    
     rads, rad_ts = radiants.find_radiant(strips, ts, fov_angles,
             window_size=43, v_halfwindow=1.1)
     
     np.testing.assert_array_equal(ts[21:-21], rad_ts)
     
-    np.testing.assert_array_equal(rads,
+    np.testing.assert_allclose(rads,
             np.array([-1.5909090909090935,
                       -1.5909090909090935,
                       -1.5909090909090935,
-                      -1.5909090909090935,
-                      -1.5909090909090935,
+                       1.5909090909090935,
+                       1.5909090909090935,
                       -1.5909090909090935,
                       -1.5909090909090935,
                       -1.5909090909090935]))
