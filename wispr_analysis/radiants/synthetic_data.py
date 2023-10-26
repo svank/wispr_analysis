@@ -591,8 +591,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     elif output_quantity == 'distance':
         output_image = np.full((output_size_y, output_size_x), np.inf)
     
-    x = np.arange(output_image.shape[1])
-    y = np.arange(output_image.shape[0])
+    # Pad these so we can compute a full gradient at each location
+    x = np.arange(-1, output_image.shape[1] + 1)
+    y = np.arange(-1, output_image.shape[0] + 1)
     
     do_interp = len(x) > 100 and len(y) > 100
     if do_interp:
@@ -600,16 +601,25 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     else:
         slice = np.s_[::1]
     xx, yy = np.meshgrid(x[slice], y[slice])
-    xx_full, yy_full = np.meshgrid(x, y)
     # Compute the LOS direction of each pixel (as helioprojective coordinates)
     los = image_wcs.pixel_to_world(xx, yy)
     Tx, Ty = los.Tx, los.Ty
+    
+    # Compute the (approximate) width and height of each pixel in degrees,
+    # which we'll need later to estimate the filling factor of a pixel
+    dTxdx = np.gradient(Tx.to(u.deg).value, 3 if do_interp else 1, axis=1)
+    dTxdy = np.gradient(Tx.to(u.deg).value, 3 if do_interp else 1, axis=0)
+    dTydx = np.gradient(Ty.to(u.deg).value, 3 if do_interp else 1, axis=1)
+    dTydy = np.gradient(Ty.to(u.deg).value, 3 if do_interp else 1, axis=0)
+    px_width = np.sqrt(dTxdx**2 + dTydx**2)
+    px_height = np.sqrt(dTxdy**2 + dTydy**2)
+    
+    # Turn the LOS directions into distant points and transform them to HCI
+    # (x,y,z) points
     obstime = date
     sc_coord = astropy.coordinates.SkyCoord(
         sc.x, sc.y, sc.z, frame='heliocentricinertial',
         representation_type='cartesian', unit='m', obstime=obstime)
-    # Turn the LOS directions into distant points and transform them to HCI
-    # (x,y,z) points
     los = astropy.coordinates.SkyCoord(
         Tx, Ty, 100*u.au, frame='helioprojective', observer=sc_coord)
     los = los.transform_to('heliocentricinertial').cartesian
@@ -622,6 +632,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     x_over_xdotx = x_old / np.sum(x_old**2, axis=-1, keepdims=True)
     
     if do_interp:
+        # Undo the padding
+        xx_full, yy_full = np.meshgrid(x[1:-1], y[1:-1])
         x_new = np.empty((*yy_full.shape, 3))
         x_new[..., 0] = scipy.interpolate.RegularGridInterpolator(
             (y[slice], x[slice]), x_old[..., 0], method='linear',
@@ -635,9 +647,19 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         x_over_xdotx = scipy.interpolate.RegularGridInterpolator(
             (y[slice], x[slice]), x_over_xdotx, method='linear',
             bounds_error=False, fill_value=None)((yy_full, xx_full))
+        px_width = scipy.interpolate.RegularGridInterpolator(
+            (y[slice], x[slice]), px_width, method='linear',
+            bounds_error=False, fill_value=None)((yy_full, xx_full))
+        px_height = scipy.interpolate.RegularGridInterpolator(
+            (y[slice], x[slice]), px_height, method='linear',
+            bounds_error=False, fill_value=None)((yy_full, xx_full))
         x = x_new
     else:
-        x = x_old
+        # Undo the padding
+        x = x_old[1:-1, 1:-1]
+        x_over_xdotx = x_over_xdotx[1:-1, 1:-1]
+        px_width = px_width[1:-1, 1:-1]
+        px_height = px_height[1:-1, 1:-1]
     
     # Find the center of each parcel as a pixel position
     parcel_poses = np.empty((len(parcels), 3))
@@ -665,14 +687,15 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     for i in range(len(parcels)):
         # Draw each parcel onto the output canvas
         parcel_pos = parcel_poses[i]
-        d_sc = np.linalg.norm(parcel_pos - sc_pos)
-        if (dmin is not None and d_sc < dmin
-                or dmax is not None and d_sc > dmax):
+        d_p_sc = np.linalg.norm(parcel_pos - sc_pos)
+        if (dmin is not None and d_p_sc < dmin
+                or dmax is not None and d_p_sc > dmax):
             continue
-        r = np.linalg.norm(parcel_pos)
+        d_p_sun = np.linalg.norm(parcel_pos)
         _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
+                               px_width, px_height,
                                parcel_width, output_image,
-                               r, d_sc, px[i], py[i], output_quantity_flag)
+                               d_p_sun, d_p_sc, px[i], py[i], output_quantity_flag)
     
     if output_quantity == 'distance':
         output_image[np.isinf(output_image)] = np.nan
@@ -711,9 +734,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
 
 
 @numba.njit(cache=True)
-def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
-                           output_image, p_r, d_sc, start_x, start_y,
-                           output_quantity_flag=1):
+def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
+                           px_width, px_height, parcel_width,
+                           output_image, d_p_sun, d_p_sc, start_x, start_y,
+                           output_quantity_flag):
     # Check if this time point is valid for this parcel
     if np.isnan(parcel_pos[0]):
         return
@@ -730,8 +754,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         # Iterate right from the start point
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc, p_r, output_image,
+                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j],
+                    parcel_pos, sc_pos,
+                    parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
                 # Flux was contributed
                 n += 1
@@ -743,8 +768,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         # Iterate left from the start point
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc, p_r, output_image,
+                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j], 
+                    parcel_pos, sc_pos,
+                    parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
                 # Flux was contributed
                 n += 1
@@ -763,8 +789,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         # Iterate right from the start point
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc, p_r, output_image,
+                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j], 
+                    parcel_pos, sc_pos,
+                    parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
                 # Flux was contributed
                 n += 1
@@ -775,8 +802,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
         
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                    parcel_width, d_sc, p_r, output_image,
+                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j], 
+                    parcel_pos, sc_pos,
+                    parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
                 # Flux was contributed
                 n += 1
@@ -791,9 +819,10 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx, parcel_width,
             
             
 @numba.njit(cache=True)
-def _synth_data_one_pixel(i, j, x, x_over_xdotx, parcel_pos, sc_pos,
-                          parcel_width, d_sc, p_r, output_image,
-                          output_quantity_flag=1):
+def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_width, px_height,
+                          parcel_pos, sc_pos,
+                          parcel_width, d_p_sc, d_p_sun, output_image,
+                          output_quantity_flag):
     # Compute the closest-approach distance between each LOS segment
     # and the parcel center, following
     # https://stackoverflow.com/a/50728570. x is the projection of the
@@ -814,32 +843,48 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, parcel_pos, sc_pos,
     # closest_approach = t * x[i, j] + sc_pos
     
     # Compute how close the closest approach is to the parcel center
-    d_p = np.sqrt(
+    d_p_close_app = np.sqrt(
               (t * x[i, j, 0] + sc_pos[0] - parcel_pos[0])**2
             + (t * x[i, j, 1] + sc_pos[1] - parcel_pos[1])**2
             + (t * x[i, j, 2] + sc_pos[2] - parcel_pos[2])**2
             )
     
     # Truncate the gaussian
-    if d_p > parcel_width:
+    if d_p_close_app > parcel_width:
         return False
     
     if output_quantity_flag == 1:
-        flux = np.exp(-d_p**2 / (parcel_width/6)**2 / 2)
-        # Scale for the Sun-parcel distance and the parcel-s/c distance
-        if d_sc < parcel_width:
+        flux = np.exp(-d_p_close_app**2 / (parcel_width/6)**2 / 2)
+        if d_p_sc < parcel_width:
             # Ramp down the flux as the parcel gets really close to the
-            # s/c, to avoid flashiness, etc.
-            flux *= d_sc / parcel_width
-        # Note: don't scale for the s/c-parcel distance---a longer distance
-        # means 1/r^2 falloff in flux but an r^2 increase in plasma volume
-        # along the LOS 
+            # s/c, to avoid flashiness, etc. (In reality, once the sc enters
+            # the parcel, it's integrating shorter columns, so the brightness
+            # should drop off.)
+            flux *= d_p_sc / parcel_width
+        
+        # We're just using this to adjust the scaling of the output values
         rsun = 695700000.0 # m
-        flux *= 1 / (p_r / rsun)**2
+        
+        # We have a 1/r^2 scaling for the parcel--SC distance, but a r^2
+        # scaling for that distance because we're integrating a wider column
+        # through the parcel the further away it is. But that caps out when the
+        # full parcel fits in our column. Instead of doing a really careful
+        # treatment, let's just add two r scalings, for width and height, but
+        # cap them at the value that has the parcel fill the pixel width/height
+        flux *= 1 / (d_p_sc / rsun)**2
+        
+        max_d_width = parcel_width / 2 / np.tan(px_width / 2 * np.pi/180)
+        max_d_height = parcel_width / 2 / np.tan(px_height / 2 * np.pi/180)
+        
+        flux *= (min(d_p_sc, max_d_width) / rsun)
+        flux *= (min(d_p_sc, max_d_height) / rsun)
+        
+        # Scale for the parcel--Sun distance
+        flux *= 1 / (d_p_sun / rsun)**2
         
         output_image[i, j] += flux
     elif output_quantity_flag == 2:
-        output_image[i, j] = min(output_image[i, j], d_sc)
+        output_image[i, j] = min(output_image[i, j], d_p_sc)
     
     return True
 
