@@ -1056,6 +1056,8 @@ def extract_encounter_number(path, as_int=False):
                 for x in path]
     m = re.search(r'_ENC(\d{2})_', path)
     if m is None:
+        m = re.search(r'/E(\d{2})/', path)
+    if m is None:
         if as_int:
             return -1
         return None

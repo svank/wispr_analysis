@@ -1050,6 +1050,10 @@ def test_extract_encounter_number():
     assert utils.extract_encounter_number('strENC20_str') is None
     assert utils.extract_encounter_number('str_enc20_str') is None
     assert utils.extract_encounter_number('') is None
+    assert utils.extract_encounter_number('str/E01/str') == '01'
+    assert utils.extract_encounter_number('str/E12/str') == '12'
+    assert utils.extract_encounter_number('str/E01/str', as_int=True) == 1
+    assert utils.extract_encounter_number('str/E12/str', as_int=True) == 12
     
     assert utils.extract_encounter_number(
             ['str_ENC01_str',
