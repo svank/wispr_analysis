@@ -23,7 +23,7 @@ from .. import planets, plot_utils, utils
 from ..radiants import synthetic_data
 
 
-FIXED_ANGLE_TARGET_RANGE = (80, 460)
+FIXED_ANGLE_TARGET_RANGE = (80, 440)
 
 
 def elongation_to_fixed_angle(elongation, fa_of_sun):
