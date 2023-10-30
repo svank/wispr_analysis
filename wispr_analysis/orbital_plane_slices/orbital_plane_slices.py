@@ -599,7 +599,7 @@ class BaseJmap:
         
         image = image.T
         if rel_dates:
-            perihelion = planets.perihelia[self.encounter]
+            perihelion = planets.get_psp_perihelion_date(self.encounter)
             perihelion = utils.to_timestamp(perihelion.replace(' ', 'T'))
             x = self.times - perihelion
             x /= 3600 * 24

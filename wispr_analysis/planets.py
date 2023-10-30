@@ -15,7 +15,7 @@ planets = [
         'Jupiter', 'Saturn', 'Uranus', 'Neptune']
 
 
-perihelia = {
+perihelia_dates = {
     1: '2018-11-06 03:27:00',
     2: '2019-04-04 22:39:00',
     3: '2019-09-01 17:50:00',
@@ -40,6 +40,14 @@ perihelia = {
     22: '2024-12-24 11:41:00',
     23: '2025-03-22 22:25:00',
     24: '2025-06-19 09:09:00'}
+
+
+def get_psp_perihelion_date(encounter):
+    if isinstance(encounter, str):
+        if encounter[0] == 'E':
+            encounter = encounter[1:]
+        encounter = int(encounter)
+    return perihelia_dates[encounter]
 
 
 def load_kernels(kernel_dir='spice_kernels', force=False):
@@ -239,16 +247,15 @@ def format_date(date):
     if isinstance(date, (int, float)):
         if isinstance(date, int) and date < 30:
             try:
-                date = perihelia[date]
+                date = get_psp_perihelion_date(date)
             except KeyError:
                 raise ValueError("Invalid encounter number")
         else:
             date = datetime.fromtimestamp(
                 date, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     elif isinstance(date, str) and date[0] == 'E' and len(date) == 3:
-        E = int(date[1:])
         try:
-            date = perihelia[E]
+            date = get_psp_perihelion_date(date)
         except KeyError:
             raise ValueError("Invalid encounter number")
     elif not isinstance(date, str):
