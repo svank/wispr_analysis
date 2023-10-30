@@ -289,9 +289,7 @@ def test_jmap_rerotate(jmap):
         re_rotated.times, jmap.times)
     np.testing.assert_array_equal(
         re_rotated.venus_elongations, jmap.venus_elongations)
-    np.testing.assert_array_equal(
-        re_rotated.angles, jmap.angles)
-    return re_rotated.slices
+    return np.vstack((re_rotated.angles, re_rotated.slices))
 
 
 def test_DerotatedFixedAngleWCS_roundtrip():

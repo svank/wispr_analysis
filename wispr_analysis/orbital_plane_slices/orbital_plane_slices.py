@@ -443,13 +443,14 @@ class BaseJmap:
         self.forward_elongations = self.forward_elongations[:, 0]
         
         self.fas_of_sun = reproject.reproject_adaptive(
-            (self.fas_of_sun.reshape((-1, 1)), wcs),
+            (self.fas_of_sun.reshape((-1, 1)) % 360, wcs),
             wcs, (len(new_t), 1),
             boundary_mode='ignore',
             bad_value_mode='ignore',
             center_jacobian=False,
             roundtrip_coords=False,
             return_footprint=False)
+        self.fas_of_sun[self.fas_of_sun > 180] -= 360
         self.forward_elongations = self.fas_of_sun[:, 0]
         
         self.times = new_t
@@ -896,17 +897,24 @@ class DerotatedJMap(BaseJmap):
         outmap._title = ['Merged']
         return outmap
     
-    def rotate(self) -> "PlainJMap":
+    def rotate(self, n=None) -> "PlainJMap":
+        if n is None:
+            n = self.source_jmap.slices.shape[1]
         angle_start = self.angles[0]
         angle_stop = self.angles[-1]
-        n = len(self.angles)
+        i = min(20, len(self.slices)-1)
+        target_angles = self.angles[np.isfinite(self.slices[i])]
+        target_angles = fixed_angle_to_elongation(
+            target_angles, self.fas_of_sun[i])
+        target_angles = np.linspace(target_angles[0], target_angles[-1], n)
         output = np.empty(
-            (self.slices.shape[0], self.source_jmap.slices.shape[1]))
-        derotated_wcs = DerotatedFixedAngleWCS(angle_start, angle_stop, n)
+            (self.slices.shape[0], n))
+        derotated_wcs = DerotatedFixedAngleWCS(
+            angle_start, angle_stop, len(self.angles))
         for i, (slice, fa_of_sun) in enumerate(
                 zip(self.slices, self.fas_of_sun)):
             rotated_wcs = RotatedFixedAngleWCS(
-                fa_of_sun, self.source_jmap.angles, angle_start)
+                fa_of_sun, target_angles, angle_start)
             output[i] = reproject.reproject_adaptive(
                 (slice.reshape((1, slice.size)), derotated_wcs),
                 rotated_wcs, (1, output.shape[1]),
@@ -917,7 +925,7 @@ class DerotatedJMap(BaseJmap):
                 roundtrip_coords=False)
         outmap = PlainJMap(
             slices=output,
-            angles=self.source_jmap.angles,
+            angles=target_angles,
             fas_of_sun=self.fas_of_sun.copy(),
             times=copy.deepcopy(self.times),
             transformer=copy.deepcopy(self.transformer),
