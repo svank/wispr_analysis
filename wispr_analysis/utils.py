@@ -56,6 +56,7 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
             datestring = os.path.basename(datestring)
             # Extract the timestamp part of the standard WISPR filename
             datestring = datestring.split('_')[3]
+    datestring = datestring.replace(' ', 'T')
     try:
         dt = datetime.strptime(
                 datestring, "%Y%m%dT%H%M%S")

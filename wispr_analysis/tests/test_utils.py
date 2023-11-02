@@ -51,6 +51,12 @@ def test_to_timestamp():
     assert (utils.to_timestamp(
         test_file, as_datetime=True, read_headers=True)
             == datetime(2018, 11, 1, 0, 47, 1, 880000, timezone.utc))
+    
+    assert (utils.to_timestamp('2021-02-03T12:13:14.5')
+            == utils.to_timestamp('2021-02-03 12:13:14.5'))
+    
+    assert (utils.to_timestamp('20210203T121314')
+            == utils.to_timestamp('20210203 121314'))
 
 
 def test_to_timestamp_list():
