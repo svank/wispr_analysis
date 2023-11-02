@@ -384,7 +384,7 @@ class BaseJmap:
             fitted = utils.time_window_savgol_filter(
                 indices, data, window, order)
             self.slices[:, j] -= fitted
-        self._title.append(f"local col detrend({order}, {window}px)")
+        self._title.append(f"lcoldet({order}, {window}px)")
 
     def per_row_normalize(self):
         # Do a per-row normalization
@@ -496,7 +496,7 @@ class BaseJmap:
         self.forward_elongations = self.fas_of_sun[:, 0]
         
         self.times = new_t
-        self._title.append(f"resampled dt={new_dt}")
+        self._title.append(f"resamp dt={new_dt}")
 
     def clamp(self, min=-np.inf, max=np.inf):
         self.slices[self.slices < min] = min
@@ -565,7 +565,7 @@ class BaseJmap:
         self._title.append(f"bg_rem({med_size}, {gauss_size})")
     
     def mask_venus(self, angular_width):
-        self._title.append("Venus masked")
+        self._title.append("Venus mask")
         for i in range(self.slices.shape[0]):
             venus_angle = self._get_venus_angles()[i]
             mask_start = venus_angle - angular_width / 2
@@ -746,6 +746,7 @@ class BaseJmap:
                         ax.set_title(e)
             self.handler = EventHandler(self)
             plt.connect('button_press_event', self.handler.onclick)
+        return im
 
 
 class ResampleTimeWCS(utils.FakeWCS):
@@ -863,7 +864,7 @@ class PlainJMap(BaseJmap):
             encounter=self.encounter,
             )
         outmap._title = copy.deepcopy(self._title)
-        outmap._title.append("derotated")
+        outmap._title.append("derot")
         outmap._subtitles = copy.deepcopy(self._subtitles)
         return outmap
     
@@ -980,7 +981,7 @@ class DerotatedJMap(BaseJmap):
             encounter=self.encounter,
             )
         outmap._title = copy.deepcopy(self._title)
-        outmap._title.append("Re-rotated")
+        outmap._title.append("re-rot")
         outmap._subtitles = copy.deepcopy(self._subtitles)
         return outmap
 

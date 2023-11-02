@@ -178,7 +178,7 @@ def test_per_col_detrend(jmap):
 @pytest.mark.array_compare
 def test_local_col_detrend(jmap):
     jmap.local_col_detrend(1, 3)
-    assert 'local col detrend(1, 3px)' in jmap.title
+    assert 'lcoldet(1, 3px)' in jmap.title
     return jmap.slices
 
 
@@ -208,7 +208,7 @@ def test_resample_time(jmap, explicit_times):
     else:
         jmap.resample_time(250)
         
-    assert "resampled dt=250" in jmap.title
+    assert "resamp dt=250" in jmap.title
     np.testing.assert_allclose(
         jmap.times,
         np.arange(original_times[0], original_times[-1]+1, 250))
@@ -276,7 +276,7 @@ def test_plot(jmap):
 def test_jmap_derotate(jmap):
     derotated = jmap.derotate(101)
     assert derotated is not jmap
-    assert "derotated" in derotated.title
+    assert "derot" in derotated.title
     assert jmap.title in derotated.title
     np.testing.assert_array_equal(
         derotated.times, jmap.times)
@@ -291,8 +291,8 @@ def test_jmap_rerotate(jmap):
     re_rotated = derotated.rotate()
     assert derotated is not re_rotated
     assert derotated is not jmap
-    assert "derotated" in re_rotated.title
-    assert "Re-rotated" in re_rotated.title
+    assert "derot" in re_rotated.title
+    assert "re-rot" in re_rotated.title
     assert jmap.title in re_rotated.title
     assert derotated.title in re_rotated.title
     np.testing.assert_array_equal(
