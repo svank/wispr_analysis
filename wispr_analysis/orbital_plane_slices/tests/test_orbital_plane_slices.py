@@ -189,6 +189,16 @@ def test_per_row_normalize(jmap):
     return jmap.slices
 
 
+@pytest.mark.array_compare
+def test_fourier_filter(jmap):
+    # Ensure there are enough points for the apodization rolloffs
+    dt = jmap.times[1] - jmap.times[0]
+    jmap.resample_time(dt/3.5)
+    jmap.fourier_filter()
+    assert 'ffiltered' in jmap.title
+    return jmap.slices
+
+
 @pytest.mark.array_compare(filename='test_resample_time.txt')
 @pytest.mark.parametrize('explicit_times', [True, False])
 def test_resample_time(jmap, explicit_times):

@@ -394,6 +394,48 @@ class BaseJmap:
         with np.errstate(invalid='ignore'):
             self.slices = (self.slices - lows) / (highs - lows)
         self._title.append("row-normalized")
+    
+    def fourier_filter(self, dk=1, omega_offset=60):
+        vals = self.slices
+        xs = np.arange(vals.shape[1])
+        ys = np.arange(vals.shape[0])
+        xs, ys = np.meshgrid(xs, ys)
+        good = np.isfinite(vals)
+        # Fill in nans for Fourier purposes
+        if not np.all(good):
+            replacement_vals = scipy.interpolate.griddata(
+                list(zip(xs[good], ys[good])), vals[good],
+                list(zip(xs[~good], ys[~good])), method='linear', fill_value=0)
+            filled_slices = vals.copy()
+            filled_slices[~good] = replacement_vals
+        
+        input_apodize = utils.get_hann_rolloff(filled_slices.shape, 10)
+        fft = np.fft.fft2(filled_slices * input_apodize)
+        fft = np.fft.fftshift(fft)
+        
+        # Build our mask, which zeros out pixels at ~high omega values and very
+        # low k values (to get the banding with time---very high temporal
+        # frequencies, but little spatial variation as it's an image-by-image
+        # thing)
+        mask = np.ones_like(fft, dtype=float)
+        dk = 1
+        omega_offset = 30
+        kcenter = fft.shape[1]//2
+        ocenter = fft.shape[0]//2
+        mask[:ocenter-omega_offset+1, kcenter-dk:kcenter+dk+1] = 0
+        mask[ocenter+omega_offset:, kcenter-dk:kcenter+dk+1] = 0
+        
+        # Lightly apodize the mask
+        mask_apodizer = utils.get_hann_rolloff((7,7), 3)[1:-1, 1:-1]
+        mask_apodizer /= np.sum(mask_apodizer)
+        mask = scipy.ndimage.convolve(mask, mask_apodizer, mode='wrap')
+        
+        filtered_slices = np.fft.ifft2(np.fft.ifftshift(mask * fft)).real
+        # Restore the nans
+        filtered_slices[~good] = np.nan
+        
+        self.slices = filtered_slices
+        self._title.append(f"ffiltered({dk}, {omega_offset})")
 
     def _resample_time_post_hook(self):
         pass
