@@ -581,6 +581,13 @@ class BaseJmap:
 
     def deepcopy(self) -> "BaseJmap":
         return copy.deepcopy(self)
+    
+    def tstamps_to_rel_days(self, dates):
+        perihelion = planets.get_psp_perihelion_date(self.encounter)
+        perihelion = utils.to_timestamp(perihelion)
+        dates = dates - perihelion
+        dates /= 3600 * 24
+        return dates
 
     def plot(self,
              bundle: "InputDataBundle"=None,
@@ -641,10 +648,7 @@ class BaseJmap:
         
         image = image.T
         if rel_dates:
-            perihelion = planets.get_psp_perihelion_date(self.encounter)
-            perihelion = utils.to_timestamp(perihelion.replace(' ', 'T'))
-            x = self.times - perihelion
-            x /= 3600 * 24
+            x = self.tstamps_to_rel_days(self.times)
             ax.set_xlabel("Days after perihelion")
         else:
             dates = plot_utils.x_axis_dates(self.times, ax=ax)
