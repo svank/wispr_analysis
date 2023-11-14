@@ -3,6 +3,7 @@ import os
 import pickle
 
 import astropy.coordinates
+import astropy.time
 import astropy.units as u
 import numpy as np
 import spiceypy as spice
@@ -272,13 +273,16 @@ def format_date(date):
             date = get_psp_perihelion_date(date)
         except KeyError:
             raise ValueError("Invalid encounter number")
+    elif isinstance(date, astropy.time.Time):
+        date = date.to_string()
     elif not isinstance(date, str):
         # Treat as FITS header
         date = date['date-avg'].replace('T', ' ')
     return date
 
 
-def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_orbit=True, npts=720):
+def get_orbital_plane(body, date, observer=None, return_times=False,
+                      expand_psp_orbit=True, npts=720):
     """
     Generates coordinates of a set of points along an orbital plane
     
@@ -309,7 +313,7 @@ def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_
     if body.lower() == 'psp':
         body = '-96'
     et = spice.str2et(date)
-    state, ltime = spice.spkezr('-96', et, 'HCI', 'None', 'Sun')
+    state, ltime = spice.spkezr(body, et, 'HCI', 'None', 'Sun')
     
     mu = 1.32712440018e11
     elts = spice.oscelt(state, et, mu)
@@ -347,3 +351,22 @@ def get_orbital_plane(body, date, observer=None, return_times=False, expand_psp_
         times = np.array([spice.et2datetime(t).timestamp() for t in times])
         return coords, times
     return coords
+
+
+def get_orbital_elements(date, body='psp', coord_frame='HCI'):
+    date = format_date(date)
+    load_kernels()
+    if body.lower() == 'psp':
+        body = '-96'
+    et = spice.str2et(date)
+    state, ltime = spice.spkezr(body, et, coord_frame, 'None', 'Sun')
+    
+    mu = 1.32712440018e11
+    elts = spice.oscelt(state, et, mu)
+    perifocal_distance = elts[0] * u.km
+    eccentricity = elts[1]
+    inclination = elts[2] * u.rad
+    long_asc_node = elts[3] * u.rad
+    arg_periapsis = elts[4] * u.rad
+    return (perifocal_distance, eccentricity, inclination,
+            long_asc_node, arg_periapsis)

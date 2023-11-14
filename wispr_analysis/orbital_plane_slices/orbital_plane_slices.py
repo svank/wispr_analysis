@@ -6,6 +6,7 @@ import warnings
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 import astropy.units as u
+import astropy.wcs.utils
 from astropy.wcs import WCS
 import matplotlib.colors
 import matplotlib.ticker
