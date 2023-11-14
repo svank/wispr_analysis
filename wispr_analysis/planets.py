@@ -8,6 +8,8 @@ import numpy as np
 import spiceypy as spice
 import sunpy.coordinates
 
+from . import utils
+
 
 KERNELS_LOADED = False
 planets = [
@@ -48,6 +50,18 @@ def get_psp_perihelion_date(encounter):
             encounter = encounter[1:]
         encounter = int(encounter)
     return perihelia_dates[encounter]
+
+
+def get_psp_orbit_number(date):
+    ts = utils.to_timestamp(date)
+    if ts < utils.to_timestamp('2018-11-01 00:00:00'):
+        raise ValueError('Date is before early cutoff')
+    if ts > utils.to_timestamp('2025-07-01 00:00:00'):
+        raise ValueError('Date is before late cutoff')
+    timestamps = utils.to_timestamp(perihelia_dates.values())
+    delta = np.abs(np.array(timestamps) - ts)
+    i = np.argmin(delta)
+    return list(perihelia_dates.keys())[i]
 
 
 def load_kernels(kernel_dir='spice_kernels', force=False):

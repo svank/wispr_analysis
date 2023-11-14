@@ -56,3 +56,15 @@ def test_formate_date():
     
     assert planets.format_date('E07') == '2021-01-17 17:40:00'
     assert planets.format_date(7) == '2021-01-17 17:40:00'
+
+
+def test_get_psp_orbit_number():
+    assert planets.get_psp_orbit_number('2018-11-06 03:27:00') == 1
+    assert planets.get_psp_orbit_number('2018-11-03 03:27:00') == 1
+    assert planets.get_psp_orbit_number('2018-11-09 03:27:00') == 1
+    assert planets.get_psp_orbit_number('2019-04-04 03:27:00') == 2
+    
+    with pytest.raises(ValueError):
+        planets.get_psp_orbit_number('2018-10-30 03:27:00')
+    with pytest.raises(ValueError):
+        planets.get_psp_orbit_number('2025-07-31 03:27:00')
