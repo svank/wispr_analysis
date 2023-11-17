@@ -713,9 +713,11 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         image_wcs.wcs.dateobs = date
         image_wcs.wcs.dateavg = date
         c = sc_coord.transform_to('heliographic_stonyhurst')
-        image_wcs.wcs.aux.hgln_obs = c.lon.to(u.deg).value
-        image_wcs.wcs.aux.hglt_obs = c.lat.to(u.deg).value
-        image_wcs.wcs.aux.dsun_obs = c.radius.to(u.m).value
+        # .item() calls extract the single element of a 1-element array, and
+        # are a no-op for np scalars
+        image_wcs.wcs.aux.hgln_obs = c.lon.to(u.deg).value.item()
+        image_wcs.wcs.aux.hglt_obs = c.lat.to(u.deg).value.item()
+        image_wcs.wcs.aux.dsun_obs = c.radius.to(u.m).value.item()
         with utils.ignore_fits_warnings():
             image_wcs.fix()
     
