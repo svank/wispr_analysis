@@ -782,7 +782,8 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         arguments, one per function call. The required output filename will be
         prepended to each tuple of arguments.
     parallel : boolean
-        If ``True``, frames will be rendered in parallel.
+        If ``True``, frames will be rendered in parallel. If an integer, sets
+        the maximum number of worker processes.
     fps : int
         The frames-per-second to use for the final video.
     save_to : str
@@ -817,8 +818,13 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
                     "At least one iterable of arguments must be provided")
         
         if parallel:
+            if type(parallel) is int:
+                max_workers = parallel
+            else:
+                max_workers = os.cpu_count()
             process_map(
-                    frame_renderer, *ready_arg_list, total=n)
+                    frame_renderer, *ready_arg_list,
+                    total=n, max_workers=max_workers)
         else:
             for args in tqdm(zip(ready_arg_list), total=n):
                 frame_renderer(*args)
