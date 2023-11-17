@@ -79,9 +79,14 @@ def load_kernels(kernel_dir='spice_kernels', force=False):
     global KERNELS_LOADED
     if KERNELS_LOADED and not force:
         return
+    n_kern = 0
     for root, _, files in os.walk(kernel_dir):
         for kern in files:
             spice.furnsh(os.path.join(root, kern))
+            n_kern += 1
+    if n_kern == 0:
+        import warnings
+        warnings.warn("No SPICE kernels found")
     KERNELS_LOADED = True
 
 
