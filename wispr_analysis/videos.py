@@ -826,7 +826,7 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
                     frame_renderer, *ready_arg_list,
                     total=n, max_workers=max_workers)
         else:
-            for args in tqdm(zip(ready_arg_list), total=n):
+            for args in tqdm(zip(*ready_arg_list), total=n):
                 frame_renderer(*args)
         
         video_file = os.path.join(tmpdir, 'out.mp4')
