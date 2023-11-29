@@ -606,13 +606,23 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     Tx, Ty = los.Tx, los.Ty
     
     # Compute the (approximate) width and height of each pixel in degrees,
-    # which we'll need later to estimate the filling factor of a pixel
-    dTxdx = np.gradient(Tx.to(u.deg).value, 3 if do_interp else 1, axis=1)
-    dTxdy = np.gradient(Tx.to(u.deg).value, 3 if do_interp else 1, axis=0)
-    dTydx = np.gradient(Ty.to(u.deg).value, 3 if do_interp else 1, axis=1)
-    dTydy = np.gradient(Ty.to(u.deg).value, 3 if do_interp else 1, axis=0)
-    px_width = np.sqrt(dTxdx**2 + dTydx**2)
-    px_height = np.sqrt(dTxdy**2 + dTydy**2)
+    # which we'll need later to estimate the filling factor of a pixel.
+    # Do this in a way that handles coordinate wrap points
+    spacing = 3 if do_interp else 1
+    dTxdx2 = np.minimum(
+        np.gradient(Tx.to(u.deg).value, spacing, axis=1)**2,
+        np.gradient(Tx.to(u.deg).value % 360, spacing, axis=1)**2)
+    dTxdy2 = np.minimum(
+        np.gradient(Tx.to(u.deg).value, spacing, axis=0)**2,
+        np.gradient(Tx.to(u.deg).value % 360, spacing, axis=0)**2)
+    dTydx2 = np.minimum(
+        np.gradient(Ty.to(u.deg).value, spacing, axis=1)**2,
+        np.gradient(Ty.to(u.deg).value % 360, spacing, axis=1)**2)
+    dTydy2 = np.minimum(
+        np.gradient(Ty.to(u.deg).value, spacing, axis=0)**2,
+        np.gradient(Ty.to(u.deg).value % 360, spacing, axis=0)**2)
+    # Average of the width and height
+    px_scale = 0.5 * (np.sqrt(dTxdx2 + dTydx2) + np.sqrt(dTxdy2 + dTydy2))
     
     # Turn the LOS directions into distant points and transform them to HCI
     # (x,y,z) points
@@ -647,19 +657,15 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         x_over_xdotx = scipy.interpolate.RegularGridInterpolator(
             (y[slice], x[slice]), x_over_xdotx, method='linear',
             bounds_error=False, fill_value=None)((yy_full, xx_full))
-        px_width = scipy.interpolate.RegularGridInterpolator(
-            (y[slice], x[slice]), px_width, method='linear',
-            bounds_error=False, fill_value=None)((yy_full, xx_full))
-        px_height = scipy.interpolate.RegularGridInterpolator(
-            (y[slice], x[slice]), px_height, method='linear',
+        px_scale = scipy.interpolate.RegularGridInterpolator(
+            (y[slice], x[slice]), px_scale, method='linear',
             bounds_error=False, fill_value=None)((yy_full, xx_full))
         x = x_new
     else:
         # Undo the padding
         x = x_old[1:-1, 1:-1]
         x_over_xdotx = x_over_xdotx[1:-1, 1:-1]
-        px_width = px_width[1:-1, 1:-1]
-        px_height = px_height[1:-1, 1:-1]
+        px_scale = px_scale[1:-1, 1:-1]
     
     # Find the center of each parcel as a pixel position
     parcel_poses = np.empty((len(parcels), 3))
@@ -693,8 +699,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
             continue
         d_p_sun = np.linalg.norm(parcel_pos)
         _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
-                               px_width, px_height,
-                               parcel_width, output_image,
+                               px_scale, parcel_width, output_image,
                                d_p_sun, d_p_sc, px[i], py[i], output_quantity_flag)
     
     if output_quantity == 'distance':
@@ -737,7 +742,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
 
 @numba.njit(cache=True)
 def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
-                           px_width, px_height, parcel_width,
+                           px_scale, parcel_width,
                            output_image, d_p_sun, d_p_sc, start_x, start_y,
                            output_quantity_flag):
     # Check if this time point is valid for this parcel
@@ -756,7 +761,7 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         # Iterate right from the start point
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j],
+                    i, j, x, x_over_xdotx, px_scale[i,j],
                     parcel_pos, sc_pos,
                     parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
@@ -770,7 +775,7 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         # Iterate left from the start point
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j], 
+                    i, j, x, x_over_xdotx, px_scale[i,j],
                     parcel_pos, sc_pos,
                     parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
@@ -791,7 +796,7 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         # Iterate right from the start point
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j], 
+                    i, j, x, x_over_xdotx, px_scale[i,j], 
                     parcel_pos, sc_pos,
                     parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
@@ -804,7 +809,7 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
-                    i, j, x, x_over_xdotx, px_width[i,j], px_height[i,j], 
+                    i, j, x, x_over_xdotx, px_scale[i,j],
                     parcel_pos, sc_pos,
                     parcel_width, d_p_sc, d_p_sun, output_image,
                     output_quantity_flag):
@@ -821,7 +826,7 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
             
             
 @numba.njit(cache=True)
-def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_width, px_height,
+def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
                           parcel_pos, sc_pos,
                           parcel_width, d_p_sc, d_p_sun, output_image,
                           output_quantity_flag):
@@ -851,21 +856,21 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_width, px_height,
             + (t * x[i, j, 2] + sc_pos[2] - parcel_pos[2])**2
             )
     
+    # For a distant parcel that's smaller than a pixel, as it passes from
+    # close to LOS A, to in-between, to close to LOS B, the Gaussian
+    # amplitude will oscillate down and up. We *should* be integrating the
+    # 2D gaussian throughout the patch we're seeing in this pixel, but as
+    # more hacky anti-aliasing, let's find the projected pixel width at the
+    # parcel and search within that radius of the closest approach and use
+    # the highest Gaussian value in that region.
+    pixel_size_at_parcel = d_p_sc * np.tan(px_scale / 2 * np.pi/180)
+    d_p_close_app = max(0, d_p_close_app - pixel_size_at_parcel)
+    
     # Truncate the gaussian
     if d_p_close_app > parcel_width:
         return False
     
     if output_quantity_flag == 1:
-        # For a distant parcel that's smaller than a pixel, as it passes from
-        # close to LOS A, to in-between, to close to LOS B, the Gaussian
-        # amplitude will oscillate down and up. We *should* be integrating the
-        # 2D gaussian throughout the patch we're seeing in this pixel, but as
-        # more hacky anti-aliasing, let's find the projected pixel width at the
-        # parcel and search within that radius of the closest approach and use
-        # the highest Gaussian value in that region.
-        pixel_size_at_parcel = d_p_sc * (np.tan(px_width * np.pi/180)
-                                         + np.tan(px_height * np.pi/180))
-        d_p_close_app = max(0, d_p_close_app - pixel_size_at_parcel)
         flux = np.exp(-d_p_close_app**2 / (parcel_width/6)**2 / 2)
         
         if d_p_sc < parcel_width:
@@ -886,11 +891,9 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_width, px_height,
         # cap them at the value that has the parcel fill the pixel width/height
         flux *= 1 / (d_p_sc / rsun)**2
         
-        max_d_width = parcel_width / 2 / np.tan(px_width / 2 * np.pi/180)
-        max_d_height = parcel_width / 2 / np.tan(px_height / 2 * np.pi/180)
+        max_d_width = parcel_width / 2 / np.tan(px_scale / 2 * np.pi/180)
         
-        flux *= (min(d_p_sc, max_d_width) / rsun)
-        flux *= (min(d_p_sc, max_d_height) / rsun)
+        flux *= (min(d_p_sc, max_d_width) / rsun) ** 2
         
         # Scale for the parcel--Sun distance
         flux *= 1 / (d_p_sun / rsun)**2
