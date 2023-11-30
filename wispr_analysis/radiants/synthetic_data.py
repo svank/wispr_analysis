@@ -45,6 +45,9 @@ class Thing:
             if len(quantity.shape) == 0:
                 quantity = np.full(bad_t.size, quantity)
             quantity[bad_t] = np.nan
+        else:
+            if isinstance(quantity, np.ndarray):
+                quantity = quantity.astype(float)
         return quantity
     
     def is_same_time(self, other):
@@ -142,9 +145,15 @@ class LinearThing(Thing):
     vx_t0: float = 0
     vy_t0: float = 0
     vz_t0: float = 0
+    rperp0: float = 1
+    rpar0: float = 1
+    rho0: float = 1
+    rperp_r2: bool = False
+    density_r2: bool = False
     
     def __init__(self, x=0, y=0, z=0, vx=0, vy=0, vz=0,
-            t=0, t_min=None, t_max=None):
+                 t=0, t_min=None, t_max=None,
+                 rperp=1, rpar=1, rho=1, density_r2=False, rperp_r2=False):
         """
         Accepts physical parameters, as well as the corresponding time
         
@@ -163,6 +172,12 @@ class LinearThing(Thing):
         
         self.t_min = t_min
         self.t_max = t_max
+        
+        self.rperp0 = rperp
+        self.rpar0 = rpar
+        self.rho0 = rho
+        self.rperp_r2 = rperp_r2
+        self.density_r2 = density_r2
     
     @property
     def x(self):
@@ -209,6 +224,37 @@ class LinearThing(Thing):
     def vz(self, value):
         self.vz_t0 = value
     
+    @property
+    def rperp(self):
+        rperp = self.rperp0
+        if self.rperp_r2:
+            rperp *= 1 / self.r**2
+        return rperp
+    
+    @rperp.setter
+    def rperp(self, value):
+        self.rperp = value
+    
+    @property
+    def rpar(self):
+        rpar = self.rpar0
+        return rpar
+    
+    @rpar.setter
+    def rpar(self, value):
+        self.rpar = value
+    
+    @property
+    def rho(self):
+        rho = self.rho0
+        if self.density_r2:
+            rho *= 1 / self.r**2
+        return rho
+    
+    @rho.setter
+    def rho(self, value):
+        self.rho0 = value
+    
     def offset_by_time(self, dt):
         out = self.copy()
         out.x_t0 += out.vx_t0 * dt
@@ -230,9 +276,14 @@ class ArrayThing(Thing):
     ylist: np.ndarray = 0
     zlist: np.ndarray = 0
     tlist: np.ndarray = 0
+    rperplist: np.ndarray = 0
+    rparlist: np.ndarray = 0
+    rholist: np.ndarray = 0
+    scale_rho_r2: bool = False
     
     def __init__(self, tlist, xlist=0, ylist=0, zlist=0,
-            t=0, t_min=None, t_max=None):
+            t=0, t_min=None, t_max=None, rperplist=1, rparlist=1,
+            rholist=1, default_density_r2=False):
         """
         Parameters
         ----------
@@ -244,64 +295,46 @@ class ArrayThing(Thing):
         t : float
             The time the object is currently at.
         """
-        xlist = np.atleast_1d(xlist)
-        ylist = np.atleast_1d(ylist)
-        zlist = np.atleast_1d(zlist)
-        tlist = np.atleast_1d(tlist)
-        
-        # Check that tlist is sorted
+        if len(tlist) <= 1:
+            raise ValueError("tlist must have >= 2 entries")
         if np.any(np.diff(tlist) < 0):
             raise ValueError("tlist must be sorted")
         
-        if len(xlist) == 1:
-            xlist = np.repeat(xlist, len(tlist))
-        if len(ylist) == 1:
-            ylist = np.repeat(ylist, len(tlist))
-        if len(zlist) == 1:
-            zlist = np.repeat(zlist, len(tlist))
+        for var in ('x', 'y', 'z', 't', 'rperp', 'rpar', 'rho'):
+            name = var + 'list'
+            arr = np.atleast_1d(locals()[name])
+            if len(arr) == 1:
+                arr = np.repeat(arr, len(tlist))
+                if var == 'rho':
+                    self.scale_rho_r2 = default_density_r2
+            if len(arr) != len(tlist):
+                raise ValueError(f"Invalid length for {name}")
+            setattr(self, name, arr)
         
-        if len(xlist) != len(tlist):
-            raise ValueError("Invalid length for xlist")
-        if len(ylist) != len(tlist):
-            raise ValueError("Invalid length for ylist")
-        if len(zlist) != len(tlist):
-            raise ValueError("Invalid length for zlist")
-        
-        self.xlist = xlist
-        self.ylist = ylist
-        self.zlist = zlist
-        self.tlist = tlist
         self.t = t
-        
         self.t_min = t_min
         self.t_max = t_max
     
-    @property
-    def x(self):
+    def _access_quantity(self, data_list):
         values = self.process_t_bounds(np.array(self.t))
         is_good = np.isfinite(values)
         t_good = values[is_good]
-        x_good = scipy.interpolate.interp1d(self.tlist, self.xlist)(t_good)
+        x_good = scipy.interpolate.interp1d(self.tlist, data_list)(t_good)
         values[is_good] = x_good
         return values
+        
+    
+    @property
+    def x(self):
+        return self._access_quantity(self.xlist)
     
     @property
     def y(self):
-        values = self.process_t_bounds(np.array(self.t))
-        is_good = np.isfinite(values)
-        t_good = values[is_good]
-        x_good = scipy.interpolate.interp1d(self.tlist, self.ylist)(t_good)
-        values[is_good] = x_good
-        return values
+        return self._access_quantity(self.ylist)
     
     @property
     def z(self):
-        values = self.process_t_bounds(np.array(self.t))
-        is_good = np.isfinite(values)
-        t_good = values[is_good]
-        x_good = scipy.interpolate.interp1d(self.tlist, self.zlist)(t_good)
-        values[is_good] = x_good
-        return values
+        return self._access_quantity(self.zlist)
     
     @property
     def vx(self):
@@ -323,6 +356,23 @@ class ArrayThing(Thing):
         dt = .0001
         vz = self._finite_difference(interpolator, dt)
         return vz
+    
+    @property
+    def rperp(self):
+        values = self._access_quantity(self.rperplist)
+        return values
+    
+    @property
+    def rpar(self):
+        values = self._access_quantity(self.rparlist)
+        return values
+    
+    @property
+    def rho(self):
+        values = self._access_quantity(self.rholist)
+        if self.scale_rho_r2:
+            values /= self.r**2
+        return values
     
     def _finite_difference(self, interpolator, dt):
         values = self.process_t_bounds(np.array(self.t))
@@ -421,7 +471,7 @@ class DifferenceThing(Thing):
 
 
 def angle_between_vectors(x1, y1, z1, x2, y2, z2):
-    """Returns a signed angle between two vectors"""
+    """Returns a signed angle between two vectors, in radians"""
     # Rotate so v1 is our x axis. We want the angle v2 makes to the x axis.
     # Its components in this rotated frame are its dot and cross products
     # with v1.
@@ -503,7 +553,8 @@ def hpc_to_elpa(Tx, Ty):
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
         celestial_wcs=False, fixed_fov_range=None, output_quantity='flux',
-        point_forward=False, dmin=None, dmax=None):
+        point_forward=False, dmin=None, dmax=None, antialias=True,
+        thomson=True, use_density=True, expansion=True):
     """Produce a synthetic WISPR image
 
     Parameters
@@ -520,7 +571,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         Projection to use
     output_size_x, output_size_y : int, optional
         Size of the generated image
-    parcel_width : int, optional
+    parcel_width : int or Quantity, optional
         Width of each plasma blob, in R_sun
     image_wcs : ``WCS``, optional
         The WCS to use for the output image. If not provided, a WISPR-like WCS
@@ -536,6 +587,23 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     dmin, dmax : ``float``
         If given, only render parcels when their distance to the camera is
         within this range.
+    antialias : ``bool``
+        If True, a hacky quasi-antialiasing is applied to parcels that appear
+        small compared to the pixel size
+    thomson : ``bool``
+        If True, Thomson scattering is modeled (with more efficient scattering
+        in the original photon travel direction).
+    use_density : ``bool``
+        If True, intensities are scaled with the parcel density.
+    expansion : ``bool``
+        If True, parcels grow with distance from the Sun. The visible width of
+        the parcels is modeled as r^(2/3), so the parcel volume scales
+        appropriately with the r^2 growth. Intensities are also scaled by a
+        line-of-sight-length through the parcel, which grows with the parcel
+        size perpendicular to the parcel--Sun radial line (which grows as r^2)
+        and the size parallel to the radial line (which grows when there is a
+        radial velocity gradient). These two effects are combined according to
+        the viewing angle.
 
     Returns
     -------
@@ -690,7 +758,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         raise ValueError(
             f"Invalid value {output_quantity} for output_quantity")
     
-    for i in range(len(parcels)):
+    for i, parcel in enumerate(parcels):
         # Draw each parcel onto the output canvas
         parcel_pos = parcel_poses[i]
         d_p_sc = np.linalg.norm(parcel_pos - sc_pos)
@@ -698,9 +766,48 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
                 or dmax is not None and d_p_sc > dmax):
             continue
         d_p_sun = np.linalg.norm(parcel_pos)
+        
+        # Apply all brightness scalings that apply to the parcel as a whole (to
+        # a good approximation)
+        # Scale for the parcel--Sun distance
+        I_scale = 1 / (d_p_sun / u.R_sun.to(u.m))**2
+        
+        scattering_angle = angle_between_vectors(
+            *(-parcel_pos),
+            *(sc_pos - parcel_pos))[0]
+        
+        if use_density:
+            # Intensity is proportional to density
+            with parcel.at_temp(t0) as p:
+                I_scale *= p.rho
+        if expansion:
+            # Solar wind parcels grow in volume as r^2
+            # For our spherical parcels, that means radius grows as r^2/3
+            radius_scale = (d_p_sun / (10 * u.R_sun.to(u.m))) ** (2/3)
+            parcel_size = parcel_width * radius_scale
+            
+            with parcel.at_temp(t0) as p:
+                # This is a blend of the LOS component perpendicular and
+                # parallel to the parcel--Sun radial line (as those components
+                # expand differently with radius)
+                los = np.sqrt((p.rperp * np.sin(scattering_angle))**2
+                            + (p.rpar * np.cos(scattering_angle))**2)
+            I_scale *= los
+        else:
+            parcel_size = parcel_width
+        
+        if thomson:
+            thomson_factor = 1 + np.cos(scattering_angle)**2
+            I_scale *= thomson_factor
+        
+        if isinstance(I_scale, np.ndarray):
+            # Make sure we have an honest-to-goodness number and not a numpy scalar.
+            I_scale = I_scale.item()
+        
         _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
-                               px_scale, parcel_width, output_image,
-                               d_p_sun, d_p_sc, px[i], py[i], output_quantity_flag)
+                               px_scale, parcel_size, output_image,
+                               d_p_sc, px[i], py[i], antialias,
+                               output_quantity_flag, I_scale)
     
     if output_quantity == 'distance':
         output_image[np.isinf(output_image)] = np.nan
@@ -742,9 +849,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
 
 @numba.njit(cache=True)
 def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
-                           px_scale, parcel_width,
-                           output_image, d_p_sun, d_p_sc, start_x, start_y,
-                           output_quantity_flag):
+                           px_scale, parcel_width, output_image,
+                           d_p_sc, start_x, start_y, antialias,
+                           output_quantity_flag, I_scale):
     # Check if this time point is valid for this parcel
     if np.isnan(parcel_pos[0]):
         return
@@ -762,9 +869,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, px_scale[i,j],
-                    parcel_pos, sc_pos,
-                    parcel_width, d_p_sc, d_p_sun, output_image,
-                    output_quantity_flag):
+                    parcel_pos, sc_pos, antialias,
+                    parcel_width, d_p_sc, output_image,
+                    output_quantity_flag, I_scale):
                 # Flux was contributed
                 n += 1
                 continue
@@ -776,9 +883,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, px_scale[i,j],
-                    parcel_pos, sc_pos,
-                    parcel_width, d_p_sc, d_p_sun, output_image,
-                    output_quantity_flag):
+                    parcel_pos, sc_pos, antialias,
+                    parcel_width, d_p_sc, output_image,
+                    output_quantity_flag, I_scale):
                 # Flux was contributed
                 n += 1
                 continue
@@ -797,9 +904,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         for j in range(start_x, output_image.shape[1]):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, px_scale[i,j], 
-                    parcel_pos, sc_pos,
-                    parcel_width, d_p_sc, d_p_sun, output_image,
-                    output_quantity_flag):
+                    parcel_pos, sc_pos, antialias,
+                    parcel_width, d_p_sc, output_image,
+                    output_quantity_flag, I_scale):
                 # Flux was contributed
                 n += 1
                 continue
@@ -810,9 +917,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
         for j in range(start_x-1, -1, -1):
             if _synth_data_one_pixel(
                     i, j, x, x_over_xdotx, px_scale[i,j],
-                    parcel_pos, sc_pos,
-                    parcel_width, d_p_sc, d_p_sun, output_image,
-                    output_quantity_flag):
+                    parcel_pos, sc_pos, antialias,
+                    parcel_width, d_p_sc, output_image,
+                    output_quantity_flag, I_scale):
                 # Flux was contributed
                 n += 1
                 continue
@@ -827,9 +934,9 @@ def _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
             
 @numba.njit(cache=True)
 def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
-                          parcel_pos, sc_pos,
-                          parcel_width, d_p_sc, d_p_sun, output_image,
-                          output_quantity_flag):
+                          parcel_pos, sc_pos, antialias,
+                          parcel_width, d_p_sc, output_image,
+                          output_quantity_flag, I_scale):
     # Compute the closest-approach distance between each LOS segment
     # and the parcel center, following
     # https://stackoverflow.com/a/50728570. x is the projection of the
@@ -842,7 +949,7 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
     
     # Where the closest approach isn't along that segment (i.e. it's
     # behind the s/c), flag it
-    if t < 0 or t > 1:
+    if t <= 0 or t > 1:
         return False
     
     # Compute the actual coordinates of the closest-approach point
@@ -863,8 +970,9 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
     # more hacky anti-aliasing, let's find the projected pixel width at the
     # parcel and search within that radius of the closest approach and use
     # the highest Gaussian value in that region.
-    pixel_size_at_parcel = d_p_sc * np.tan(px_scale / 2 * np.pi/180)
-    d_p_close_app = max(0, d_p_close_app - pixel_size_at_parcel)
+    if antialias:
+        pixel_size_at_parcel = d_p_sc * np.tan(px_scale / 2 * np.pi/180)
+        d_p_close_app = max(0, d_p_close_app - pixel_size_at_parcel)
     
     # Truncate the gaussian
     if d_p_close_app > parcel_width:
@@ -895,8 +1003,7 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
         
         flux *= (min(d_p_sc, max_d_width) / rsun) ** 2
         
-        # Scale for the parcel--Sun distance
-        flux *= 1 / (d_p_sun / rsun)**2
+        flux *= I_scale
         
         output_image[i, j] += flux
     elif output_quantity_flag == 2:

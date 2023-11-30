@@ -61,18 +61,32 @@ def test_LinearThing_at():
                 assert thing4.z == z - vz * t
 
 
+def test_LinearThing_density():
+    thing = sd.LinearThing(rho=2, density_r2=False)
+    assert thing.rho == 2
+    thing = sd.LinearThing(x=10, rho=2, density_r2=True)
+    assert thing.rho == 2 / 10**2
+
+
+def test_LinearThing_rperp_rpar():
+    thing = sd.LinearThing(rperp=1, rpar=2)
+    assert thing.rperp == 1
+    assert thing.rpar == 2
+
+
 def test_linear_ArrayThing_at():
     t_eval = np.array([-10, 10])
     for x, y, z in itertools.product([-20, 0, 20], [-20, 0, 20], [-20, 0, 20]):
         for vx, vy, vz in itertools.product(
                 [-10, 0, 20], [-10, 0, 20], [-10, 0, 20]):
+            # Create a Thing and ensure it propagates correctly in time
+            thing = sd.ArrayThing(
+                tlist=t_eval,
+                xlist=x + vx * t_eval,
+                ylist=y + vy * t_eval,
+                zlist=z + vz * t_eval,
+                rholist=2 * t_eval)
             for t in np.linspace(-3, 3, 5):
-                # Create a Thing and ensure it propagates correctly in time
-                thing = sd.ArrayThing(
-                    tlist=t_eval,
-                    xlist=x + vx * t_eval,
-                    ylist=y + vy * t_eval,
-                    zlist=z + vz * t_eval)
                 thing = thing.at(t)
                 assert thing.vx == approx(vx)
                 assert thing.vy == approx(vy)
@@ -80,6 +94,23 @@ def test_linear_ArrayThing_at():
                 assert thing.x == x + vx * t
                 assert thing.y == y + vy * t
                 assert thing.z == z + vz * t
+                assert thing.rho == 2 * t
+
+
+def test_ArrayThing_default_density():
+    thing = sd.ArrayThing([1, 5], rholist=3)
+    assert thing.at(2).rho == 3
+    thing = sd.ArrayThing([1, 5], [1, 5], rholist=3, default_density_r2=True)
+    assert thing.at(2).rho == 3 / 2**2
+
+
+def test_ArrayThing_rperp_rpar():
+    thing = sd.ArrayThing([1, 5], rperplist=3, rparlist=4)
+    assert thing.at(2).rperp == 3
+    assert thing.at(2).rpar == 4
+    thing = sd.ArrayThing([1, 5], rperplist=[3, 4], rparlist=[4, 5])
+    assert thing.at(3).rperp == 3.5
+    assert thing.at(3).rpar == 4.5
 
 
 @pytest.mark.parametrize('type1', ['linear', 'array'])

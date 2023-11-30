@@ -129,17 +129,18 @@ def test_synthesize_image():
     # And a far parcel we can filter out
     p6 = sd.LinearThing(x=-10+100, y=-10+.2*100, vx=sc.vx, vy=sc.vy)
     
-    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4, p5, p6], 1, fov=140,
-                                     parcel_width=1*u.m,
-                                     dmin=2, dmax=90)
+    image, wcs = sd.synthesize_image(
+        sc, [p, p2, p3, p4, p5, p6], 1, fov=140,
+        parcel_width=1*u.m, dmin=2, dmax=90,
+        thomson=False, use_density=False, expansion=False
+        )
     
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1, projection=wcs)
     ax.imshow(np.sqrt(image), origin='lower', cmap='Greys_r')
     
-    lon, lat = ax.coords
-    lat.set_major_formatter('dd')
-    lon.set_major_formatter('dd')
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
     ax.set_xlabel("HP Longitude")
     ax.set_ylabel("HP Latitude")
     ax.coords.grid(color='white', alpha=0.7, ls='-')
@@ -160,20 +161,104 @@ def test_synthesize_image_point_forward():
     p4 = p2.copy()
     p4.t_max = -99999
     
-    image, wcs = sd.synthesize_image(sc, [p, p2, p3, p4], 1, fov=140,
-                                     parcel_width=1*u.m, point_forward=True)
+    image, wcs = sd.synthesize_image(
+        sc, [p, p2, p3, p4], 1, fov=140,
+        parcel_width=1*u.m, point_forward=True,
+        thomson=False, use_density=False, expansion=False
+        )
     
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1, projection=wcs)
     ax.imshow(np.sqrt(image), origin='lower', cmap='Greys_r')
     
-    lon, lat = ax.coords
-    lat.set_major_formatter('dd')
-    lon.set_major_formatter('dd')
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
     ax.set_xlabel("HP Longitude")
     ax.set_ylabel("HP Latitude")
     ax.coords.grid(color='white', alpha=0.7, ls='-')
     
+    return fig
+
+
+def setup_parcels():
+    sc = sd.LinearThing(y=-.25*u.au.to(u.m), vy=1)
+    parcels = []
+    for i in range(1, 6):
+        parcels.append(sd.LinearThing(x=i*10*u.R_sun.to(u.m)))
+
+    for theta in np.linspace(np.pi/4, 7/4*np.pi, 6):
+        r = 20 * u.R_sun.to(u.m)
+        parcels.append(sd.LinearThing(
+            x=r*np.cos(theta), z=r*np.sin(theta)))
+    
+    return sc, parcels
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image_physics_less():
+    sc, parcels = setup_parcels()
+    image, wcs = sd.synthesize_image(
+        sc, parcels, 0, output_size_x=200, output_size_y=100,
+        parcel_width=12, projection='ARC', point_forward=True,
+        thomson=False, use_density=False, expansion=False,
+        )
+    fig = plt.figure(figsize=(6, 6))
+    ax = plt.subplot(111, projection=wcs)
+    ax.imshow(np.sqrt(image), origin='lower', aspect='equal',
+              cmap='Greys_r', vmin=0)
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
+    return fig
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image_physics_radial_expansion():
+    sc, parcels = setup_parcels()
+    image, wcs = sd.synthesize_image(
+        sc, parcels, 0, output_size_x=200, output_size_y=100,
+        parcel_width=12, projection='ARC', point_forward=True,
+        thomson=False, use_density=False, expansion=True,
+        )
+    fig = plt.figure(figsize=(6, 6))
+    ax = plt.subplot(111, projection=wcs)
+    ax.imshow(np.sqrt(image), origin='lower', aspect='equal',
+              cmap='Greys_r', vmin=0)
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
+    return fig
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image_physics_density_dropoff():
+    sc, parcels = setup_parcels()
+    image, wcs = sd.synthesize_image(
+        sc, parcels, 0, output_size_x=200, output_size_y=100,
+        parcel_width=12, projection='ARC', point_forward=True,
+        thomson=False, use_density=True, expansion=False,
+        )
+    fig = plt.figure(figsize=(6, 6))
+    ax = plt.subplot(111, projection=wcs)
+    ax.imshow(np.sqrt(image), origin='lower', aspect='equal',
+              cmap='Greys_r', vmin=0)
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
+    return fig
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image_physics_thomson_scattering():
+    sc, parcels = setup_parcels()
+    image, wcs = sd.synthesize_image(
+        sc, parcels, 0, output_size_x=200, output_size_y=100,
+        parcel_width=12, projection='ARC', point_forward=True,
+        thomson=True, use_density=False, expansion=False,
+        )
+    fig = plt.figure(figsize=(6, 6))
+    ax = plt.subplot(111, projection=wcs)
+    ax.imshow(np.sqrt(image), origin='lower', aspect='equal',
+              cmap='Greys_r', vmin=0)
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
     return fig
 
 
