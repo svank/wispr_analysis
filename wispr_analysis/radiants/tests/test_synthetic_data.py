@@ -110,8 +110,7 @@ def test_calc_epsilon():
     np.testing.assert_allclose(el, [0, 90])
 
 
-@pytest.mark.mpl_image_compare
-def test_synthesize_image():
+def setup_test_synthesize_image():
     sc = sd.LinearThing(x=-10, y=-10, vx=1, vy=0.2)
     p = sd.LinearThing(x=-5, y=-12, vx=-.5, vy=-.5)
     p2 = sd.LinearThing(x=5, y=-8, vx=.5, vy=.5)
@@ -129,8 +128,82 @@ def test_synthesize_image():
     # And a far parcel we can filter out
     p6 = sd.LinearThing(x=-10+100, y=-10+.2*100, vx=sc.vx, vy=sc.vy)
     
+    return sc, [p, p2, p3, p4, p5, p6]
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image():
+    sc, parcels = setup_test_synthesize_image()
     image, wcs = sd.synthesize_image(
-        sc, [p, p2, p3, p4, p5, p6], 1, fov=140,
+        sc, parcels, 1, fov=140,
+        parcel_width=1*u.m, dmin=2, dmax=90,
+        thomson=False, use_density=False, expansion=False
+        )
+    
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1, projection=wcs)
+    ax.imshow(np.sqrt(image), origin='lower', cmap='Greys_r')
+    
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
+    ax.set_xlabel("HP Longitude")
+    ax.set_ylabel("HP Latitude")
+    ax.coords.grid(color='white', alpha=0.7, ls='-')
+    
+    return fig
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image_quantity_distance():
+    sc, parcels = setup_test_synthesize_image()
+    image, wcs = sd.synthesize_image(
+        sc, parcels, 1, fov=140,
+        parcel_width=1*u.m, dmin=2, dmax=90,
+        thomson=False, use_density=False, expansion=False,
+        output_quantity="distance"
+        )
+    
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1, projection=wcs)
+    ax.imshow(image, origin='lower', cmap='viridis')
+    
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
+    ax.set_xlabel("HP Longitude")
+    ax.set_ylabel("HP Latitude")
+    ax.coords.grid(color='white', alpha=0.7, ls='-')
+    
+    return fig
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image_quantity_rsun():
+    sc, parcels = setup_test_synthesize_image()
+    image, wcs = sd.synthesize_image(
+        sc, parcels, 1, fov=140,
+        parcel_width=1*u.m, dmin=2, dmax=90,
+        thomson=False, use_density=False, expansion=False,
+        output_quantity="dsun"
+        )
+    
+    fig = plt.gcf()
+    ax = fig.add_subplot(1, 1, 1, projection=wcs)
+    ax.imshow(image, origin='lower', cmap='viridis')
+    
+    for coord in ax.coords:
+        coord.set_major_formatter('dd')
+    ax.set_xlabel("HP Longitude")
+    ax.set_ylabel("HP Latitude")
+    ax.coords.grid(color='white', alpha=0.7, ls='-')
+    
+    return fig
+
+
+@pytest.mark.mpl_image_compare
+def test_synthesize_image():
+    sc, parcels = setup_test_synthesize_image()
+    image, wcs = sd.synthesize_image(
+        sc, parcels, 1, fov=140,
         parcel_width=1*u.m, dmin=2, dmax=90,
         thomson=False, use_density=False, expansion=False
         )

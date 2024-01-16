@@ -600,7 +600,7 @@ class BaseJmap:
         
         min, max = np.nanpercentile(image, [pmin, pmax])
         if vmin is None:
-            if self.quantity == 'distance':
+            if self.quantity in ('distance', 'dsun'):
                 # Sensible, also workaround mpl bug #25239
                 vmin = 0
             else:
@@ -632,7 +632,7 @@ class BaseJmap:
         if cmap is None:
             if self.quantity == 'flux':
                 cmap = copy.deepcopy(plot_utils.wispr_cmap)
-            elif self.quantity == 'distance':
+            elif self.quantity in ('distance', 'dsun'):
                 cmap = copy.deepcopy(plt.get_cmap('viridis_r'))
             else:
                 raise ValueError("Invalid quantity")
@@ -642,7 +642,7 @@ class BaseJmap:
         if gamma is None:
             if self.quantity == 'flux':
                 gamma = 1/2.2
-            elif self.quantity == 'distance':
+            elif self.quantity in ('distance', 'dsun'):
                 gamma = 1
             else:
                 raise ValueError("Invalid quantity")

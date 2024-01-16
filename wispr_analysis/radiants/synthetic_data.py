@@ -553,7 +553,8 @@ def hpc_to_elpa(Tx, Ty):
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
         celestial_wcs=False, fixed_fov_range=None, output_quantity='flux',
-        point_forward=False, dmin=None, dmax=None, antialias=True,
+        point_forward=False, dmin=None, dmax=None, dsunmin=None, dsunmax=None,
+        only_side_of_sun=False, antialias=True,
         thomson=True, use_density=True, expansion=True):
     """Produce a synthetic WISPR image
 
@@ -656,7 +657,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     
     if output_quantity == 'flux':
         output_image = np.zeros((output_size_y, output_size_x))
-    elif output_quantity == 'distance':
+    elif output_quantity in ('distance', 'dsun'):
         output_image = np.full((output_size_y, output_size_x), np.inf)
     
     # Pad these so we can compute a full gradient at each location
@@ -753,7 +754,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     try:
         output_quantity_flag = {
             'flux': 1,
-            'distance': 2}[output_quantity]
+            'distance': 2,
+            'dsun': 3,
+            }[output_quantity]
     except KeyError:
         raise ValueError(
             f"Invalid value {output_quantity} for output_quantity")
@@ -766,6 +769,16 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
                 or dmax is not None and d_p_sc > dmax):
             continue
         d_p_sun = np.linalg.norm(parcel_pos)
+        if (dsunmin is not None and d_p_sun < dsunmin
+                or dsunmax is not None and d_p_sun > dsunmax):
+            continue
+        if only_side_of_sun:
+            component = np.dot(parcel_pos, sc_pos)
+            if only_side_of_sun == 'near' and component < 0:
+                continue
+            elif only_side_of_sun == 'far' and component > 0:
+                continue
+                
         
         # Apply all brightness scalings that apply to the parcel as a whole (to
         # a good approximation)
@@ -1008,6 +1021,9 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
         output_image[i, j] += flux
     elif output_quantity_flag == 2:
         output_image[i, j] = min(output_image[i, j], d_p_sc)
+    elif output_quantity_flag == 3:
+        output_image[i, j] = min(
+            output_image[i, j], np.sqrt(np.sum(parcel_pos**2)))
     
     return True
 
