@@ -3,6 +3,7 @@ from .. import synthetic_data as sd
 
 import itertools
 
+import astropy.units as u
 import numpy as np
 import pytest
 from pytest import approx
@@ -291,6 +292,7 @@ def test_subtract(type1, type2):
     assert diff.at(1).y == 21
     assert diff.at(1).z == 8
 
+
 def test_tbounds():
     thing1 = sd.LinearThing(t_min=-2, t_max=2)
     thing2 = sd.ArrayThing([-20, 20], t_min=-2, t_max=2)
@@ -323,30 +325,105 @@ def test_tbounds():
             assert np.isnan(result[-1])
             assert not np.any(np.isnan(result[1:-1]))
 
+
 def test_tbounds_array_range():
     thing = sd.ArrayThing([-20, 20], t_min=-2, t_max=2)
-    for t in [-25, 25, np.array([-25, -24]), np.array([24, 25])]:
-        assert np.all(np.isnan(thing.at(t).x))
-        assert np.all(np.isnan(thing.at(t).y))
-        assert np.all(np.isnan(thing.at(t).z))
-        assert np.all(np.isnan(thing.at(t).vx))
-        assert np.all(np.isnan(thing.at(t).vy))
-        assert np.all(np.isnan(thing.at(t).vz))
+    for t in -10, 10:
+        for attr in 'x', 'y', 'z', 'vx', 'vy', 'vz':
+            res = getattr(thing.at(t), attr)
+            assert res.shape == (1,)
+            assert np.isnan(res[0])
+    
+    for t in [-10, -9], [9, 10]:
+        for attr in 'x', 'y', 'z', 'vx', 'vy', 'vz':
+            res = getattr(thing.at(t), attr)
+            assert res.shape == (2,)
+            assert np.all(np.isnan(res))
     
     thing = sd.ArrayThing([-20, 20])
-    for t in [-25, 25, np.array([-25, -24]), np.array([24, 25])]:
-        match_string = ("A value .* is "
-                       f"{'above' if np.atleast_1d(t)[0] > 0 else 'below'} the "
-                        "interpolation range's")
-        with pytest.raises(ValueError, match=match_string):
-            thing.at(t).x
-        with pytest.raises(ValueError, match=match_string):
-            thing.at(t).y
-        with pytest.raises(ValueError, match=match_string):
-            thing.at(t).z
-        with pytest.raises(ValueError, match=match_string):
-            thing.at(t).vx
-        with pytest.raises(ValueError, match=match_string):
-            thing.at(t).vy
-        with pytest.raises(ValueError, match=match_string):
-            thing.at(t).vz
+    
+    for t in -25, 25:
+        for attr in 'x', 'y', 'z', 'vx', 'vy', 'vz':
+            res = getattr(thing.at(t), attr)
+            assert res.shape == (1,)
+            assert np.isnan(res[0])
+    
+    for t in [-25, -24], [24, 25]:
+        for attr in 'x', 'y', 'z', 'vx', 'vy', 'vz':
+            res = getattr(thing.at(t), attr)
+            assert res.shape == (2,)
+            assert np.all(np.isnan(res))
+
+
+def test_LinearThing_units():
+    thing = sd.LinearThing(
+        x=1*u.km, y=1*u.km, z=1*u.km,
+        vx=1*u.km/u.s, vy=1*u.km/u.s, vz=1*u.km/u.s,
+        t=0*u.s, t_min=1*u.s, t_max=9*u.s,
+        rperp=1*u.m, rpar=1*u.m,
+        rho=1*u.g/u.m**3)
+    
+    thing = thing.at(1*u.s)
+    assert thing.x == 2 * u.km
+    assert thing.y == 2 * u.km
+    assert thing.z == 2 * u.km
+    
+    assert thing.vx == 1*u.km/u.s
+    assert thing.vy == 1*u.km/u.s
+    assert thing.vz == 1*u.km/u.s
+    
+    assert thing.rperp == 1*u.m
+    assert thing.rpar == 1*u.m
+    assert thing.rho == 1*u.g/u.m**3
+    
+    thing = thing.strip_units()
+    
+    assert thing.x == 2000
+    assert thing.y == 2000
+    assert thing.z == 2000
+    
+    assert np.isclose(thing.vx, 1000)
+    assert np.isclose(thing.vy, 1000)
+    assert np.isclose(thing.vz, 1000)
+    
+    assert thing.rperp == 1
+    assert thing.rpar == 1
+    assert thing.rho == 0.001
+
+
+def test_ArrayThing_units():
+    thing = sd.ArrayThing(
+        tlist=[0, 10] * u.s,
+        xlist=[1, 2] * u.km,
+        ylist=[1, 2] * u.km,
+        zlist=[1, 2] * u.km,
+        t_min=1*u.s, t_max=9*u.s,
+        rperplist=1*u.m, rparlist=1*u.m,
+        rholist=1*u.g/u.m**3)
+    
+    thing = thing.at(5*u.s)
+    assert thing.x == 1.5 * u.km
+    assert thing.y == 1.5 * u.km
+    assert thing.z == 1.5 * u.km
+    
+    assert np.isclose(thing.vx, 1*u.km / (10*u.s))
+    assert np.isclose(thing.vy, 1*u.km / (10*u.s))
+    assert np.isclose(thing.vz, 1*u.km / (10*u.s))
+    
+    assert thing.rperp == 1*u.m
+    assert thing.rpar == 1*u.m
+    assert thing.rho == 1*u.g/u.m**3
+    
+    thing = thing.strip_units()
+    
+    assert thing.x == 1500
+    assert thing.y == 1500
+    assert thing.z == 1500
+    
+    assert np.isclose(thing.vx, 100)
+    assert np.isclose(thing.vy, 100)
+    assert np.isclose(thing.vz, 100)
+    
+    assert thing.rperp == 1
+    assert thing.rpar == 1
+    assert thing.rho == 0.001

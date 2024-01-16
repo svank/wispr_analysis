@@ -463,6 +463,8 @@ def y_axis_dates(*args, **kwargs):
 def axis_dates(dates, axis='x', ax=None, fig=None):
     if isinstance(dates[0], str):
         dates = [utils.to_timestamp(d) for d in dates]
+    if isinstance(dates, u.Quantity):
+        dates = dates.to_value(u.s)
     dates = [datetime.fromtimestamp(d, tz=timezone.utc)
              if np.isfinite(d) else None
              for d in dates]

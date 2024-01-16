@@ -25,6 +25,14 @@ class Thing:
     t_min: float = None
     t_max: float = None
     
+    def strip_units(self):
+        out = self.copy()
+        for attr in 't', 't_min', 't_max':
+            value = getattr(out, attr)
+            if isinstance(value, u.Quantity):
+                setattr(out, attr, value.si.value)
+        return out
+    
     def get_bad_t(self):
         t = np.atleast_1d(self.t)
         bad_t = np.zeros(len(t), dtype=bool)
@@ -36,14 +44,15 @@ class Thing:
     
     def process_t_bounds(self, quantity):
         bad_t = self.get_bad_t()
-        if isinstance(self.t, (int, float)):
+        if (isinstance(self.t, (int, float))
+                or (isinstance(self.t, np.ndarray)
+                    and self.t.shape == tuple())):
             if bad_t:
                 return np.nan
             return quantity
         if np.any(bad_t):
-            quantity = np.asarray(quantity, dtype=float)
-            if len(quantity.shape) == 0:
-                quantity = np.full(bad_t.size, quantity)
+            quantity = np.broadcast_to(quantity, bad_t.shape, subok=True)
+            quantity = quantity.copy().astype(float)
             quantity[bad_t] = np.nan
         else:
             if isinstance(quantity, np.ndarray):
@@ -150,6 +159,15 @@ class LinearThing(Thing):
     rho0: float = 1
     rperp_r2: bool = False
     density_r2: bool = False
+    
+    def strip_units(self):
+        out = super().strip_units()
+        for attr in ('x_t0', 'y_t0', 'z_t0', 'vx_t0', 'vy_t0', 'vz_t0',
+                     'rperp0', 'rpar0', 'rho0'):
+            value = getattr(out, attr)
+            if isinstance(value, u.Quantity):
+                setattr(out, attr, value.si.value)
+        return out
     
     def __init__(self, x=0, y=0, z=0, vx=0, vy=0, vz=0,
                  t=0, t_min=None, t_max=None,
@@ -281,6 +299,15 @@ class ArrayThing(Thing):
     rholist: np.ndarray = 0
     scale_rho_r2: bool = False
     
+    def strip_units(self):
+        out = super().strip_units()
+        for attr in ('xlist', 'ylist', 'zlist', 'tlist', 'rperplist',
+                     'rparlist', 'rholist'):
+            value = getattr(out, attr)
+            if isinstance(value, u.Quantity):
+                setattr(out, attr, value.si.value)
+        return out
+    
     def __init__(self, tlist, xlist=0, ylist=0, zlist=0,
             t=0, t_min=None, t_max=None, rperplist=1, rparlist=1,
             rholist=1, default_density_r2=False):
@@ -316,13 +343,9 @@ class ArrayThing(Thing):
         self.t_max = t_max
     
     def _access_quantity(self, data_list):
-        values = self.process_t_bounds(np.array(self.t))
-        is_good = np.isfinite(values)
-        t_good = values[is_good]
-        x_good = scipy.interpolate.interp1d(self.tlist, data_list)(t_good)
-        values[is_good] = x_good
-        return values
-        
+        t_vals = self.process_t_bounds(np.atleast_1d(self.t))
+        x = np.interp(t_vals, self.tlist, data_list, left=np.nan, right=np.nan)
+        return x
     
     @property
     def x(self):
@@ -338,23 +361,26 @@ class ArrayThing(Thing):
     
     @property
     def vx(self):
-        interpolator = scipy.interpolate.interp1d(self.tlist, self.xlist)
         dt = .0001
-        vx = self._finite_difference(interpolator, dt)
+        if isinstance(self.t, u.Quantity):
+            dt *= u.s
+        vx = self._finite_difference(self.xlist, dt)
         return vx
     
     @property
     def vy(self):
-        interpolator = scipy.interpolate.interp1d(self.tlist, self.ylist)
         dt = .0001
-        vy = self._finite_difference(interpolator, dt)
+        if isinstance(self.t, u.Quantity):
+            dt *= u.s
+        vy = self._finite_difference(self.ylist, dt)
         return vy
     
     @property
     def vz(self):
-        interpolator = scipy.interpolate.interp1d(self.tlist, self.zlist)
         dt = .0001
-        vz = self._finite_difference(interpolator, dt)
+        if isinstance(self.t, u.Quantity):
+            dt *= u.s
+        vz = self._finite_difference(self.zlist, dt)
         return vz
     
     @property
@@ -374,42 +400,40 @@ class ArrayThing(Thing):
             values /= self.r**2
         return values
     
-    def _finite_difference(self, interpolator, dt):
-        values = self.process_t_bounds(np.array(self.t))
-        is_good = np.isfinite(values)
-        t_good = values[is_good]
+    def _finite_difference(self, spatial_quantity, dt):
+        tvals = self.process_t_bounds(np.atleast_1d(self.t))
+        interpolator = lambda t: np.interp(t, self.tlist, spatial_quantity,
+                                           left=np.nan, right=np.nan)
         try:
-            y1 = interpolator(t_good - dt/2)
-            y2 = interpolator(t_good + dt/2)
+            y1 = interpolator(tvals - dt/2)
+            y2 = interpolator(tvals + dt/2)
         except ValueError:
             try:
-                y1 = interpolator(t_good)
-                y2 = interpolator(t_good + dt)
+                y1 = interpolator(tvals)
+                y2 = interpolator(tvals + dt)
             except ValueError:
                 try:
-                    y1 = interpolator(t_good - dt)
-                    y2 = interpolator(t_good)
+                    y1 = interpolator(tvals - dt)
+                    y2 = interpolator(tvals)
                 except Exception as e:
                     # If out list of times includes both endpoints exactly,
                     # none of these above will work for every time, but one
                     # will work for each time. So compute each time
                     # individually.
-                    if len(values) == 1:
+                    if len(tvals) == 1:
                         raise e
-                    vals = []
-                    for t in values:
+                    output = np.empty(tvals.shape)
+                    if isinstance(tvals, u.Quantity):
+                        output <<= spatial_quantity.unit / tvals.unit
+                    for i, t in enumerate(tvals):
                         if np.isfinite(t):
                             with self.at_temp(t) as s:
-                                vals.append(
-                                    s._finite_difference(interpolator, dt))
+                                output[i] = (
+                                    s._finite_difference(spatial_quantity, dt))
                         else:
-                            vals.append(np.nan)
-                    if isinstance(vals[0], np.ndarray):
-                        return np.concatenate(vals)
-                    else:
-                        return np.array(vals)
-        values[is_good] = (y2 - y1) / dt
-        return values
+                            output[i] = np.nan
+                    return output
+        return (y2 - y1) / dt
     
     def offset_by_time(self, dt):
         out = self.copy()
