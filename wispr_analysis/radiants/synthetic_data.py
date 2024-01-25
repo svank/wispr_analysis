@@ -2,6 +2,7 @@ from contextlib import ExitStack, contextmanager
 import copy
 from dataclasses import dataclass
 
+import astropy.constants as c
 import astropy.coordinates
 import astropy.time
 import astropy.units as u
