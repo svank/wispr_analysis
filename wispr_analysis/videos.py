@@ -397,7 +397,7 @@ def _draw_WISPR_video_frame(data):
                 planet_poses_o = [None] * 8
                 wcs_o = None
     
-    composites.set_wcs_observer_details(wcs_plot, wcs_i, wcs_o)
+        composites.set_wcs_observer_details(wcs_plot, wcs_i, wcs_o)
     
     with matplotlib.style.context('dark_background'):
         for t in data['timesteps']:
