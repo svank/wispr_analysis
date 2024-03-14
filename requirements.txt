@@ -12,7 +12,7 @@ pytest>=7.1
 pytest-arraydiff>=0.6
 pytest-mock>=3.7
 pytest-mpl
-reproject>=0.10
+reproject>=0.12
 scipy>=1.8
 spiceypy>=5.1
 sunpy>=3.1
