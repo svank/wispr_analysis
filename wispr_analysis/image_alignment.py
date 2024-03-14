@@ -69,7 +69,7 @@ def make_cutout(x, y, data, cutout_size, normalize=True):
 
 
 MIN_SIGMA = 0.05
-MAX_SIGMA = 1
+MAX_SIGMA = 1.5
 def fit_star(x, y, data, all_stars_x, all_stars_y, cutout_size=9,
         ret_more=False, ret_star=False, binning=2, start_at_max=True,
         normalize_cutout=True):
@@ -249,11 +249,14 @@ DIM_CUTOFF = 8
 BRIGHT_CUTOFF = 2
 
 def prep_frame_for_star_finding(fname, dim_cutoff=DIM_CUTOFF,
-        bright_cutoff=BRIGHT_CUTOFF):
+        bright_cutoff=BRIGHT_CUTOFF, corrector=None):
     with utils.ignore_fits_warnings(), fits.open(fname) as hdul:
         data = hdul[0].data
         hdr = hdul[0].header
         w = WCS(hdr, hdul, key='A')
+    
+    if corrector is not None:
+        data = corrector(data)
     
     if data.shape not in ((1024, 960), (2048, 1920)):
         raise ValueError(
@@ -276,12 +279,13 @@ def prep_frame_for_star_finding(fname, dim_cutoff=DIM_CUTOFF,
             all_stars_x, all_stars_y, data, binning)
 
 def find_stars_in_frame(data):
-    fname, start_at_max, include_shapes = data
+    fname, start_at_max, include_shapes, corrector = data
     t = utils.to_timestamp(fname)
     try:
         (stars_x, stars_y, stars_vmag, stars_ra, stars_dec,
                 all_stars_x, all_stars_y, data,
-                binning) = prep_frame_for_star_finding(fname)
+                binning) = prep_frame_for_star_finding(
+                    fname, corrector=corrector)
     except ValueError as e:
         print(e)
         return [], [], [], {}, {}
@@ -316,10 +320,11 @@ def find_stars_in_frame(data):
 
 
 def find_all_stars(ifiles, ret_all=False, start_at_max=True,
-        include_shapes=False):
+        include_shapes=False, corrector=None):
     res = process_map(
             find_stars_in_frame,
-            zip(ifiles, repeat(start_at_max), repeat(include_shapes)),
+            zip(ifiles, repeat(start_at_max), repeat(include_shapes),
+                repeat(corrector)),
             total=len(ifiles))
 
     good = []
