@@ -348,7 +348,7 @@ def test_find_stars_in_frame(mocker, binning):
     fname = 'psp_L3_wispr_20181101T210030_V3_2222.fits'
     t = utils.to_timestamp(fname)
     good, bad, crowded_out, codes, mapping = image_alignment.find_stars_in_frame(
-            (fname, True, False))
+            (fname, True, False, None))
     
     good_rounded = [(round(x), round(y)) for x, y in good]
     assert sorted(zip(good_stars_x, good_stars_y)) == sorted(good_rounded)
