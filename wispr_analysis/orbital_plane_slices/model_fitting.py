@@ -341,7 +341,7 @@ def _plot_overhead(ax_overhead, sc, t, t0, parcels, mark_epsilon, mark_FOV_pos,
 
 def plot_items(sc, parcels, t, t0, include_overhead=True,
                include_overhead_detail=False, mark_epsilon=False,
-               mark_FOV_pos=False, mark_FOV=False, mark_bins=False, 
+               mark_FOV_pos=False, mark_FOV=False, mark_bins=False,
                mark_derot_ax=False, synthesize=False, radiants=False, vmin=0,
                vmax=None, parcel_width=1, synth_kw={}, synth_fixed_fov=None,
                synth_celest_wcs=False, output_quantity='flux',
@@ -485,7 +485,10 @@ def gen_simdat(Riso, Tiso, gamma, launch_thetas, launch_times, sc, t_sc,
 
 
 def try_out_fitting(Riso, Tiso, gamma, launch_thetas, launch_times,
-                    model='both', max_elongation=None):
+                    model='both', max_elongation=None,
+                    Riso_lock=None, Tiso_lock=None, gamma_lock=None,
+                    launch_thetas_lock=None, launch_times_lock=None,
+                    init_guess=None, pull_in=0, only_setup=False):
     launch_thetas, launch_times = np.broadcast_arrays(
         launch_thetas, launch_times, subok=True)
     
@@ -534,6 +537,18 @@ def try_out_fitting(Riso, Tiso, gamma, launch_thetas, launch_times,
                     representation_type='cartesian',
                     frame=HeliocentricInertial).transform_to(orbital_frame)
     c_sc_cart = c_sc.cartesian
+    
+    if only_setup:
+        fit_result = FittingResult(
+        res=None, Riso=Riso, Tiso=Tiso, gamma=gamma,
+        fitted_Riso=None, fitted_Tiso=None, fitted_gamma=None,
+        fitted_lons=None, fitted_times=None,
+        launch_thetas=launch_thetas, launch_times=launch_times, simdat=simdat,
+        times_for_fit=all_times_for_fit, sc_coords=(c_sc_cart.x, c_sc_cart.y),
+        target_elongations=all_target_elongations,
+        time_epoch=time_epoch, init_guess=None,
+        rs_actual=rs_actual, vs_actual=vs_actual, ts_actual=ts_actual)
+        return fit_result
 
     if len(all_times_for_fit) > 1:
         start_idx = np.cumsum(list(len(t) for t in all_times_for_fit))
@@ -541,73 +556,146 @@ def try_out_fitting(Riso, Tiso, gamma, launch_thetas, launch_times,
     else:
         start_idx = np.array([0])
     
-    start_guess_lon = (c_sc.lon[start_idx] + 90*u.deg)
+    start_guess_lon = (c_sc.lon[start_idx] + 15*u.deg).to(u.rad).value
     start_times = u.Quantity([t[0] for t in all_times_for_fit])
-    start_guess_time_offset = start_times - time_epoch
-
-    if model == 'poly':
-        Riso_lower_bound = 0
-        Riso_upper_bound = 0.1
-        Riso_guess = 0.05
-    elif model == 'iso':
-        Riso_lower_bound = 1e5
-        Riso_upper_bound = 1e5 + 1
-        Riso_guess = 1e5 + 0.5
-    else:
-        Riso_lower_bound = 2
-        Riso_upper_bound = 5
-        Riso_guess = 2
+    start_guess_time_offset = (start_times - time_epoch).to(u.hr).value
     
-    extra_args = (all_elongations_as_one, all_times_for_fit, time_epoch,
-                  (c_sc_cart.x, c_sc_cart.y))
-    C0_Cg2_base = (2 * c.k_B * u.MK *u.Rsun / (c.m_p * c.G * c.M_sun)).si.value
+    initial_guess = []
+    bounds = []
+    locks = []
+    if Riso_lock is not None:
+        locks.append(Riso_lock)
+    else:
+        if model == 'poly':
+            initial_guess.append(0.05)
+            bounds.append((0, 0.1))
+        elif model == 'iso':
+            initial_guess.append(1e5 + 0.5)
+            bounds.append((1e5, 1e5+1))
+        else:
+            bounds.append((1.5, 5))
+            initial_guess.append(2.5)
+        locks.append(None)
+    
+    if Tiso_lock is not None:
+        locks.append(Tiso_lock)
+    else:
+        initial_guess.append(3)
+        bounds.append((.5, 3.5))
+        locks.append(None)
+    
+    if gamma_lock is not None:
+        locks.append(gamma_lock)
+    else:
+        initial_guess.append(1.3)
+        bounds.append((1.05, 1.5))
+        locks.append(None)
+    
+    if launch_thetas_lock is not None:
+        locks.append(launch_thetas_lock)
+    else:
+        initial_guess.extend(start_guess_lon)
+        bounds.extend(([(None, None)]) * len(start_guess_lon))
+        locks.append(None)
+    
+    if launch_times_lock is not None:
+        locks.append(launch_times_lock)
+    else:
+        initial_guess.extend(start_guess_time_offset)
+        bounds.extend(([(None, None)]) * len(start_guess_time_offset))
+        locks.append(None)
+    
+    if init_guess is not None:
+        initial_guess = init_guess
+    
+    def unpack_args(x):
+        i = 0
+        if locks[0] is None:
+            Riso = x[i] * u.R_sun
+            i += 1
+        else:
+            Riso = locks[0]
+        
+        if locks[1] is None:
+            Tiso = x[i] * u.MK
+            i += 1
+        else:
+            Tiso = locks[1]
+        
+        if locks[2] is None:
+            gamma = x[i]
+            i += 1
+        else:
+            gamma = locks[2]
+        
+        if locks[3] is None:
+            launch_angles = x[i:i+len(start_guess_lon)] * u.rad
+            i += len(start_guess_lon)
+        else:
+            launch_angles = locks[3]
+        
+        if locks[4] is None:
+            launch_times = x[i:i+len(start_guess_lon)] * u.hr
+        else:
+            launch_times = locks[4]
+        return Riso, Tiso, gamma, launch_angles, launch_times
+    
+    C0_Cg2_base = (2 * c.k_B / (c.m_p * c.G * c.M_sun))
     # Constraints as given by Shi, Velli, Bale et al. 2022
     def constraint_upper(x):
-        Riso, Tiso, gamma = x[:3]
+        Riso, Tiso, gamma, _, _ = unpack_args(x)
         C0_Cg2 = C0_Cg2_base * gamma * Tiso * Riso
         # We require C0 < Cg
         #            => C0 / Cg < 1
-        #            => C0 / Cg - 1 < 0
+        #            => C0^2 / Cg^2 < 1
+        #            => (C0 / Cg)^2 - 1 < 0
         # To put as a "constraint must be positive" form, return -(C0 / Cg - 1)
-        term = -(C0_Cg2 - 1)
-        return term
+        term = -(C0_Cg2.si.value - 1)
+        return term - pull_in
     
     def constraint_lower(x):
-        Riso, Tiso, gamma = x[:3]
+        Riso, Tiso, gamma, _, _ = unpack_args(x)
         C0_Cg2 = C0_Cg2_base * gamma * Tiso * Riso
         # We require (C0 / Cg)^2 > 2 (gamma - 1)
-        term = C0_Cg2 - 2 * (gamma - 1)
-        return term
+        term = C0_Cg2.si.value - 2 * (gamma - 1)
+        return term - pull_in
     
+    extra_args = (unpack_args, all_elongations_as_one, all_times_for_fit, time_epoch,
+                  (c_sc_cart.x, c_sc_cart.y))
+    # print(initial_guess, bounds)
     res = scipy.optimize.minimize(
         elongation_residual_ltsq,
-        (Riso_guess, 3, 1.1,
-         *np.concatenate(list(zip(
-             start_guess_lon.to(u.rad).value,
-             start_guess_time_offset.to(u.hr).value)))),
+        initial_guess,
         method='trust-constr',
-        bounds=[
-            (Riso_lower_bound, Riso_upper_bound),
-            (.5, 3.5),
-            (1.05, 1.5),
-            *([(None, None)] * (2 * len(start_guess_lon))),
-            ],
+        bounds=bounds,
         constraints=[
             scipy.optimize.NonlinearConstraint(constraint_upper, 0, np.inf),
             scipy.optimize.NonlinearConstraint(constraint_lower, 0, np.inf),
             ],
+        # method='SLSQP',
+        # constraints=[
+        #     {'type': 'ineq', 'fun': constraint_upper},
+        #     {'type': 'ineq', 'fun': constraint_lower},
+        #     ],
         args=extra_args,
+        # jac='2-point',
+        # options=dict(verbose=3),
+        # callback=lambda intermediate_result: print(intermediate_result)
         )
     
     if not res.success:
         print(res)
     
+    Rfit, Tfit, gamma_fit, angles_fit, times_fit = unpack_args(res.x)
+    
     fit_result = FittingResult(
         res=res, Riso=Riso, Tiso=Tiso, gamma=gamma,
+        fitted_Riso=Rfit, fitted_Tiso=Tfit, fitted_gamma=gamma_fit,
+        fitted_lons=angles_fit, fitted_times=times_fit,
         launch_thetas=launch_thetas, launch_times=launch_times, simdat=simdat,
         times_for_fit=all_times_for_fit, sc_coords=(c_sc_cart.x, c_sc_cart.y),
         target_elongations=all_target_elongations,
-        time_epoch=time_epoch,
+        time_epoch=time_epoch, init_guess=initial_guess,
         rs_actual=rs_actual, vs_actual=vs_actual, ts_actual=ts_actual)
     return fit_result
 
@@ -643,16 +731,13 @@ def compute_observed_elongations(Riso, Tiso, gamma, lons, time_offsets,
     return elongations
 
 guesses = []
-def elongation_residual(x, target_elongations, all_times_for_fit,
+def elongation_residual(x, unpacker, target_elongations, all_times_for_fit,
                         parcel_launch_time_epoch, sc_coords):
-    guesses.append(x)
+    # print(x)
     global extra_args
     extra_args = (all_times_for_fit, parcel_launch_time_epoch, sc_coords)
-    Riso = x[0] << u.R_sun
-    Tiso = x[1] << u.MK
-    gamma = x[2]
-    lons = x[3::2] << u.rad
-    time_offsets = x[4::2] << u.hr
+    Riso, Tiso, gamma, lons, time_offsets = unpacker(x)
+    guesses.append(copy.deepcopy((Riso, Tiso, gamma, lons, time_offsets)))
     computed = compute_observed_elongations(
         Riso, Tiso, gamma, lons, time_offsets, all_times_for_fit,
         parcel_launch_time_epoch, sc_coords)
@@ -663,6 +748,7 @@ def elongation_residual(x, target_elongations, all_times_for_fit,
 
 def elongation_residual_ltsq(*args, **kwargs):
     resid = elongation_residual(*args, **kwargs)
+    resid[np.isnan(resid)] = 90
     return np.sqrt(np.sum(np.square(resid)))
 
 
@@ -674,6 +760,11 @@ class FittingResult:
     gamma: float
     launch_thetas: np.ndarray
     launch_times: np.ndarray
+    fitted_Riso: u.Quantity
+    fitted_Tiso: u.Quantity
+    fitted_gamma: float
+    fitted_lons: u.Quantity
+    fitted_times: u.Quantity
     simdat: SimulationData
     target_elongations: list
     times_for_fit: list
@@ -682,13 +773,17 @@ class FittingResult:
     ts_actual: u.Quantity
     time_epoch: float
     sc_coords: tuple
+    init_guess: tuple
     
     def __post_init__(self):
-        self.fitted_Riso = self.res.x[0] * u.R_sun
-        self.fitted_Tiso = self.res.x[1] * u.MK
-        self.fitted_gamma  = self.res.x[2]
-        self.fitted_lons = self.res.x[3::2] * u.rad
-        self.fitted_times = self.res.x[4::2] * u.hr
+        if self.res is None:
+            self.fitted_elongations = [None] * len(self.launch_times)
+            self.fitted_times = self.fitted_elongations
+            self.fitted_lons = self.fitted_times
+            self.rs_fitted = [np.nan] * u.km
+            self.vs_fitted = [np.nan] * u.km/u.s
+            self.ts_fitted = [np.nan] * u.s
+            return
         
         (self.rs_fitted, self.ts_fitted, self.vs_fitted,
             self.simdat_fitted) = gen_simdat(
@@ -706,6 +801,8 @@ class FittingResult:
             i = len(targ_elon)
             self.fitted_elongations.append(fitted_elongations_as_one[:i])
             fitted_elongations_as_one = fitted_elongations_as_one[i:]
+        
+        self.resid = self.res.fun
     
     @property
     def n_parcels_intended(self):
@@ -792,26 +889,30 @@ class FittingResult:
         
 
     def print_fit_summary(self):
-        print("                  Actual  |  Fitted")
-        print(f"Riso:      {self.Riso:7.2f} | {self.fitted_Riso:7.2f}")
-        print(f"Tiso:      {self.Tiso:7.3f}     | {self.fitted_Tiso:7.3f}")
-        print(f"Gamma:     {self.gamma:7.3f}        | {self.fitted_gamma:7.3f}")
+        print("                Actual    |    Fitted      |     Delta")
+        print(f"Riso:      {self.Riso:7.3f} | {self.fitted_Riso:7.3f} |{self.Riso - self.fitted_Riso:7.3f}")
+        print(f"Tiso:      {self.Tiso:7.3f}     | {self.fitted_Tiso:7.3f}     |{self.Tiso - self.fitted_Tiso:7.3f}")
+        print(f"Gamma:     {self.gamma:7.3f}        | {self.fitted_gamma:7.3f}        |{self.gamma - self.fitted_gamma:7.3f}")
         
         launch_thetas = self.launch_thetas.to(u.deg)
         fitted_thetas = self.fitted_lons.to(u.deg)
         print(f"Longitude: {launch_thetas[0]:7.3f}    | "
-              f"{fitted_thetas[0]:7.3f}")
+              f"{fitted_thetas[0]:7.3f}    |"
+              f"{launch_thetas[0] - fitted_thetas[0]:7.3f}")
         for i in range(1, len(launch_thetas)):
             print(f"           {launch_thetas[i]:7.3f}    | "
-                  f"{fitted_thetas[i]:7.3f}")
+                  f"{fitted_thetas[i]:7.3f}    |"
+                  f"{launch_thetas[i] - fitted_thetas[i]:7.3f}")
         
         launch_times = self.launch_times.to(u.hr)
         fitted_times = self.fitted_times.to(u.hr)
         print(f"Launch t:  {launch_times[0]:7.3f}      | "
-              f"{fitted_times[0]:7.3f}")
+              f"{fitted_times[0]:7.3f}      |"
+              f"{launch_times[0] - fitted_times[0]:7.3f}")
         for i in range(1, len(launch_times)):
             print(f"           {launch_times[i]:7.3f}      | "
-                  f"{fitted_times[i]:7.3f}")
+                  f"{fitted_times[i]:7.3f}      |"
+                  f"{launch_times[i] - fitted_times[i]:7.3f}")
 
     def fit_summary(self):
         seen_rs = []
@@ -832,7 +933,8 @@ class FittingResult:
                 self.fitted_elongations)):
             x = plot_utils.x_axis_dates(times)
             plt.plot(x, elongations, color=f"C{i}", ls='--')
-            plt.plot(x, fitted_elongations, color=f"C{i}", lw=1)
+            if fitted_elongations is not None:
+                plt.plot(x, fitted_elongations, color=f"C{i}", lw=1)
         legend_elements = [
             matplotlib.lines.Line2D([0], [0], color='k', ls='--'),
             matplotlib.lines.Line2D([0], [0], color='k', lw=1)
@@ -855,6 +957,8 @@ class FittingResult:
                  label='Actual', color='k')
         plt.axvline(self.ts_actual.to(u.hr)[0], color='k', ls=':')
         for i, (t, ft) in enumerate(zip(self.launch_times, self.fitted_times)):
+            if ft is None:
+                continue
             tvals = (self.ts_fitted + (ft - t)).to(u.hr)
             plt.plot(tvals,
                      self.rs_fitted.to(u.R_sun), label='From fit',
@@ -886,9 +990,10 @@ class FittingResult:
             x = self.rs_actual.to(u.R_sun) * np.cos(lon_actual)
             y = self.rs_actual.to(u.R_sun) * np.sin(lon_actual)
             plt.plot(x, y, ls='--', color=f"C{i}")
-            x = self.rs_fitted.to(u.R_sun) * np.cos(lon_fit)
-            y = self.rs_fitted.to(u.R_sun) * np.sin(lon_fit)
-            plt.plot(x, y, lw=1, color=f"C{i}")
+            if lon_fit is not None:
+                x = self.rs_fitted.to(u.R_sun) * np.cos(lon_fit)
+                y = self.rs_fitted.to(u.R_sun) * np.sin(lon_fit)
+                plt.plot(x, y, lw=1, color=f"C{i}")
         
         legend_elements = [
             matplotlib.lines.Line2D([0], [0], color='k', ls='--'),
