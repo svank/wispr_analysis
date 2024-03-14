@@ -865,23 +865,23 @@ def add_distortion_table(fname, outname, err_x, err_y, err_px, err_py):
         The path to which the updated FITS file should be saved. If ``None``,
         the updated ``HDUList`` is returned instead.
     err_x, err_y
-        The x or y coordinate associated with each pixel in the provided
-        distortion maps
-    err_px, err_py
         The distortion values, given in the sense of "the coordinate computed
         for a pixel is offset by this much from its true location". The
         negative of these values will be stored as the distortion map, and that
         is the amount by which pixel coordinates will be shifted before being
         converted to world coordinates.
+    err_px, err_py
+        The x or y coordinate associated with each pixel in the provided
+        distortion maps
     """
     dx = DistortionLookupTable(-err_x.astype(np.float32),
-                               (0, 0),
-                               (err_px[0], err_py[0]), 
+                               (1, 1),
+                               (err_px[0] + 1, err_py[0] + 1),
                                ((err_px[1] - err_px[0]),
                                    (err_py[1] - err_py[0])))
     dy = DistortionLookupTable(-err_y.astype(np.float32),
-                               (0, 0),
-                               (err_px[0], err_py[0]), 
+                               (1, 1),
+                               (err_px[0] + 1, err_py[0] + 1),
                                ((err_px[1] - err_px[0]),
                                    (err_py[1] - err_py[0])))
     with utils.ignore_fits_warnings():
