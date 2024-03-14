@@ -1085,37 +1085,48 @@ class FakeWCS(BaseLowLevelWCS):
             input_wcs = WCS(naxis=2)
         self.input_wcs = input_wcs
 
+    # The empty docstrings suppress the docs pulling in the base class
+    # docstrings
     def world_to_pixel_values(self, *world_arrays):
+        """ """
         raise NotImplementedError()
 
     def pixel_to_world_values(self, *pixel_arrays):
+        """ """
         raise NotImplementedError()
 
     @property
     def pixel_n_dim(self):
+        """ """
         return self.input_wcs.pixel_n_dim
 
     @property
     def world_n_dim(self):
+        """ """
         return self.input_wcs.world_n_dim
 
     @property
     def world_axis_units(self):
+        """ """
         return self.input_wcs.world_axis_units
 
     @property
     def world_axis_physical_types(self):
+        """ """
         return self.input_wcs.world_axis_physical_types
 
     @property
     def world_axis_object_components(self):
+        """ """
         return self.input_wcs.world_axis_object_components
 
     @property
     def world_axis_object_classes(self):
+        """ """
         return self.input_wcs.world_axis_object_classes
     
     def as_high_level(self):
+        """ """
         return HighLevelWCSWrapper(self)
 
 

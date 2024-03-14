@@ -366,7 +366,7 @@ def overlay_radial_grid(image, wcs, ax=None):
     wcs : `HprWcs`
         The `HprWcs` controlling the transformation to radial
         coordinates.
-    ax : `matplotlib.axes.Axes`
+    ax : ``matplotlib.axes.Axes``
         Optional, the axes to plot on
     """
     x = np.arange(image.shape[1])

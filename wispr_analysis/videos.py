@@ -65,8 +65,8 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     between : tuple
         A beginning and end timestamp of the format 'YYYYMMDDTHHMMSS'. Only the
         files between these timestamps will be included in the video. Either or
-        both timestamp can be `None`, to place no limit on the beginning or end
-        of the video.
+        both timestamp can be ``None``, to place no limit on the beginning or
+        end of the video.
     filters : tuple
         Additional filters to pass to ``utils.collect_files``.
     trim_threshold : float

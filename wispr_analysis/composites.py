@@ -237,7 +237,7 @@ def gen_header(hdr_i, hdr_o, proj='ARC', level=False, key=' '):
     proj : str
         The output projection to use
     level : boolean
-        If `True`, the output coordinate system is shifted so that the lines of
+        If ``True``, the output coordinate system is shifted so that the lines of
         zero degrees latitude and longitude appear straight. Intended for use
         with helioprojective frames only.
     key : str
@@ -346,7 +346,7 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     proj : str
         The projection to use for the composite field of view
     level : boolean
-        If `True`, the output coordinate system is shifted so that the lines of
+        If ``True``, the output coordinate system is shifted so that the lines of
         zero degrees latitude and longitude appear straight. Intended for use
         with helioprojective frames only.
     key : str
