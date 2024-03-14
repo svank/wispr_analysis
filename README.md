@@ -1,5 +1,5 @@
 [![tests](https://github.com/svank/wispr_analysis/actions/workflows/main.yml/badge.svg)](https://github.com/svank/wispr_analysis/actions/workflows/main.yml)
-[![Documentation Status](https://readthedocs.org/projects/wispr-analysis/badge/?version=latest)](https://wispr-analysis.readthedocs.io/en/latest/?badge=latest)
+[![docs](https://github.com/svank/wispr_analysis/actions/workflows/docs.yml/badge.svg)](https://github.com/svank/wispr_analysis/actions/workflows/docs.yml)
 
 # wispr-analysis
 Shared tools for WISPR data analysis
