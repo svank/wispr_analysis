@@ -4,7 +4,7 @@
 # wispr-analysis
 Shared tools for WISPR data analysis
 
-Find the documentation [here](https://wispr-analysis.readthedocs.io/en/latest/).
+Find the documentation [here](https://svank.github.io/wispr_analysis/).
 
 ## Commands
 
