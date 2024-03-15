@@ -1,11 +1,11 @@
 from collections.abc import Iterable
 import copy
 from datetime import datetime, timedelta, timezone
-from itertools import chain
 
+from astropy.coordinates import SkyCoord
 import astropy.units as u
+from astropy.visualization import quantity_support
 from astropy.visualization.wcsaxes import WCSAxes
-from astropy.wcs import WCS
 from ipywidgets import interact
 from matplotlib.animation import FuncAnimation
 import matplotlib.dates as mdates
@@ -14,7 +14,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from IPython.display import HTML, display
 
-from . import constellations, utils
+from . import constellations, planets, utils
+from .orbital_frame import PSPOrbitalFrame
+
+
+quantity_support()
     
 
 wispr_cmap = copy.copy(plt.cm.Greys_r)
@@ -273,8 +277,7 @@ def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,
         return ani
 
 
-def plot_orbit(data_dir, between=None, filters=None,
-        plot_full_orbit=True):
+def plot_orbit(data_dir, between=None, filters=None, clip_to_data=True):
     """
     Plots PSP's orbital path and marks the locations of WISPR exposures.
     
@@ -290,60 +293,57 @@ def plot_orbit(data_dir, between=None, filters=None,
     between, filters
         Parameters passed to ``utils.collect_files`` to select only certain files
         to be plotted.
-    plot_full_orbit : bool
-        By default, ``between`` and ``filters`` apply only to which images are
-        indicated, while the full orbital path (as determined by the unfiltered
-        set of files) is plotted. Set this to ``False`` to only indicate the
-        orbital path for the filtered range of files.
+    clip_to_data : bool
+        If ``True``, the portion of the orbit outside of the data collection
+        window will not be plotted.
     """
-    kwargs = {}
-    if not plot_full_orbit:
-        kwargs['between'] = between
-        kwargs['filters'] = filters
-    ifiles, ofiles = utils.collect_files(data_dir, include_headers=True,
-            include_sortkey=True, order='date-avg', **kwargs)
-    headers = [f[-1] for f in sorted(chain(ifiles, ofiles))]
+    ifiles_dots, ofiles_dots = utils.collect_files(
+            data_dir, between=between, filters=filters)
     
-    if between is not None or filters is not None:
-        ifiles_dots, ofiles_dots = utils.collect_files(
-                data_dir, include_headers=False,
-                include_sortkey=False, order='date-avg',
-                between=between, filters=filters)
-    else:
-        ifiles_dots = [f[0] for f in ifiles]
-        ofiles_dots = [f[0] for f in ofiles]
-        
     itimes = [utils.to_timestamp(f) for f in ifiles_dots]
     otimes = [utils.to_timestamp(f) for f in ofiles_dots]
-    times, positions, _ = utils.get_PSP_path_from_headers(headers)
     
-    distance_scale = max(positions[:, 0].max() - positions[:, 0].min(),
-            positions[:, 1].max() - positions[:, 1].min())
+    positions, times = planets.trace_psp_orbit(
+        utils.extract_encounter_number(ifiles_dots[0]))
+    positions = positions.transform_to(PSPOrbitalFrame).cartesian
+    
+    if clip_to_data:
+        tmin = min(itimes[0], otimes[0])
+        tmax = min(itimes[-1], otimes[-1])
+        # Ensure range we keep fully includes all the images
+        dt = times[1] - times[0]
+        tmin -= dt
+        tmax += dt
+        f = (times > tmin) * (times < tmax)
+        times = times[f]
+        positions = positions[f]
+    
+    distance_scale = max(positions.x.max() - positions.x.min(),
+            positions.y.max() - positions.y.min())
     
     # Plot the s/c trajectory
-    plt.plot(positions[:, 0], positions[:, 1])
+    plt.plot(positions.x, positions.y)
     
     # Plot the Sun
-    plt.scatter(0, 0, marker='*', color='k', s=80)
+    plt.scatter(0*u.km, 0*u.km, marker='*', color='k', s=80)
     
     # Calculate locations for the dots
-    ixs = np.interp(itimes, times, positions[:, 0])
-    oxs = np.interp(otimes, times, positions[:, 0])
-    iys = np.interp(itimes, times, positions[:, 1])
-    oys = np.interp(otimes, times, positions[:, 1])
+    ixs = np.interp(itimes, times, positions.x)
+    oxs = np.interp(otimes, times, positions.x)
+    iys = np.interp(itimes, times, positions.y)
+    oys = np.interp(otimes, times, positions.y)
     
     if len(iys):
         ithetas = np.arctan2(np.gradient(iys), np.gradient(ixs))
-        ithetas += np.pi/2
+        ithetas += np.pi/2 * u.rad
         ixs += 0.05 * distance_scale * np.cos(ithetas)
         iys += 0.05 * distance_scale * np.sin(ithetas)
     
     if len(oys):
         othetas = np.arctan2(np.gradient(oys), np.gradient(oxs))
-        othetas += np.pi/2
+        othetas += np.pi/2 * u.rad
         oxs += 0.025 * distance_scale * np.cos(othetas)
         oys += 0.025 * distance_scale * np.sin(othetas)
-    
     
     # Plot the exposure markers with transparency, and plot dummy points
     # without transparency for the plot legend.
@@ -368,8 +368,8 @@ def plot_orbit(data_dir, between=None, filters=None,
     while date < end_date:
         t = date.timestamp()
         
-        x = np.interp(t, times, positions[:, 0])
-        y = np.interp(t, times, positions[:, 1])
+        x = np.interp(t, times, positions.x)
+        y = np.interp(t, times, positions.y)
         
         xs.append(x)
         ys.append(y)
@@ -377,11 +377,11 @@ def plot_orbit(data_dir, between=None, filters=None,
         strings.append(datestring)
         date += one_day
     
-    xs = np.array(xs)
-    ys = np.array(ys)
+    xs = u.Quantity(xs)
+    ys = u.Quantity(ys)
     
     thetas = np.arctan2(np.gradient(ys), np.gradient(xs))
-    thetas -= np.pi/2
+    thetas -= np.pi/2 * u.rad
     
     ticks_x = np.vstack((
         xs + 0.01 * distance_scale * np.cos(thetas),
@@ -396,22 +396,21 @@ def plot_orbit(data_dir, between=None, filters=None,
     xs += 0.025 * distance_scale * np.cos(thetas)
     ys += 0.025 * distance_scale * np.sin(thetas)
     
-    for i, (x, y, theta, datestring) in enumerate(zip(xs, ys, thetas, strings)):
+    last_xy = np.inf, np.inf
+    for x, y, theta, datestring in zip(xs, ys, thetas, strings):
         # Check if the tick marks are too close together. If so, skip labeling
-        # every other date.
-        if (i > 0 and
-                np.sqrt((x - xs[i-1])**2 + (y - ys[i-1])**2)
-                < 0.04 * distance_scale
-                and i % 2):
+        # this date
+        if (np.sqrt((x - last_xy[0])**2 + (y - last_xy[1])**2) 
+                < 0.04 * distance_scale):
             continue
+        last_xy = x, y
             
         alignment = 'left'
-        if theta > np.pi/2 or theta < -np.pi/2:
+        if theta > np.pi/2 * u.rad or theta < -np.pi/2 * u.rad:
             alignment = 'right'
-            theta += np.pi
-        
+            theta += np.pi * u.rad
         plt.text(x, y, datestring,
-                rotation=theta * 180 / np.pi,
+                rotation=theta.to_value(u.deg),
                 rotation_mode='anchor',
                 horizontalalignment=alignment,
                 verticalalignment='center')

@@ -47,7 +47,9 @@ perihelia_dates = {
 
 def get_psp_perihelion_date(encounter):
     if isinstance(encounter, str):
-        if encounter[0] == 'E':
+        if encounter[:3] == 'ENC':
+            encounter = encounter[3:]
+        elif encounter[0] == 'E':
             encounter = encounter[1:]
         encounter = int(encounter)
     return perihelia_dates[encounter]
@@ -223,6 +225,47 @@ def locate_psp(date, cache_dir=None):
             pickle.dump(psp_pos, f)
     
     return psp_pos
+
+
+def trace_psp_orbit(encounter, cache_dir=None, dt=6*u.hr, t_start=None,
+                    t_stop=None):
+    if t_start is not None:
+        t_start = utils.to_timestamp(t_start)
+    if t_stop is not None:
+        t_stop = utils.to_timestamp(t_stop)
+    start_time = utils.to_timestamp(get_psp_perihelion_date(encounter))
+    time = start_time
+    pos = locate_psp(time, cache_dir=cache_dir)
+    times = [time]
+    poses = [pos]
+    while True:
+        time += dt.to_value(u.s)
+        pos = locate_psp(time, cache_dir=cache_dir)
+        if pos.cartesian.norm() < poses[-1].cartesian.norm():
+            break
+        if t_stop is not None and time > t_stop:
+            break
+        poses.append(pos)
+        times.append(time)
+    time = start_time
+    while True:
+        time -= dt.to_value(u.s)
+        pos = locate_psp(time, cache_dir=cache_dir)
+        if pos.cartesian.norm() < poses[0].cartesian.norm():
+            break
+        if t_start is not None and time < t_start:
+            break
+        poses.insert(0, pos)
+        times.insert(0, time)
+    poses = astropy.coordinates.SkyCoord(
+        [p.x for p in poses],
+        [p.y for p in poses],
+        [p.z for p in poses],
+        representation_type='cartesian',
+        frame='heliocentricinertial',
+        obstime=format_date(start_time))
+    times = np.array(times)
+    return poses, times
 
 
 def cache_planet_pos(date, cache_dir):

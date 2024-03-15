@@ -1,10 +1,11 @@
 from .. import plot_utils, utils
-
-from datetime import datetime
 import os
 
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
+import astropy.units as u
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
 
@@ -49,7 +50,36 @@ def test_parse_level_preset():
 
 
 @pytest.mark.mpl_image_compare
-def test_plot_orbit():
+def test_plot_orbit(mocker):
+    times = np.array([
+        1.54102122e+09, 1.54108602e+09, 1.54115082e+09, 1.54121562e+09,
+        1.54128042e+09, 1.54134522e+09, 1.54141002e+09, 1.54147482e+09])
+    poses = SkyCoord(
+        np.array([
+            35950077.11211421, 33633933.9862569 , 30826470.80720564,
+            27463317.06427251, 23492294.88034739, 18893588.41288763,
+            13705306.10463386,  8042152.2194448 ]) * u.km,
+        np.array([
+            -3134222.36970821,  1312105.23274597,  5736926.49596144,
+            10055181.02164345, 14146735.13435697, 17855169.61531039,
+            21000776.17243724, 23414024.55029698]) * u.km,
+        np.array([
+            -306250.77413144,  -582840.95529877,  -850753.76931808,
+            -1103110.62721629, -1330762.40654031, -1522499.36320502,
+            -1666331.83426047, -1752099.43801478]) * u.km,
+        representation_type='cartesian',
+        frame='heliocentricinertial',
+        obstime='2018-11-06T03:27:00.000')
+    mocker.patch('wispr_analysis.planets.trace_psp_orbit',
+                 return_value=(poses, times))
+    mocker.patch('wispr_analysis.orbital_frame.planets.get_orbital_elements',
+                 return_value=(
+                    24818507.23190053 * u.km,
+                    0.6994392466036299,
+                    0.07120535 * u.rad,
+                    2.93536417 * u.rad,
+                    4.58828605 * u.rad,
+                    ))
     dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
     plot_utils.plot_orbit(dir_path)
     
