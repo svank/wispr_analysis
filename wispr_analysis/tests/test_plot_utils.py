@@ -135,3 +135,54 @@ def test_date_to_mdate():
     
     assert (plot_utils.date_to_mdate(timestamps)
             == [plot_utils.date_to_mdate(t) for t in timestamps])
+
+
+@pytest.mark.mpl_image_compare
+def test_plot_WISPR():
+    file = utils.test_data_path(
+        'WISPR_files_with_data_half_size_L3', '20190405',
+        'psp_L3_wispr_20190405T010554_V3_1221.fits')
+    plot_utils.plot_WISPR(file)
+    return plt.gcf()
+
+
+@pytest.mark.mpl_image_compare
+def test_plot_WISPR_planets(mocker):
+    obstime = '2019-04-05T01:05:54.000'
+    observer = SkyCoord(-46.15225946*u.deg, -4.06443972*u.deg,
+                        24824758.83731129*u.km,
+                        frame='heliographic_stonyhurst',
+                        obstime=obstime)
+    Txs = [66.65269148107994, 31.112035136050398, 126.4131409890366,
+           -117.08374555085831, 73.20739338058031, 44.1491913080084,
+           -62.849336222063734, -17.14379744627875] * u.deg
+    Tys = [-3.3781392925411975, -0.7970722057707433, -3.9414397302877506,
+           1.5587723954027857, -0.7076722921070003, 0.9475502700033915,
+            2.6575396047688056, 2.3601830367106804] * u.deg
+    dists = [108.08958370250382, 185.97541498376026, 192.02427874753582,
+             320.42100789760525, 1154.0240691385159, 2187.7428919566187,
+             4284.775913713835, 6471.511984739789] * u.R_sun
+    
+    planets = []
+    for Tx, Ty, dist in zip(Txs, Tys, dists):
+        planets.append(SkyCoord(Tx, Ty, dist, obstime=obstime,
+                                observer=observer, frame='helioprojective'))
+    mocker.patch('wispr_analysis.plot_utils.planets.locate_planets',
+                 return_value=(planets))
+    
+    file = utils.test_data_path(
+        'WISPR_files_with_data_half_size_L3', '20190405',
+        'psp_L3_wispr_20190405T010554_V3_1221.fits')
+    plot_utils.plot_WISPR(file, mark_planets=True)
+    return plt.gcf()
+
+
+@pytest.mark.mpl_image_compare
+def test_plot_WISPR_constellations():
+    file = utils.test_data_path(
+        'WISPR_files_with_data_half_size_L3', '20190405',
+        'psp_L3_wispr_20190405T010554_V3_1221.fits')
+    plot_utils.plot_WISPR(file, draw_constellations=True)
+    plt.xlim(0, 480)
+    plt.ylim(0, 512)
+    return plt.gcf()

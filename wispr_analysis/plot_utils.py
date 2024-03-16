@@ -76,12 +76,12 @@ def full_size_plot(img, **kwargs):
     return fig, ax
 
 
-def plot_WISPR(data, ax=None, cmap=None, wcs=None,
+def plot_WISPR(data, ax=None, wcs=None,
         vmin='auto', vmax='auto', wcs_key=' ',
         detector_preset=None, level_preset=None,
         grid=False, lat_spacing=10, lon_spacing=10,
         relative_vmin=1, relative_vmax=1, gamma=1/2.2,
-        draw_constellations=False,
+        draw_constellations=False, mark_planets=False,
         **kwargs):
     """
     Does the Right Thing to plot a WISPR image.
@@ -98,8 +98,6 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         data and WCS information.
     ax
         A matplotlib ``Axes`` object to use for plotting. Optional.
-    cmap
-        A matplotlib colormap. Optional.
     wcs
         A ``WCS`` object to use to plot in world coordinates. Optional, and
         only needed if a data array is provided, rather than a FITS file.
@@ -153,6 +151,16 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
         vmax = (COLORBAR_PRESETS[level_preset][detector_preset][1]
                 * relative_vmax)
     
+    return _plot_internal(
+        data, wcs, ax=ax, draw_constellations=draw_constellations,
+                   mark_planets=mark_planets, grid=grid,
+                   lat_spacing=lat_spacing, lon_spacing=lon_spacing, vmin=vmin,
+                   vmax=vmax, gamma=gamma, imshow_kwargs=kwargs)
+    
+def _plot_internal(data, wcs, ax=None, draw_constellations=False,
+                   mark_planets=False, grid=False, lat_spacing=10,
+                   lon_spacing=10, vmin=None, vmax=None, gamma=1/2.2,
+                   imshow_kwargs={}):
     if ax is None:
         # No axes object was supplied, so we grab the current axes. (If axes
         # are explicitly provided, we take them as-is.)
@@ -169,14 +177,15 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
             setup_WCS_axes(ax, grid=grid, lat_spacing=lat_spacing,
                     lon_spacing=lon_spacing)
     
-    if cmap is None:
-        cmap = wispr_cmap
+    if imshow_kwargs.get('cmap') is None:
+        imshow_kwargs['cmap'] = wispr_cmap
     
-    if 'origin' not in kwargs:
-        kwargs['origin'] = 'lower'
-    im = ax.imshow(data, cmap=cmap,
-            norm=matplotlib.colors.PowerNorm(gamma=gamma, vmin=vmin, vmax=vmax),
-            **kwargs)
+    if 'origin' not in imshow_kwargs:
+        imshow_kwargs['origin'] = 'lower'
+    im = ax.imshow(data,
+            norm=matplotlib.colors.PowerNorm(
+                gamma=gamma, vmin=vmin, vmax=vmax),
+            **imshow_kwargs)
     # Set this image to be the one found by plt.colorbar, for instance. But if
     # this manager attribute is empty, pyplot won't accept it.
     if ax.figure.canvas.manager:
@@ -185,6 +194,22 @@ def plot_WISPR(data, ax=None, cmap=None, wcs=None,
     
     if draw_constellations:
         constellations.plot_constellations(wcs)
+    
+    if mark_planets:
+        if not wcs:
+            raise ValueError("Cannot mark planets without a WCS")
+        planet_poses = planets.locate_planets(wcs.wcs.dateavg)
+        for planet, pos in zip(planets.planets, planet_poses):
+            x, y = wcs.world_to_pixel(pos)
+            if 0 < x < data.shape[1] and 0 < y < data.shape[0]:
+                ax.annotate(planet,(x+4, y+1), (2, .3),
+                            textcoords='offset fontsize',
+                            fontsize='x-small',
+                            color='white',
+                            arrowprops=dict(
+                                edgecolor='white',
+                                facecolor='white',
+                                arrowstyle='-|>'))
     return im
 
 
