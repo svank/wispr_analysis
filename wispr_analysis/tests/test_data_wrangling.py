@@ -11,9 +11,9 @@ import pytest
 
 
 def test_convert_to_compressed_hdul(tmp_path):
-    path = os.path.join(utils.test_data_path(),
-            'WISPR_files_with_distortion_map',
-            'psp_L2_wispr_20220527T230018_V1_1221.fits')
+    path = utils.test_data_path(
+        'WISPR_files_with_distortion_map',
+        'psp_L2_wispr_20220527T230018_V1_1221.fits')
     with utils.ignore_fits_warnings():
         hdul_orig = fits.open(path)
     hdul_compressed = data_wrangling.convert_to_compressed_hdul(hdul_orig)

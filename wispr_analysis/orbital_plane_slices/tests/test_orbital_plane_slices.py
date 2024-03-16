@@ -13,8 +13,8 @@ import spiceypy as spice
 
 
 def test_load_files():
-    dir_path = os.path.join(utils.test_data_path(),
-                            'WISPR_files_with_data_half_size', '20181101')
+    dir_path = utils.test_data_path(
+        'WISPR_files_with_data_half_size', '20181101')
     ifiles, ofiles = utils.collect_files(dir_path)
     
     bundle = ops.load_files(ifiles)
@@ -39,10 +39,9 @@ def jmap(mocker):
     # To speed up the tests we generate a Jmap only once
     global jmap_cache
     if jmap_cache is None:
-        planets.load_kernels(os.path.join(utils.data_path(), 'spice_kernels'))
+        planets.load_kernels(utils.data_path('spice_kernels'))
         
-        dir_path = os.path.join(utils.test_data_path(),
-                                'WISPR_files_with_data_half_size_L3')
+        dir_path = utils.test_data_path('WISPR_files_with_data_half_size_L3')
         ifiles, _ = utils.collect_files(dir_path)
         
         bundle = ops.load_files(ifiles)

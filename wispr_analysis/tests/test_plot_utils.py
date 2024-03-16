@@ -80,7 +80,7 @@ def test_plot_orbit(mocker):
                     2.93536417 * u.rad,
                     4.58828605 * u.rad,
                     ))
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     plot_utils.plot_orbit(dir_path)
     
     return plt.gcf()

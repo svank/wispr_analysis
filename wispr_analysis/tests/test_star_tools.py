@@ -160,8 +160,7 @@ def test_find_expected_stars_in_frame(mocker):
     mocker.patch(star_tools.__name__+'.good_pixel_map',
             np.ones_like(star_tools.good_pixel_map))
     
-    dir_path = os.path.join(utils.test_data_path(),
-                'WISPR_files_with_data_half_size')
+    dir_path = utils.test_data_path('WISPR_files_with_data_half_size')
     ifiles, _ = utils.collect_files(dir_path)
     file = ifiles[0]
     

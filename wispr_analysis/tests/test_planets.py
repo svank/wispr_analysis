@@ -10,7 +10,7 @@ import spiceypy as spice
 
 @pytest.mark.parametrize('only', [None, 'Venus', ['Venus'], ['Earth', 'Venus']])
 def test_locate_planets_cache(tmp_path, mocker, only):
-    planets.load_kernels(os.path.join(utils.data_path(), 'spice_kernels'))
+    planets.load_kernels(utils.data_path('spice_kernels'))
     
     real_spkezr = spice.spkezr
     def spkezr(id, et, *args, **kwargs):
@@ -36,10 +36,9 @@ def test_locate_planets_cache(tmp_path, mocker, only):
 
 
 def test_formate_date():
-    path = os.path.join(utils.test_data_path(),
-            'WISPR_files_headers_only',
-            '20181101',
-            'psp_L3_wispr_20181101T013048_V3_1221.fits')
+    path = utils.test_data_path(
+        'WISPR_files_headers_only', '20181101',
+        'psp_L3_wispr_20181101T013048_V3_1221.fits')
     
     with utils.ignore_fits_warnings():
         header = fits.getheader(path)

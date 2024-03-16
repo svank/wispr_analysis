@@ -1130,9 +1130,10 @@ class FakeWCS(BaseLowLevelWCS):
         return HighLevelWCSWrapper(self)
 
 
-def test_data_path():
-    return os.path.join(os.path.dirname(__file__), 'tests', 'test_data')
+def test_data_path(*segments):
+    return os.path.join(
+        os.path.dirname(__file__), 'tests', 'test_data', *segments)
 
 
-def data_path():
-    return os.path.join(os.path.dirname(__file__), 'data')
+def data_path(*segments):
+    return os.path.join(os.path.dirname(__file__), 'data', *segments)

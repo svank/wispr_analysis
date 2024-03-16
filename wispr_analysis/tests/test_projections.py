@@ -255,9 +255,7 @@ def test_reproject_from_radial():
 @pytest.mark.parametrize('use_inner_as_ref', [True, False])
 @pytest.mark.parametrize('pass_wcs', [True, False])
 def test_produce_radec_for_hp_wcs(pass_wcs, use_inner_as_ref):
-    dir = os.path.join(
-            utils.test_data_path(),
-            'WISPR_files_headers_only', '20181101')
+    dir = utils.test_data_path('WISPR_files_headers_only', '20181101')
     ifile = os.path.join(dir, 'psp_L3_wispr_20181101T051548_V3_1221.fits')
     ofile = os.path.join(dir, 'psp_L3_wispr_20181101T060030_V3_2222.fits')
     
@@ -306,10 +304,9 @@ def test_produce_radec_for_hp_wcs(pass_wcs, use_inner_as_ref):
 
 @pytest.mark.mpl_image_compare
 def test_overlay_radial_grid():
-    file = os.path.join(utils.test_data_path(),
-                        'WISPR_files_with_data_half_size_L3',
-                        '20190405',
-                        'psp_L3_wispr_20190405T011515_V3_1221.fits')
+    file = utils.test_data_path(
+        'WISPR_files_with_data_half_size_L3', '20190405',
+        'psp_L3_wispr_20190405T011515_V3_1221.fits')
     with utils.ignore_fits_warnings():
         image = fits.getdata(file)
         wcs = WCS(fits.getheader(file))

@@ -44,10 +44,9 @@ def test_to_timestamp():
     assert utils.to_timestamp(
             input_timestamp, as_datetime=True) == target_datetime
     
-    test_data_path = os.path.join(utils.test_data_path(),
-                'WISPR_files_headers_only', '20181101')
-    test_file = os.path.join(
-            test_data_path, 'psp_L3_wispr_20181101T004548_V3_1221.fits')
+    test_file = utils.test_data_path(
+        'WISPR_files_headers_only', '20181101',
+        'psp_L3_wispr_20181101T004548_V3_1221.fits')
     assert (utils.to_timestamp(
         test_file, as_datetime=True, read_headers=True)
             == datetime(2018, 11, 1, 0, 47, 1, 880000, timezone.utc))
@@ -75,10 +74,9 @@ def test_to_timestamp_list():
     assert (utils.to_timestamp(timestamps)
             == [utils.to_timestamp(x) for x in timestamps])
     
-    test_data_path = os.path.join(utils.test_data_path(),
-                'WISPR_files_headers_only', '20181101')
-    test_file = os.path.join(
-            test_data_path, 'psp_L3_wispr_20181101T004548_V3_1221.fits')
+    test_file = utils.test_data_path(
+        'WISPR_files_headers_only', '20181101',
+        'psp_L3_wispr_20181101T004548_V3_1221.fits')
     assert (utils.to_timestamp(
         [test_file] * 2, as_datetime=True, read_headers=True)
             == [datetime(2018, 11, 1, 0, 47, 1, 880000, timezone.utc)] * 2)
@@ -95,7 +93,7 @@ def test_to_timestamp_empty():
 
 
 def test_get_PSP_path():
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     times, positions, vs = utils.get_PSP_path(dir_path)
     assert times.size == positions.shape[0] == vs.shape[0]
     assert np.all(times[1:] > times[:-1])
@@ -104,7 +102,7 @@ def test_get_PSP_path():
 
 
 def test_collect_files():
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     files = utils.collect_files(dir_path, separate_detectors=True)
     files_avg = utils.collect_files(dir_path, separate_detectors=True,
             order='DATE-AVG')
@@ -141,8 +139,7 @@ def test_collect_files():
 
 
 def test_collect_files_compressed(tmp_path):
-    test_data_path = os.path.join(utils.test_data_path(),
-                'WISPR_files_headers_only')
+    test_data_path = utils.test_data_path('WISPR_files_headers_only')
     for dirpath, _, filenames in os.walk(test_data_path):
         os.makedirs(tmp_path / dirpath, exist_ok=True)
         for fname in filenames:
@@ -160,7 +157,7 @@ def test_collect_files_compressed(tmp_path):
 
 
 def test_collect_files_with_headers():
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     file_list = utils.collect_files(os.path.join(dir_path, '20181101'),
             include_headers=True, separate_detectors=False)
     assert len(file_list) == 32
@@ -178,7 +175,7 @@ def test_collect_files_with_headers():
 
 
 def test_collect_files_between():
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181102T000000', None))
     assert len(file_list) == 45
@@ -193,7 +190,7 @@ def test_collect_files_between():
 
 
 def test_collect_files_between_timestamp_parsing():
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             between=('20181102T000000', None), order='DATE-AVG')
     assert len(file_list) == 45
@@ -208,7 +205,7 @@ def test_collect_files_between_timestamp_parsing():
 
 
 def test_collect_files_filters():
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             include_headers=True)
     all_values = np.array([f[1]['dsun_obs'] for f in file_list])
@@ -242,7 +239,7 @@ def test_collect_files_filters():
 
 
 def test_collect_files_two_filters():
-    dir_path = os.path.join(utils.test_data_path(), 'WISPR_files_headers_only')
+    dir_path = utils.test_data_path('WISPR_files_headers_only')
     file_list = utils.collect_files(dir_path, separate_detectors=False,
             include_headers=True)
     all_values1 = np.array([f[1]['dsun_obs'] for f in file_list])
@@ -987,8 +984,7 @@ def test_to_orbital_plane_rtheta():
 
 
 def test_load_orbit_plane_xy():
-    dir_path = os.path.join(utils.test_data_path(),
-                'WISPR_files_with_data_half_size')
+    dir_path = utils.test_data_path('WISPR_files_with_data_half_size')
     files = utils.collect_files(dir_path, separate_detectors=False)
     files = files[:2]
     x, y = utils.load_orbit_plane_xy(files)
@@ -998,8 +994,7 @@ def test_load_orbit_plane_xy():
 
 
 def test_find_closest_file():
-    test_data_path = os.path.join(utils.test_data_path(),
-                'WISPR_files_headers_only')
+    test_data_path = utils.test_data_path('WISPR_files_headers_only')
     files = utils.collect_files(test_data_path, separate_detectors=False)
     
     # Test providing a header value directly
