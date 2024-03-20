@@ -34,6 +34,8 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
         headers, rather than using the filename timestamp (which is
         ``DATE-BEG``).
     """
+    if isinstance(datestring, fits.Header):
+        datestring = datestring['date-avg']
     if isinstance(datestring, Iterable) and not isinstance(datestring, str):
         return [to_timestamp(
                     x, as_datetime=as_datetime, read_headers=read_headers)

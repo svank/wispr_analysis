@@ -193,14 +193,20 @@ def _plot_internal(data, wcs, ax=None, draw_constellations=False,
         plt.sci(im)
     
     if draw_constellations:
+        if not wcs:
+            raise ValueError("Cannot draw constellations without a WCS")
         constellations.plot_constellations(wcs)
     
     if mark_planets:
         if not wcs:
             raise ValueError("Cannot mark planets without a WCS")
-        planet_poses = planets.locate_planets(wcs.wcs.dateavg)
+        if isinstance(mark_planets, bool):
+            planet_poses = planets.locate_planets(wcs.wcs.dateavg)
+            planet_wcs = wcs
+        else:
+            planet_wcs, planet_poses = mark_planets
         for planet, pos in zip(planets.planets, planet_poses):
-            x, y = wcs.world_to_pixel(pos)
+            x, y = planet_wcs.world_to_pixel(pos)
             if 0 < x < data.shape[1] and 0 < y < data.shape[0]:
                 ax.annotate(planet,(x+4, y+1), (2, .3),
                             textcoords='offset fontsize',

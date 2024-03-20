@@ -27,7 +27,7 @@ def dust_streak_filter(img1, img2, img3, radec=True,
     with utils.ignore_fits_warnings():
         if isinstance(img1, tuple):
             img1, hdr1 = img1
-        else:
+        elif img1 is not None:
             img1 = os.path.expanduser(img1)
             img1, hdr1 = fits.getdata(img1, header=True)
         if isinstance(img2, tuple):
@@ -37,7 +37,7 @@ def dust_streak_filter(img1, img2, img3, radec=True,
             img2, hdr2 = fits.getdata(img2, header=True)
         if isinstance(img3, tuple):
             img3, hdr3 = img3
-        else:
+        elif img3 is not None:
             img3 = os.path.expanduser(img3)
             img3, hdr3 = fits.getdata(img3, header=True)
     
@@ -58,24 +58,29 @@ def dust_streak_filter(img1, img2, img3, radec=True,
                          f" window_width: {window_width}")
         hdr2.add_history(f"  sliding_window_stride: {sliding_window_stride}")
     
-    gap = (utils.to_timestamp(hdr3['date-avg'])
-            - utils.to_timestamp(hdr1['date-avg']))
-    if (greatest_allowed_gap and gap > greatest_allowed_gap):
-        ret = [img2]
-        if return_mask:
-            mask = np.zeros_like(img2, dtype=bool)
-            if return_mask == 'also':
-                ret.append(mask)
-            else:
-                ret[0] = mask
-        if return_header:
-            hdr2.add_history(f"Dust streak removal skipped; gap of {gap:.0f}")
-            hdr2.add_history(
-                    f" exceeded greatest allowable gap of {greatest_allowed_gap}")
-            ret.append(hdr2)
-        if len(ret) == 1:
-            ret = ret[0]
-        return ret
+    if greatest_allowed_gap:
+        if img1 is None:
+            gap = 2 * (utils.to_timestamp(hdr3) - utils.to_timestamp(hdr2))
+        elif img3 is None:
+            gap = 2 * (utils.to_timestamp(hdr2) - utils.to_timestamp(hdr1))
+        else:    
+            gap = (utils.to_timestamp(hdr3) - utils.to_timestamp(hdr1))
+        if gap > greatest_allowed_gap:
+            ret = [img2]
+            if return_mask:
+                mask = np.zeros_like(img2, dtype=bool)
+                if return_mask == 'also':
+                    ret.append(mask)
+                else:
+                    ret[0] = mask
+            if return_header:
+                hdr2.add_history(f"Dust streak removal skipped; gap of {gap:.0f}")
+                hdr2.add_history(
+                        f" exceeded greatest allowable gap of {greatest_allowed_gap}")
+                ret.append(hdr2)
+            if len(ret) == 1:
+                ret = ret[0]
+            return ret
     
     if radec:
         with utils.ignore_fits_warnings():
@@ -103,10 +108,15 @@ def dust_streak_filter(img1, img2, img3, radec=True,
                 boundary_mode='constant', roundtrip_coords=False)),
             axis=0)
     else:
-        img1_r = img1
-        img2_r = img2
-        img3_r = img3
-        img_fill = np.mean((img1, img3), axis=0)
+        if img1 is None:
+            img_fill = img3
+        elif img3 is None:
+            img_fill = img1
+        else:
+            img1_r = img1
+            img2_r = img2
+            img3_r = img3
+            img_fill = np.mean((img1, img3), axis=0)
     
     if precomputed_mask is None:
         filter = _compute_debris_mask(

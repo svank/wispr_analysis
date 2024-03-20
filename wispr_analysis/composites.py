@@ -67,14 +67,16 @@ def find_bounds(hdr, wcs_target, trim=(0, 0, 0, 0), key=' ', wrap_aware=False,
                 wcs = WCS(hdr, hdul, key=key)
         elif isinstance(hdr, tuple):
             hdr, wcs = hdr
-        else:
+        elif isinstance(hdr, fits.Header):
             wcs = WCS(hdr, key=key)
+        elif isinstance(hdr, WCS):
+            wcs = hdr
         if not isinstance(wcs_target, WCS):
             wcs_target = WCS(wcs_target)
     left = 0 + trim[0]
-    right = hdr['naxis1'] - trim[1]
+    right = wcs.pixel_shape[0] - trim[1]
     bottom = 0 + trim[2]
-    top = hdr['naxis2'] - trim[3]
+    top = wcs.pixel_shape[1] - trim[3]
     xs = np.concatenate((
         np.arange(left, right),
         np.full(top-bottom, right - 1),
@@ -207,9 +209,9 @@ def find_collective_bounds(hdrs, wcs_target, trim=(0, 0, 0, 0), key=' '):
         The bounding coordinates. In order, (left, right, bottom, top).
     """
     
-    if isinstance(hdrs, (fits.header.Header, str)):
+    if isinstance(hdrs, (fits.header.Header, str, WCS)):
         hdrs = [[hdrs]]
-    if isinstance(hdrs[0], (fits.header.Header, str)):
+    if isinstance(hdrs[0], (fits.header.Header, str, WCS)):
         hdrs = [hdrs]
     if not isinstance(trim[0], Iterable):
         trim = [trim] * len(hdrs)
@@ -333,9 +335,7 @@ def set_wcs_observer_details(target_wcs, wcs1, wcs2):
 
 
 def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
-        return_both=False, bounds=None, wcsh=None, naxis1=None, naxis2=None,
-        blank_i=False, blank_o=False,
-        image_trim='auto', **kwargs):
+        bounds=None, wcsh=None, image_trim='auto', **kwargs):
     """
     Generates a composite image from two WISPR images (inner and outer)
     
@@ -352,10 +352,6 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     key : str
         The coordinate system associated with this key value will be loaded
         from the headers.
-    return_both : booean
-        If ``True``, the two individual images are reprojected into the common
-        field of view but are not combined. Instead, two separate, reprojected
-        images are returned.
     bounds : tuple
         The composite image is cropped at these pixel locations. The ordering
         is (left, right, bottom, top). If None, the bounds are autodetected to
@@ -364,16 +360,6 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     wcsh : WCS
         The coordinate system for the composite field of view. If not provided,
         the system is automatically generated.
-    naxis1, naxis2 : int
-        If ``wcsh`` is provided, the size of the output image must also be
-        provided with these two values.
-    blank_i, blank_o : boolean
-        Set either flag to ``True`` to not render the inner or outer image.
-        Files must still be provided for any images not drawn so that the
-        proper size of the output image can be determined. This flag is inteded
-        for rendering frames in an animation, when some frames should still
-        render a full field of view but one imager is temporarily not being
-        shown.
     image_trim : Iterable
         The edges of the input images are trimmed. ``image_trim`` is a list of
         two lists, one for the inner and outer images, respectively. Each
@@ -391,30 +377,27 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
     wcsh : WCS
         The coordinate system for the composite image
     """
-    img_i, img_o = None, None
+    imgs = []
+    wcses = []
     with utils.ignore_fits_warnings():
-        if isinstance(fname_i, tuple):
-            img_i, fname_i = fname_i
-        fname_i = os.path.expanduser(fname_i)
-        with fits.open(fname_i) as hdul:
-            hdu = 1 if hdul[0].data is None else 0
-            if img_i is None:
-                img_i = hdul[hdu].data
-            hdr_i = hdul[hdu].header
-            wcs_i = WCS(hdr_i, hdul, key=key)
-        
-        if isinstance(fname_o, tuple):
-            img_o, fname_o = fname_o
-        fname_o = os.path.expanduser(fname_o)
-        with fits.open(fname_o) as hdul:
-            hdu = 1 if hdul[0].data is None else 0
-            if img_o is None:
-                img_o = hdul[hdu].data
-            hdr_o = hdul[hdu].header
-            wcs_o = WCS(hdr_o, hdul, key=key)
+        for fname in fname_i, fname_o:
+            if fname is not None:
+                if isinstance(fname, tuple):
+                    img, fname = fname
+                else:
+                    img = None
+                fname = os.path.expanduser(fname)
+                with fits.open(fname) as hdul:
+                    hdu = 1 if hdul[0].data is None else 0
+                    if img is None:
+                        img = hdul[hdu].data
+                    hdr = hdul[hdu].header
+                    wcs = WCS(hdr, hdul, key=key)
+                imgs.append(img)
+                wcses.append(wcs)
     
     if wcsh is None:
-        wcsh, naxis1, naxis2 = gen_header(
+        wcsh, _, _ = gen_header(
                 fname_i, fname_o, proj=proj, level=level, key=key)
     else:
         wcsh = wcsh.deepcopy()
@@ -430,41 +413,12 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             if image_trim[i][j] is None:
                 image_trim[i][j] = image_trim_default[i][j]
     
-    imgs = []
-    wcses = []
-    for img, hdr, wcs, trim in zip(
-            (img_o, img_i), (hdr_o, hdr_i), (wcs_o, wcs_i), image_trim[::-1]):
-        wcses.append(wcs[trim[2]:img.shape[0]-trim[3],
-                         trim[0]:img.shape[1]-trim[1]])
-        imgs.append(img[trim[2]:img.shape[0]-trim[3],
-                        trim[0]:img.shape[1]-trim[1]])
-        hdr['NAXIS1'] -= trim[0] + trim[1]
-        hdr['NAXIS2'] -= trim[2] + trim[3]
-        hdr['CRPIX1'] -= trim[0]
-        hdr['CRPIX2'] -= trim[2]
-        hdr['CRPIX1A'] -= trim[0]
-        hdr['CRPIX2A'] -= trim[2]
-    img_o, img_i = imgs
-    wcs_o, wcs_i = wcses
-    
-    if bounds is None:
-        img_i_bounds = find_bounds((hdr_i, wcs_i), wcsh, key=key)
-        img_o_bounds = find_bounds((hdr_o, wcs_o), wcsh, key=key)
-        bounds = (min(img_i_bounds[0], img_o_bounds[0]),
-                  max(img_i_bounds[1], img_o_bounds[1]),
-                  min(img_i_bounds[2], img_o_bounds[2]),
-                  max(img_i_bounds[3], img_o_bounds[3]))
-    elif not bounds:
-        bounds = (0, naxis1, 0, naxis2)
-    wcsh = wcsh[bounds[2]:bounds[3], bounds[0]:bounds[1]]
-    # naxis1, naxis2 = wcsh.pixel_shape
-    # If either image actually falls outside the (guestimated) composite FOV,
-    # expand the image
-    naxis1 += bounds[1] - naxis1
-    naxis2 += bounds[3] - naxis2
-    naxis1 -= bounds[0]
-    naxis2 -= bounds[2]
-    wcsh.pixel_shape = naxis1, naxis2
+    for i, img in enumerate(imgs):
+        trim = image_trim[i]
+        wcses[i] = wcses[i][trim[2]:img.shape[0]-trim[3],
+                            trim[0]:img.shape[1]-trim[1]]
+        imgs[i] = imgs[i][trim[2]:img.shape[0]-trim[3],
+                          trim[0]:img.shape[1]-trim[1]]
     
     def censor_wcs(wcs):
         # The input images have slightly different viewpoints. If
@@ -480,39 +434,23 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
         return wcs
     
     wcs_target = censor_wcs(wcsh)
-    wcs_i = censor_wcs(wcs_i)
-    wcs_o = censor_wcs(wcs_o)
+    wcses = [censor_wcs(wcs) for wcs in wcses]
+    
+    if bounds is None:
+        bounds = find_collective_bounds(wcses, wcs_target, key=key)
+    elif not bounds:
+        naxis1, naxis2 = wcsh.pixel_shape
+        bounds = (0, naxis1, 0, naxis2)
+    wcsh = wcsh[bounds[2]:bounds[3], bounds[0]:bounds[1]]
+    wcs_target = wcs_target[bounds[2]:bounds[3], bounds[0]:bounds[1]]
     
     with utils.ignore_fits_warnings():
-        if return_both:
-            reproj_args = dict(
-                roundtrip_coords=False, boundary_mode='ignore_threshold')
-            reproj_args.update(kwargs)
-            if blank_i:
-                o1 = np.full((naxis2, naxis1), np.nan)
-            else:
-                o1 = reproject.reproject_adaptive(
-                        (img_i, wcs_i), wcs_target, (naxis2, naxis1),
-                        return_footprint=False, **reproj_args)
-            if blank_o:
-                o2 = np.full((naxis2, naxis1), np.nan)
-            else:
-                o2 = reproject.reproject_adaptive(
-                        (img_o, wcs_o), wcs_target, (naxis2, naxis1),
-                        return_footprint=False, **reproj_args)
-            return o1, o2, wcsh
-        
-        inputs = []
-        if not blank_i:
-            inputs.append((img_i, wcs_i))
-        if not blank_o:
-            inputs.append((img_o, wcs_o))
         reproj_args = dict(
             roundtrip_coords=False, boundary_mode='ignore_threshold',
             combine_function='first')
         reproj_args.update(kwargs)
         composite, footprint = reproject.mosaicking.reproject_and_coadd(
-            inputs, wcs_target, (naxis2, naxis1),
+            list(zip(imgs, wcses)), wcs_target, wcs_target.array_shape,
             reproject_function=reproject.reproject_adaptive,
             **reproj_args)
         composite[footprint == 0] = np.nan

@@ -101,7 +101,7 @@ def load_constellation_data():
     decs = np.array(decs)
     distances = np.full(len(RAs), 1e10)
     coords = SkyCoord(
-        RAs, decs, distances, frame=ICRS, unit=(u.hourangle, u.deg, u.au))
+        RAs, decs, distances, frame=ICRS, unit=(u.hourangle, u.deg, u.lightyear))
     return line_dict, coords
     
     
@@ -119,19 +119,20 @@ def plot_constellations(wcs, ax=None):
     xlim, ylim = ax.get_xlim(), ax.get_ylim()
     
     for name, pairs in constellations.items():
-        x_all = []
-        y_all = []
+        ra_all = []
+        dec_all = []
         n_good = 0
         if len(pairs) < 2:
             # Skip the really small, trivial constellations
             continue
-        for start, stop in pairs:
-            start = xs[start], ys[start]
-            stop = xs[stop], ys[stop]
+        for istart, istop in pairs:
+            start = xs[istart], ys[istart]
+            stop = xs[istop], ys[istop]
             if not np.all(np.isfinite(start)) or not np.all(np.isfinite(stop)):
                 continue
-            x_all.extend((start[0], stop[0]))
-            y_all.extend((start[1], stop[1]))
+            for coord in (coords[istart], coords[istop]):
+                ra_all.append(coord.ra)
+                dec_all.append(coord.dec)
             
             p1good = (xlim[0] <= start[0] <= xlim[1]
                       and ylim[0] <= start[1] <= ylim[1])
@@ -145,8 +146,10 @@ def plot_constellations(wcs, ax=None):
                     color='#ffe282', linewidth=.4, alpha=.7)
                 n_good += 1
         if n_good > 0:
-            x = np.mean(x_all)
-            y = np.mean(y_all)
+            ra = np.mean(u.Quantity(ra_all))
+            dec = np.mean(u.Quantity(dec_all))
+            x, y = wcs.world_to_pixel(SkyCoord(
+                ra, dec, 1e10 * u.lightyear, frame=ICRS))
             text = ax.text(
                 x, y,
                 name,

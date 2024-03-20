@@ -243,20 +243,20 @@ def trace_psp_orbit(encounter, cache_dir=None, dt=6*u.hr, t_start=None,
         pos = locate_psp(time, cache_dir=cache_dir)
         if pos.cartesian.norm() < poses[-1].cartesian.norm():
             break
-        if t_stop is not None and time > t_stop:
-            break
         poses.append(pos)
         times.append(time)
+        if t_stop is not None and time > t_stop:
+            break
     time = start_time
     while True:
         time -= dt.to_value(u.s)
         pos = locate_psp(time, cache_dir=cache_dir)
         if pos.cartesian.norm() < poses[0].cartesian.norm():
             break
-        if t_start is not None and time < t_start:
-            break
         poses.insert(0, pos)
         times.insert(0, time)
+        if t_start is not None and time < t_start:
+            break
     poses = astropy.coordinates.SkyCoord(
         [p.x for p in poses],
         [p.y for p in poses],
