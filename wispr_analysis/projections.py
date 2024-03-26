@@ -1,3 +1,5 @@
+from astropy.coordinates import SkyCoord
+import astropy.units as u
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
 import numpy as np
@@ -283,9 +285,13 @@ def label_radial_axes(wcs, ax=None):
     ax.set_ylabel("Position Angle")
 
 
-def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
+def fit_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
         ref_hdr=None):
     """Produces an RA/Dec WCS for an HP WCS, from a pair of RA/Dec and HP WCSs
+    
+    Related to `estimate_radec_for_hp_wcs`, this version uses an iterative
+    fitting approach, using points with known celestial--helioprojective
+    pairings.
     
     The intended use case is producing composite images, where an output HP WCS
     is constructed from scratch, and a corresponding RA/Dec WCS in the same
@@ -350,6 +356,40 @@ def produce_radec_for_hp_wcs(wcs_hp, ref_wcs_hp=None, ref_wcs_ra=None,
     wcs_ra.wcs.pc = np.array([[np.cos(angle), -np.sin(angle)],
                               [np.sin(angle), np.cos(angle)]])
     return wcs_ra
+
+
+def estimate_radec_for_hp_wcs(hp_wcs):
+    """Estimates an RA/Dec WCS for an HP WCS
+    
+    Related to `fit_radec_for_hp_wcs`, this version converts the reference to
+    pixel to celestial coordinates, along with another point a small fraction of
+    a pixel away, and uses the two to determine the pointing and roll of the
+    RA/Dec frame.
+    """
+    crpix = hp_wcs.wcs.crpix
+    sc1 = hp_wcs.pixel_to_world(crpix[0]-1, crpix[1]-1)
+    sc2 = hp_wcs.pixel_to_world(crpix[0]-1 + 0.001, crpix[1]-1)
+    
+    theta_hp = np.arctan2(sc2.Ty - sc1.Ty, sc2.Tx - sc1.Tx)
+    
+    sc1ra = SkyCoord(sc1.Tx, sc1.Ty, 10000000*u.lightyear, frame=sc1.frame)
+    sc1ra = sc1ra.transform_to('icrs')
+    sc2ra = SkyCoord(sc2.Tx, sc2.Ty, 10000000*u.lightyear, frame=sc2.frame)
+    sc2ra = sc2ra.transform_to('icrs')
+    
+    theta_ra = np.arctan2(sc2ra.dec - sc1ra.dec, sc1ra.ra - sc2ra.ra)
+    
+    dtheta = theta_ra - theta_hp
+    wcsra_est = hp_wcs.deepcopy()
+    proj = hp_wcs.wcs.ctype[0][-3:]
+    wcsra_est.wcs.ctype = 'RA---'+proj, 'DEC--'+proj
+    wcsra_est.wcs.crval = sc1ra.ra.to_value(u.deg), sc1ra.dec.to_value(u.deg)
+    wcsra_est.wcs.cdelt = -wcsra_est.wcs.cdelt[0], wcsra_est.wcs.cdelt[1]
+    wcsra_est.wcs.pc = (np.array([[np.cos(dtheta), -np.sin(dtheta)],
+                                [np.sin(dtheta), np.cos(dtheta)]])
+                        @ wcsra_est.wcs.pc)
+    return wcsra_est
+
 
 
 def overlay_radial_grid(image, wcs, ax=None):

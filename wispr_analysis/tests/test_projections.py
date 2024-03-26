@@ -280,10 +280,10 @@ def test_produce_radec_for_hp_wcs(pass_wcs, use_inner_as_ref):
         ref_wcs_ra = WCS(ref_hdr, key='A')
     
     if pass_wcs:
-        wcs_ra = projections.produce_radec_for_hp_wcs(
+        wcs_ra = projections.fit_radec_for_hp_wcs(
                 wcs_hp, ref_wcs_hp, ref_wcs_ra)
     else:
-        wcs_ra = projections.produce_radec_for_hp_wcs(wcs_hp, ref_hdr=ref_hdr)
+        wcs_ra = projections.fit_radec_for_hp_wcs(wcs_hp, ref_hdr=ref_hdr)
         
     pts_x = np.linspace(0, 1400, 6)
     pts_y = np.linspace(0, 2100, 6)
