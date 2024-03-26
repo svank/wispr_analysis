@@ -904,92 +904,44 @@ def add_distortion_table(fname, outname, err_x, err_y, err_px, err_py):
         hdul.writeto(outname, overwrite=True)
 
 
-def generate_combined_map(search_dir, use_outer=False):
+def generate_combined_map(search_dir, version_str,
+                          subdir='proj_tweaked_images', use_outer=False):
     inner_outer = "_O_" if use_outer else "_I_"
     work_dirs = [
             os.path.join(search_dir, f) for f in sorted(os.listdir(search_dir))
-                if '_for_use' in f and inner_outer in f]
+                if version_str in f and inner_outer in f]
     print(("Outer" if use_outer else "Inner") + " FOV")
     for work_dir in work_dirs:
         print(work_dir)
     
-    errors_x = []
-    errors_y = []
-    ud_errors_x = []
-    ud_errors_y = []
-    px_x = []
-    px_y = []
-    rmses_before = []
+    all_errors_x = []
+    all_errors_y = []
+    all_px_x = []
+    all_px_y = []
     
     for work_dir in work_dirs:
-        with open(os.path.join(work_dir, 'data_dump_r2.pkl'), 'rb') as f:
-            dump = pickle.load(f)
+        with open(os.path.join(work_dir, 'stars_db_r2.pkl'), 'rb') as f:
+            series, sbf = pickle.load(f)
+        files = utils.collect_files(os.path.join(work_dir, subdir), separate_detectors=False)
+        _, _, px_x, px_y, errors_x, errors_y = series_errors(series, files)
         
-        errors_x.extend(dump['perrors_x'])
-        errors_y.extend(dump['perrors_y'])
-        ud_errors_x.extend(dump['derrors_x'])
-        ud_errors_y.extend(dump['derrors_y'])
+        all_errors_x.extend(errors_x)
+        all_errors_y.extend(errors_y)
         
-        px_x.extend(dump['ppx_x'])
-        px_y.extend(dump['ppx_y'])
-        rmses_before.append(dump['drmse'])
+        all_px_x.extend(px_x)
+        all_px_y.extend(px_x)
     
     errors_x = np.array(errors_x)
     errors_y = np.array(errors_y)
     errors = np.sqrt(errors_x**2 + errors_y**2)
-    ud_errors_x = np.array(ud_errors_x)
-    ud_errors_y = np.array(ud_errors_y)
-    ud_errors = np.sqrt(ud_errors_x**2 + ud_errors_y**2)
     px_x = np.array(px_x)
     px_y = np.array(px_y)
-    
-    
-    dx_maps = []
-    dy_maps = []
-    for work_dir in work_dirs:
-        files = utils.collect_files(
-                os.path.join(work_dir, 'aligned_ud_images'),
-                separate_detectors=False)
-        with utils.ignore_fits_warnings(), fits.open(files[0]) as hdul:
-            dx_maps.append(hdul[1].data)
-            dy_maps.append(hdul[2].data)
-
-    display(HTML("<h3>Per-encounter error maps</h3>"))
-    
-    for dx_map, dy_map, drmse, work_dir in zip(dx_maps, dy_maps, rmses_before, work_dirs):
-        plt.figure(figsize=(15, 5))
-        plt.subplot(131)
-        plt.imshow(-dx_map, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
-        plt.title("X errors")
-        plt.subplot(132)
-        plt.imshow(-dy_map, vmin=-0.8, vmax=0.8, cmap='bwr', origin='lower')
-        plt.colorbar(ax=plt.gcf().axes[:2]).set_label("Distortion (px)")
-        plt.title("Y errors")
-        plt.subplot(133)
-        plt.imshow(np.sqrt(dx_map**2 + dy_map**2),
-                   vmin=0, vmax=1, origin='lower')
-        plt.colorbar().set_label("Distortion amplitude (px)")
-        plt.title("Error magnitude")
-        plt.suptitle(f"{os.path.basename(work_dir)}, rmse={drmse:.5f}")
-        plt.show()
     
     filter = errors < 2
     err_x, err_y, err_px, err_py = calc_binned_err_components(
             px_x[filter], px_y[filter], errors_x[filter], errors_y[filter],
             ret_coords=True)
     
-    plt.hist([errors, ud_errors], bins=50, log=True, histtype='step',
-            range=(0, 6),
-            label=['W/o maps', 'Per-encounter maps'])
-    plt.xlabel("Error magnitude (px)")
-    plt.ylabel("Count")
-    plt.legend()
-    plt.show()
-    
-    print(f"RMSE w/o maps:              {np.sqrt(np.mean(np.square(errors)))}")
-    print(f"RMSE w/ per-encounter maps: {np.sqrt(np.mean(np.square(ud_errors)))}")
-
-
     display(HTML("<h3>Merged error map</h3>"))
     
     plt.figure(figsize=(15, 5))
@@ -1025,13 +977,18 @@ def generate_combined_map(search_dir, use_outer=False):
     plt.suptitle("Smoothed")
     plt.show()
 
-    return err_x, err_y, work_dirs
+    return err_x, err_y, err_px, err_py, work_dirs
 
 
-def _write_combined_map(err_x, err_y, ifile, *ofiles, collect_wcs=False):
+def _write_combined_map(err_x, err_y, ifile, *ofiles, collect_wcs=False,
+                        err_px=None, err_py=None):
     with utils.ignore_fits_warnings(), fits.open(ifile) as hdul:
-        hdul[1].data = -err_x.astype(hdul[1].data.dtype)
-        hdul[2].data = -err_y.astype(hdul[2].data.dtype)
+        if len(hdul) > 1:
+            hdul[1].data = -err_x.astype(hdul[1].data.dtype)
+            hdul[2].data = -err_y.astype(hdul[2].data.dtype)
+        else:
+            hdul = add_distortion_table(
+                ifile, None, err_x, err_y, err_px, err_py)
         for ofile in ofiles:
             hdul.writeto(ofile)
         if collect_wcs:
@@ -1039,7 +996,8 @@ def _write_combined_map(err_x, err_y, ifile, *ofiles, collect_wcs=False):
 
 
 def write_combined_maps(err_x, err_y, work_dirs, *out_dirs,
-                        delete_existing=False, collect_wcses=False):
+                        delete_existing=False, collect_wcses=False,
+                        err_px=None, err_py=None):
     """
     Write a merged error map to many files
     
@@ -1078,9 +1036,79 @@ def write_combined_maps(err_x, err_y, work_dirs, *out_dirs,
         ifile = ifiles[i]
         ofile = [of[i] for of in ofiles]
         wcs = _write_combined_map(err_x, err_y, ifile, *ofile,
-            collect_wcs=collect_wcses)
+            collect_wcs=collect_wcses, err_px=err_px, err_py=err_py)
         if collect_wcses:
             wcses[utils.to_timestamp(ifile)] = wcs
     if collect_wcses:
         return wcses
 
+
+def series_errors(series, files, and_longitudes=False, wcses=None):
+    if wcses is None or and_longitudes:
+        if wcses is None:
+            wcses = {}
+        if and_longitudes:
+            tstamp_to_longitude = {}
+        for f in files:
+            with utils.ignore_fits_warnings(), fits.open(f) as hdul:
+                hdr = hdul[0].header
+                tstamp = utils.to_timestamp(f)
+                wcses[tstamp] = WCS(hdr, hdul, key='A')
+                if and_longitudes:
+                    tstamp_to_longitude[tstamp] = (np.arctan2(float(hdr['haey_obs']), float(hdr['haex_obs'])) * 180 / np.pi) % 360
+    errors = []
+    errors_x = []
+    errors_y = []
+    px_x = []
+    px_y = []
+    longitudes = []
+    missing_keys = []
+    for k, seq in series.items():
+        ra, dec = k
+        
+        x_comp = []
+        y_comp = []
+        xs = []
+        ys = []
+        for p in seq:
+            try:
+                wcs = wcses[p[2]]
+                if and_longitudes:
+                    lon = tstamp_to_longitude[p[2]]
+            except KeyError:
+                missing_keys.append(p[2])
+                continue
+            xs.append(p[0])
+            ys.append(p[1])
+            x, y = wcs.all_world2pix(ra, dec, 0)
+            x_comp.append(x)
+            y_comp.append(y)
+            if and_longitudes:
+                longitudes.append(lon)
+        xs = np.array(xs)
+        ys = np.array(ys)
+        x_comp = np.array(x_comp)
+        y_comp = np.array(y_comp)
+        
+        dx = xs - x_comp
+        dy = ys - y_comp
+        dr = np.sqrt(dx**2 + dy**2)
+        errors.extend(dr)
+        errors_x.extend(dx)
+        errors_y.extend(dy)
+        px_x.extend(xs)
+        px_y.extend(ys)
+    errors = np.array(errors)
+    errors_x = np.array(errors_x)
+    errors_y = np.array(errors_y)
+    px_x = np.array(px_x)
+    px_y = np.array(px_y)
+    longitudes = np.array(longitudes)
+    
+    if len(missing_keys):
+        print(f"In error calcs, did not find files for times {missing_keys}")
+    
+    ret = np.sqrt(np.mean(np.square(errors))), errors, px_x, px_y, errors_x, errors_y
+    if and_longitudes:
+        ret = ret + (longitudes,)
+    return ret
