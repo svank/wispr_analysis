@@ -1,4 +1,5 @@
 from .. import synthetic_data as sd
+from ... import utils
 
 
 import astropy.units as u
@@ -6,83 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from pytest import approx
-
-
-@pytest.mark.parametrize("v1,v2,answer",
-        [((1, 0, 0), (0, 1, 0), np.pi/2),
-        ((0, -1, 0), (1, 0, 0), np.pi/2),
-        ((1, 1, 0), (0, 1, 0), np.pi/4),
-        ((1, 0, 0), (1, 1, 0), np.pi/4),
-        ((0, 1, 0), (0, -1, 0), np.pi),
-        ((1, 0, 0), (-1, 0, 0), np.pi),
-        ((0, 1, 0), (-1, 0, 0), np.pi/2),
-        ((1, 1, 1), (1, 1, -1), np.arccos(1/3)),
-        ((0, 1, 0), (-1, -1, 0), np.pi/2 + np.pi/4)])
-def test_angle_between_vectors(v1, v2, answer):
-    assert sd.angle_between_vectors(*v1, *v2) == approx(answer)
-    assert sd.angle_between_vectors(*v2, *v1) == approx(answer)
-    
-    v1 = (v1[1], v1[2], v1[0])
-    v2 = (v2[1], v2[2], v2[0])
-    assert sd.angle_between_vectors(*v1, *v2) == approx(answer)
-    assert sd.angle_between_vectors(*v2, *v1) == approx(answer)
-    
-    v1 = (v1[1], v1[2], v1[0])
-    v2 = (v2[1], v2[2], v2[0])
-    assert sd.angle_between_vectors(*v1, *v2) == approx(answer)
-    assert sd.angle_between_vectors(*v2, *v1) == approx(answer)
-    
-
-def test_angle_between_same_vectors():
-    assert sd.angle_between_vectors(1, 1, 1, 1, 1, 1) == approx(0, abs=2e-8)
-    assert sd.angle_between_vectors(0, 1, 0, 0, 1, 0) == approx(0, abs=2e-8)
-
-
-def test_angle_between_vectors_zero_vector():
-    assert np.isnan(sd.angle_between_vectors(0, 0, 0, 1, 1, 0))
-    assert np.isnan(sd.angle_between_vectors(1, 1, 0, 0, 0, 0))
-
-
-def test_elongation_to_FOV():
-    sc = sd.LinearThing(x=0, y=-1, vx=0, vy=1)
-    # Elongation is FOV
-    elongations = np.linspace(0, 180) * np.pi / 180
-    fovs = sd.elongation_to_FOV(sc, elongations)
-    np.testing.assert_allclose(elongations, fovs)
-    
-    sc.vy = 0
-    sc.vx = 1
-    # FOV runs from -90 to 90 degrees
-    fovs = sd.elongation_to_FOV(sc, elongations)
-    np.testing.assert_allclose(np.linspace(-np.pi/2, np.pi/2), fovs)
-    
-    # Test vectorizing over time
-    sc = sd.LinearThing(x=0, y=-1, vx=1).at(np.array([-1, 0, 1]))
-    elongations = np.array([0, 0, 0])
-    fovs = sd.elongation_to_FOV(sc, elongations)
-    np.testing.assert_allclose(
-            [-np.pi/4, -np.pi/2, -np.pi/2 - np.pi/4], fovs)
-
-
-def test_calculate_radiant():
-    # Create two objects which will collide
-    sc = sd.LinearThing(x=0, y=-100, vx=1, vy=0)
-    p = sc.copy()
-    p.vy = -1
-    p.vx = 0
-    p = p.offset_by_time(-1)
-    sc = sc.offset_by_time(-1)
-    
-    ts = np.linspace(0, .9)
-    radiants = sd.calculate_radiant(sc, p, t0=ts)
-    # Convert to an FOV position so the values are nearly constant and easy to
-    # check.
-    radiants = sd.elongation_to_FOV(sc.at(ts), radiants)
-    np.testing.assert_allclose(radiants, -np.pi/4, atol=0.006)
-    
-    np.testing.assert_array_equal(
-            sd.calculate_radiant(sc.offset_by_time(1e10), p),
-            np.nan)
 
 
 def test_calc_epsilon():
@@ -363,7 +287,8 @@ def test_calc_hpc():
     
     pa = 225 * np.pi / 180
     diff = (p - sc)
-    el = sd.angle_between_vectors(-sc.x, -sc.y, -sc.z, diff.x, diff.y, diff.z)
+    el = utils.angle_between_vectors(
+        -sc.x, -sc.y, -sc.z, diff.x, diff.y, diff.z)
     Tx_expected = np.arctan2(-np.sin(el) * np.sin(pa), np.cos(el))
     Ty_expected = np.arcsin(np.sin(el) * np.cos(pa))
     
@@ -399,7 +324,8 @@ def test_calc_hpc_from_x():
     
     pa = 225 * np.pi / 180
     diff = (p - sc)
-    el = sd.angle_between_vectors(-sc.x, -sc.y, -sc.z, diff.x, diff.y, diff.z)
+    el = utils.angle_between_vectors(
+        -sc.x, -sc.y, -sc.z, diff.x, diff.y, diff.z)
     Tx_expected = np.arctan2(-np.sin(el) * np.sin(pa), np.cos(el))
     Ty_expected = np.arcsin(np.sin(el) * np.cos(pa))
     

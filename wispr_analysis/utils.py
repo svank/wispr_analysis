@@ -1139,3 +1139,28 @@ def test_data_path(*segments):
 
 def data_path(*segments):
     return os.path.join(os.path.dirname(__file__), 'data', *segments)
+
+
+def angle_between_vectors(x1, y1, z1, x2, y2, z2):
+    """Returns a signed angle between two vectors, in radians"""
+    # Rotate so v1 is our x axis. We want the angle v2 makes to the x axis.
+    # Its components in this rotated frame are its dot and cross products
+    # with v1.
+    x1 = np.atleast_1d(x1)
+    x2 = np.atleast_1d(x2)
+    y1 = np.atleast_1d(y1)
+    y2 = np.atleast_1d(y2)
+    z1 = np.atleast_1d(z1)
+    z2 = np.atleast_1d(z2)
+    
+    dot_product = x1 * x2 + y1 * y2 + z1 * z2
+    cross_x = (y1*z2 - z1*y2)
+    cross_y = (z1*x2 - x1*z2)
+    cross_z = (x1*y2 - y1*x2)
+    det = np.sqrt(cross_x**2 + cross_y**2 + cross_z**2)
+    
+    angle = np.arctan2(det, dot_product)
+    v1_is_zero = ((x1 == 0) * (y1 == 0) * (z1 == 0))
+    v2_is_zero = ((x2 == 0) * (y2 == 0) * (z2 == 0))
+    angle[v1_is_zero + v2_is_zero] = np.nan
+    return angle

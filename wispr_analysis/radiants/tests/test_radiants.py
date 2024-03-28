@@ -116,3 +116,45 @@ def test_calc_fixed_angle_radiant(mocker):
             'psp_L2_wispr_20181101T004548_V3_1221.fits')
     assert radiants.calc_fixed_angle_radiant(
         [file], 200) == pytest.approx(-26.89428378)
+
+
+def test_elongation_to_FOV():
+    sc = sd.LinearThing(x=0, y=-1, vx=0, vy=1)
+    # Elongation is FOV
+    elongations = np.linspace(0, 180) * np.pi / 180
+    fovs = radiants.elongation_to_FOV(sc, elongations)
+    np.testing.assert_allclose(elongations, fovs)
+    
+    sc.vy = 0
+    sc.vx = 1
+    # FOV runs from -90 to 90 degrees
+    fovs = radiants.elongation_to_FOV(sc, elongations)
+    np.testing.assert_allclose(np.linspace(-np.pi/2, np.pi/2), fovs)
+    
+    # Test vectorizing over time
+    sc = sd.LinearThing(x=0, y=-1, vx=1).at(np.array([-1, 0, 1]))
+    elongations = np.array([0, 0, 0])
+    fovs = radiants.elongation_to_FOV(sc, elongations)
+    np.testing.assert_allclose(
+            [-np.pi/4, -np.pi/2, -np.pi/2 - np.pi/4], fovs)
+
+
+def test_calculate_radiant():
+    # Create two objects which will collide
+    sc = sd.LinearThing(x=0, y=-100, vx=1, vy=0)
+    p = sc.copy()
+    p.vy = -1
+    p.vx = 0
+    p = p.offset_by_time(-1)
+    sc = sc.offset_by_time(-1)
+    
+    ts = np.linspace(0, .9)
+    rads = radiants.calculate_radiant(sc, p, t0=ts)
+    # Convert to an FOV position so the values are nearly constant and easy to
+    # check.
+    rads = radiants.elongation_to_FOV(sc.at(ts), rads)
+    np.testing.assert_allclose(rads, -np.pi/4, atol=0.006)
+    
+    np.testing.assert_array_equal(
+            radiants.calculate_radiant(sc.offset_by_time(1e10), p),
+            np.nan)

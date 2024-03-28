@@ -1073,3 +1073,38 @@ def test_extract_encounter_number():
              ['str_ENC03_str',
              'str_ENC23_str',
              'str_ENC13_str']], as_int=True) == [[1, 22, 11], [3, 23, 13]]
+
+
+@pytest.mark.parametrize("v1,v2,answer",
+        [((1, 0, 0), (0, 1, 0), np.pi/2),
+        ((0, -1, 0), (1, 0, 0), np.pi/2),
+        ((1, 1, 0), (0, 1, 0), np.pi/4),
+        ((1, 0, 0), (1, 1, 0), np.pi/4),
+        ((0, 1, 0), (0, -1, 0), np.pi),
+        ((1, 0, 0), (-1, 0, 0), np.pi),
+        ((0, 1, 0), (-1, 0, 0), np.pi/2),
+        ((1, 1, 1), (1, 1, -1), np.arccos(1/3)),
+        ((0, 1, 0), (-1, -1, 0), np.pi/2 + np.pi/4)])
+def test_angle_between_vectors(v1, v2, answer):
+    assert utils.angle_between_vectors(*v1, *v2) == approx(answer)
+    assert utils.angle_between_vectors(*v2, *v1) == approx(answer)
+    
+    v1 = (v1[1], v1[2], v1[0])
+    v2 = (v2[1], v2[2], v2[0])
+    assert utils.angle_between_vectors(*v1, *v2) == approx(answer)
+    assert utils.angle_between_vectors(*v2, *v1) == approx(answer)
+    
+    v1 = (v1[1], v1[2], v1[0])
+    v2 = (v2[1], v2[2], v2[0])
+    assert utils.angle_between_vectors(*v1, *v2) == approx(answer)
+    assert utils.angle_between_vectors(*v2, *v1) == approx(answer)
+    
+
+def test_angle_between_same_vectors():
+    assert utils.angle_between_vectors(1, 1, 1, 1, 1, 1) == approx(0, abs=2e-8)
+    assert utils.angle_between_vectors(0, 1, 0, 0, 1, 0) == approx(0, abs=2e-8)
+
+
+def test_angle_between_vectors_zero_vector():
+    assert np.isnan(utils.angle_between_vectors(0, 0, 0, 1, 1, 0))
+    assert np.isnan(utils.angle_between_vectors(1, 1, 0, 0, 0, 0))

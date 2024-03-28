@@ -109,7 +109,7 @@ class Thing:
                     "Objects are not set at same time---must specify `t`")
         with other.at_temp(t) as other, self.at_temp(t) as self:
             separation_vector = self - other
-            angle = angle_between_vectors(
+            angle = utils.angle_between_vectors(
                 other.vx,
                 other.vy,
                 other.vz,
@@ -495,31 +495,6 @@ class DifferenceThing(Thing):
         return (after - before) / dt
 
 
-def angle_between_vectors(x1, y1, z1, x2, y2, z2):
-    """Returns a signed angle between two vectors, in radians"""
-    # Rotate so v1 is our x axis. We want the angle v2 makes to the x axis.
-    # Its components in this rotated frame are its dot and cross products
-    # with v1.
-    x1 = np.atleast_1d(x1)
-    x2 = np.atleast_1d(x2)
-    y1 = np.atleast_1d(y1)
-    y2 = np.atleast_1d(y2)
-    z1 = np.atleast_1d(z1)
-    z2 = np.atleast_1d(z2)
-    
-    dot_product = x1 * x2 + y1 * y2 + z1 * z2
-    cross_x = (y1*z2 - z1*y2)
-    cross_y = (z1*x2 - x1*z2)
-    cross_z = (x1*y2 - y1*x2)
-    det = np.sqrt(cross_x**2 + cross_y**2 + cross_z**2)
-    
-    angle = np.arctan2(det, dot_product)
-    v1_is_zero = ((x1 == 0) * (y1 == 0) * (z1 == 0))
-    v2_is_zero = ((x2 == 0) * (y2 == 0) * (z2 == 0))
-    angle[v1_is_zero + v2_is_zero] = np.nan
-    return angle
-
-
 def calc_hpc(sc: "Thing", parcels: list["Thing"], t=None):
     was_not_list = False
     if isinstance(parcels, Thing):
@@ -810,7 +785,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         # Scale for the parcel--Sun distance
         I_scale = 1 / (d_p_sun / u.R_sun.to(u.m))**2
         
-        scattering_angle = angle_between_vectors(
+        scattering_angle = utils.angle_between_vectors(
             *(-parcel_pos),
             *(sc_pos - parcel_pos))[0]
         
@@ -1051,53 +1026,3 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
             output_image[i, j], np.sqrt(np.sum(parcel_pos**2)))
     
     return True
-
-
-def calculate_radiant(sc, parcel, t0=0):
-    t0 = np.atleast_1d(t0)
-    if len(t0) > 1 or t0 != 0:
-        sc = sc.at(t0)
-        parcel = parcel.at(t0)
-    infront = np.atleast_1d(parcel.in_front_of(sc))
-    if not np.any(infront):
-        return np.full(max(len(t0), len(np.atleast_1d(parcel.x))), np.nan)
-    v_sc = sc.v
-    e_sc = np.atleast_1d(
-            angle_between_vectors(sc.vx, sc.vy, 0, -sc.x, -sc.y, 0))
-    v_p = parcel.v
-    dphi = np.atleast_1d(
-            angle_between_vectors(sc.x, sc.y, 0, parcel.x, parcel.y, 0))
-    epsilons = np.linspace(0, np.pi, 300)[None, :]
-    with np.errstate(divide='ignore'):
-        i = np.argmin(
-                np.abs(1 - v_sc / v_p
-                    * np.sin(e_sc[:, None] - epsilons)
-                    / np.sin(epsilons + dphi[:, None])),
-                axis=1)
-    epsilon = epsilons[:, i][0]
-    epsilon[~infront] = np.nan
-    return epsilon
-
-
-def elongation_to_FOV(sc, elongation):
-    """Converts elongations to FOV coordinates.
-    
-    FOV coordinates are in radians with 0 in the direction of s/c travel,
-    and increase to the right in the image plane.
-    
-    Parameters
-    ----------
-    sc : `Thing`
-        A `Thing` representing the observer. Can be vectorized over time.
-    elongation : scalar or ``ndarray``
-        Elongation values to be converted. Measured in radians, with zero
-        representing the Sunward direction. Unsigned.
-    
-    Returns
-    -------
-    fov : ``ndarray``
-        Field-of-view position in radians
-    """
-    sc_direction = angle_between_vectors(
-            sc.vx, sc.vy, 0, -sc.x, -sc.y, 0)
-    return elongation - sc_direction

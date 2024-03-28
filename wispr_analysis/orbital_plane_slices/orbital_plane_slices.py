@@ -180,7 +180,7 @@ class OrbitalSliceWCS(utils.FakeWCS):
         sc_cart = sc.represent_as('cartesian')
         
         dt = 1000 * u.s
-        self.last_forward_elongation = synthetic_data.angle_between_vectors(
+        self.last_forward_elongation = utils.angle_between_vectors(
             (dt * sc_cart.differentials['s'].d_x).to(u.m).value,
             (dt * sc_cart.differentials['s'].d_y).to(u.m).value,
             (dt * sc_cart.differentials['s'].d_z).to(u.m).value,
