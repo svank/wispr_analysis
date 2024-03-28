@@ -21,7 +21,7 @@ from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map
 
 from .. import planets, plot_utils, utils
-from ..radiants import synthetic_data
+from ..synthetic_data import synthetic_data
 
 
 FIXED_ANGLE_TARGET_RANGE = (80, 440)

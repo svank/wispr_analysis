@@ -7,7 +7,7 @@ import scipy.signal
 from sunpy.coordinates import NorthOffsetFrame, HeliocentricInertial
 
 from .. import planets, utils
-from . import synthetic_data as sd
+from ..synthetic_data import synthetic_data as sd
 
 
 def get_speeds(strips, spatial_axis=None, temporal_axis=None, dx=None,

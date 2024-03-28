@@ -5,7 +5,9 @@ import numpy as np
 import pytest
 import scipy.ndimage
 
-from .. import radiants, synthetic_data as sd
+from ...synthetic_data import synthetic_data as sd
+
+from .. import radiants
 from ... import planets, utils
 
 

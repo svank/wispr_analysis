@@ -18,7 +18,7 @@ from tqdm.contrib.concurrent import process_map
 
 from . import orbital_plane_slices as ops
 from .. import planets, plot_utils, videos
-from ..radiants import synthetic_data
+from ..synthetic_data import synthetic_data
 
 astropy.visualization.quantity_support()
 
