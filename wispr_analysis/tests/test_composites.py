@@ -279,7 +279,9 @@ def test_gen_composite_with_auto_trim_crop():
 def test_gen_composite_blank_i():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
-    composite, wcs = composites.gen_composite(ifile, ofile, blank_i=True)
+    wcsh, naxis1, naxis2 = composites.gen_header(ifile, ofile)
+    composite, wcs = composites.gen_composite(None, ofile, wcsh=wcsh,
+                                              bounds=(0, naxis1, 0, naxis2))
     
     fig = plt.figure()
     plot_utils.plot_WISPR(composite, wcs=wcs, grid=1)
@@ -290,7 +292,9 @@ def test_gen_composite_blank_i():
 def test_gen_composite_blank_o():
     ifile, ofile, hdr_i, hdr_o = setup_gen_composite_test()
     
-    composite, wcs = composites.gen_composite(ifile, ofile, blank_o=True)
+    wcsh, naxis1, naxis2 = composites.gen_header(ifile, ofile)
+    composite, wcs = composites.gen_composite(ifile, None, wcsh=wcsh,
+                                              bounds=(0, naxis1, 0, naxis2))
     
     fig = plt.figure()
     plot_utils.plot_WISPR(composite, wcs=wcs, grid=1)
