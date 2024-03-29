@@ -1026,3 +1026,54 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
             output_image[i, j], np.sqrt(np.sum(parcel_pos**2)))
     
     return True
+
+
+def calculate_radiant(sc, parcel, t0=0):
+    t0 = np.atleast_1d(t0)
+    if len(t0) > 1 or t0 != 0:
+        sc = sc.at(t0)
+        parcel = parcel.at(t0)
+    infront = np.atleast_1d(parcel.in_front_of(sc))
+    if not np.any(infront):
+        return np.full(max(len(t0), len(np.atleast_1d(parcel.x))), np.nan)
+    v_sc = sc.v
+    e_sc = np.atleast_1d(
+            utils.angle_between_vectors(sc.vx, sc.vy, 0, -sc.x, -sc.y, 0))
+    v_p = parcel.v
+    dphi = np.atleast_1d(
+            utils.angle_between_vectors(sc.x, sc.y, 0, parcel.x, parcel.y, 0))
+    epsilons = np.linspace(0, np.pi, 300)[None, :]
+    with np.errstate(divide='ignore'):
+        i = np.argmin(
+                np.abs(1 - v_sc / v_p
+                    * np.sin(e_sc[:, None] - epsilons)
+                    / np.sin(epsilons + dphi[:, None])),
+                axis=1)
+    epsilon = epsilons[:, i][0]
+    epsilon[~infront] = np.nan
+    return epsilon
+
+
+def elongation_to_FOV(sc, elongation):
+    """Converts elongations to FOV coordinates.
+    
+    FOV coordinates are in radians with 0 in the direction of s/c travel,
+    and increase to the right in the image plane.
+    
+    Parameters
+    ----------
+    sc : `Thing`
+        A `Thing` representing the observer. Can be vectorized over time.
+    elongation : scalar or ``ndarray``
+        Elongation values to be converted. Measured in radians, with zero
+        representing the Sunward direction. Unsigned.
+    
+    Returns
+    -------
+    fov : ``ndarray``
+        Field-of-view position in radians
+    """
+    sc_direction = utils.angle_between_vectors(
+            sc.vx, sc.vy, 0, -sc.x, -sc.y, 0)
+    return elongation - sc_direction
+
