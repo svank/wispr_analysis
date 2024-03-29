@@ -31,31 +31,11 @@ cmap = copy.copy(matplotlib.cm.Greys_r)
 cmap.set_bad('black')
 
 
-def wrap_with_gc(function):
-    """
-    Wraps a function and manually runs garbage collection after every execution
-
-    We seem to get slowly-increasing memory usage when making a long-ish video,
-    which becomes significant with 20 worker processes, and running the GC
-    after every frame seems to help keep that in check.
-    """
-    @functools.wraps(function)
-    def wrapped(*args, **kwargs):
-        ret = function(*args, **kwargs)
-        del args, kwargs
-        gc.collect()
-        return ret
-    return wrapped
-
-
 def make_WISPR_video(data_dir, between=(None, None), filters=None,
                          n_procs=os.cpu_count(), debris_mask_dir=None,
                          save_location=None, timestepper='inner', dt=None,
                          duration=None, fps=30, blank_threshold=30*u.min,
                          **plot_args):
-    if save_location is not None:
-        save_location = os.path.expanduser(save_location)
-    
     ifiles, ofiles = utils.collect_files(data_dir, between=between,
                                          filters=filters, include_headers=True)
     ifiles, iheaders = zip(*ifiles)
@@ -167,31 +147,16 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
             else:
                 planet_poses.append(False)
     
-    with tempfile.TemporaryDirectory() as tmpdir:
-        process_map(_draw_WISPR_video_frame, timesteps, ifiles, ofiles,
-                    output_wcses, planet_poses,
-                    repeat(psp_poses), repeat(psp_times), repeat(file2next),
-                    repeat(file2prev), repeat(plot_args), 
-                    repeat(debris_mask_dir), repeat(tmpdir),
-                    max_workers=n_procs)
-        video_file = os.path.join(tmpdir, 'out.mp4')
-        subprocess.call(
-                f"ffmpeg -loglevel error -r {fps} "
-                f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
-                 "-pix_fmt yuv420p -x264-params keyint=30 "
-                f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {video_file}",
-                shell=True)
-        if save_location is not None:
-            shutil.move(video_file, save_location)
-        else:
-            display(Video(video_file, embed=True,
-                html_attributes="controls loop"))
+    generic_make_video(_draw_WISPR_video_frame, timesteps, ifiles, ofiles,
+                       output_wcses, planet_poses, repeat(psp_poses),
+                       repeat(psp_times), file2next, file2prev, plot_args,
+                       debris_mask_dir, parallel=n_procs, fps=fps,
+                       save_to=save_location)
 
 
-@wrap_with_gc
-def _draw_WISPR_video_frame(t, ifile, ofile, wcs, planet_poses, psp_poses,
-                                psp_times, file2next, file2prev, plot_args,
-                                debris_mask_dir, tmpdir):
+def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
+                            psp_poses, psp_times, file2next, file2prev,
+                            plot_args, debris_mask_dir):
     if debris_mask_dir is not None:
         if ifile is not None:
             mask = data_cleaning.find_mask(debris_mask_dir, ifile)
@@ -252,8 +217,7 @@ def _draw_WISPR_video_frame(t, ifile, ofile, wcs, planet_poses, psp_poses,
                  f"$\\theta$ = {theta:.1f} $^\ocirc$",
                  color='white')
         
-        fig.savefig(f"{tmpdir}/{t:035.20f}.png")
-        plt.close()
+        fig.savefig(out_file)
 
 
 def animate_pointing(data_dir, between=(None, None), show=True, fps=30,
@@ -485,6 +449,15 @@ def draw_overhead_map(ax_orbit, t, path_positions, path_times):
         spine.set_color('.4')
 
 
+def _function_caller(*args, **kwargs):
+    function = args[0]
+    args = args[1:]
+    function(*args, **kwargs)
+    # Make sure matplotlib releases memory
+    plt.clf()
+    plt.close('all')
+
+
 def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         save_to=None):
     """
@@ -526,11 +499,11 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
                 yield f"{tmpdir}/{i:0>10d}.png"
                 i += 1
         
-        ready_arg_list = [output_names()]
+        ready_arg_list = [repeat(frame_renderer), output_names()]
         n = np.inf
         have_iterable = False
         for arg in arg_list:
-            if hasattr(arg, "__iter__") and not isinstance(arg, str):
+            if hasattr(arg, "__iter__") and not isinstance(arg, (str, dict)):
                 have_iterable = True
                 ready_arg_list.append(arg)
                 try:
@@ -545,14 +518,13 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         if not have_iterable:
             raise ValueError(
                     "At least one iterable of arguments must be provided")
-        
         if parallel:
             if type(parallel) is int:
                 max_workers = parallel
             else:
                 max_workers = os.cpu_count()
             process_map(
-                    frame_renderer, *ready_arg_list,
+                    _function_caller, *ready_arg_list,
                     total=n, max_workers=max_workers)
         else:
             for args in tqdm(zip(*ready_arg_list), total=n):
