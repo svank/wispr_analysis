@@ -227,6 +227,27 @@ def locate_psp(date, cache_dir=None):
     return psp_pos
 
 
+def get_psp_forward_as_elongation(date):
+    """Computes PSP's forward direction, returned as a Helioprojective coord
+
+    Parameters
+    ----------
+    date : ``str`` or FITS header or ``float``
+        The date of the observation. If a FITS header, DATE-AVG is extracted
+        and used. If a string, must be in the format "YYYY-MM-DD HH:MM:SS.SSS".
+        If a number, interpreted as a UTC timestamp. Note that the timestamp in
+        WISPR images is the beginning time, not the average time, so providing
+        the FITS header is preferred.
+    """
+    pos = locate_psp(date)
+    future_pos = astropy.coordinates.SkyCoord(
+        *(pos.cartesian.xyz + pos.cartesian.differentials['s'].d_xyz * u.s),
+        frame=pos.frame)
+    forward = future_pos.transform_to(
+        sunpy.coordinates.Helioprojective(observer=pos))
+    return forward
+
+
 def trace_psp_orbit(encounter, cache_dir=None, dt=6*u.hr, t_start=None,
                     t_stop=None):
     if t_start is not None:
@@ -322,7 +343,7 @@ def format_date(date):
         except KeyError:
             raise ValueError("Invalid encounter number")
     elif isinstance(date, astropy.time.Time):
-        date = date.to_string()
+        date = date.strftime("%Y-%m-%d %H:%M:%S")
     elif not isinstance(date, str):
         # Treat as FITS header
         date = date['date-avg'].replace('T', ' ')
