@@ -1,18 +1,21 @@
 from contextlib import ExitStack, contextmanager
 import copy
-from dataclasses import dataclass
+import dataclasses
 
 import astropy.constants as c
 import astropy.coordinates
 import astropy.time
 import astropy.units as u
 from astropy.wcs import WCS
+import matplotlib.ticker
+import matplotlib.pyplot as plt
 import numba
 import numpy as np
 import scipy
 import sunpy.coordinates
 
-from .. import utils
+from .. import orbital_frame, planets, utils
+from ..orbital_plane_slices import orbital_plane_slices as ops
 
 
 class Thing:
@@ -146,7 +149,7 @@ class Thing:
         return DifferenceThing(self, other, t)
 
 
-@dataclass
+@dataclasses.dataclass
 class LinearThing(Thing):
     """ Represents an object with constant velocity """
     x_t0: float = 0
@@ -282,7 +285,7 @@ class LinearThing(Thing):
         return out
 
 
-@dataclass
+@dataclasses.dataclass
 class ArrayThing(Thing):
     """
     Represents an object whose position over time is specified numerically
@@ -555,7 +558,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         celestial_wcs=False, fixed_fov_range=None, output_quantity='flux',
         point_forward=False, dmin=None, dmax=None, dsunmin=None, dsunmax=None,
         only_side_of_sun=False, antialias=True,
-        thomson=True, use_density=True, expansion=True):
+        thomson=True, use_density=True, expansion=True, scale_sun_dist=True):
     """Produce a synthetic WISPR image
 
     Parameters
@@ -782,8 +785,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         
         # Apply all brightness scalings that apply to the parcel as a whole (to
         # a good approximation)
+        I_scale = 1
         # Scale for the parcel--Sun distance
-        I_scale = 1 / (d_p_sun / u.R_sun.to(u.m))**2
+        if scale_sun_dist:
+            I_scale *= 1 / (d_p_sun / u.R_sun.to(u.m))**2
         
         scattering_angle = utils.angle_between_vectors(
             *(-parcel_pos),
@@ -1077,3 +1082,439 @@ def elongation_to_FOV(sc, elongation):
             sc.vx, sc.vy, 0, -sc.x, -sc.y, 0)
     return elongation - sc_direction
 
+
+@dataclasses.dataclass
+class SimulationData:
+    sc: Thing
+    t: list
+    parcels: list[Thing] = dataclasses.field(default_factory=list)
+    encounter: int = None
+    
+    def plot_overhead(self, t0=None, mark_epsilon=False, mark_FOV_pos=False, mark_FOV=False,
+                      fov_bins=[], mark_derot_ax=False, detail=False, fovdat=None, ax=None):
+        scale_factor = u.R_sun.to(u.m)
+        if ax is None:
+            ax = plt.gca()
+        if t0 is None:
+            t0 = np.mean(self.t)
+        sc = self.sc.at(t0)
+        
+        ax.scatter(0, 0, c='yellow', s=100, zorder=18, edgecolors='black')
+        ax.scatter(sc.x, sc.y, zorder=10, s=100, edgecolors='white')
+        ax.plot(sc.at(self.t).x, sc.at(self.t).y, zorder=9, lw=5)
+
+        pxs = []
+        pys = []
+        for parcel in self.parcels:
+            with parcel.at_temp(self.t) as p:
+                ax.plot(p.x, p.y, 'C1', alpha=.3)
+            with parcel.at_temp(t0) as p:
+                pxs.append(p.x)
+                pys.append(p.y)
+        ax.scatter(pxs, pys, color='C1', s=36 if detail else 24)
+
+        if mark_epsilon:
+            x = np.nanmean(pxs)
+            y = np.nanmean(pys)
+            ax.plot([0, sc.x[0], x], [0, sc.y[0], y], color='gray')
+        
+        if mark_FOV_pos:
+            x = np.nanmean(pxs)
+            y = np.nanmean(pys)
+            dx = sc.at(t0+.5).x - sc.x
+            dy = sc.at(t0+.5).y - sc.y
+            ax.plot([x, sc.x[0], sc.x[0] - dx[0]],
+                    [y, sc.y[0], sc.y[0] + dy[0]], color='gray')
+        
+        if mark_FOV:
+            x1, x2 = 0, fovdat[0].shape[1]
+            y1 = fovdat[0].shape[0] / 2
+            y2 = y1
+            lon1, lat1 = fovdat[1].pixel_to_world_values(x1, y1)
+            lon2, lat2 = fovdat[1].pixel_to_world_values(x2, y2)
+            
+            to_sun_x = -sc.x
+            to_sun_y = -sc.y
+            to_sun_theta = np.arctan2(to_sun_y, to_sun_x)
+            t1 = to_sun_theta - lon1 * np.pi/180
+            t2 = to_sun_theta - lon2 * np.pi/180
+            
+            size = (max(fov_bins) if len(fov_bins) else 15) * scale_factor
+            x1 = size * np.cos(t1) + sc.x
+            x2 = size * np.cos(t2) + sc.x
+            y1 = size * np.sin(t1) + sc.y
+            y2 = size * np.sin(t2) + sc.y
+
+            ax.plot([x1, sc.x, x2],
+                            [y1, sc.y, y2],
+                            color='w', alpha=0.75,
+                            lw=2.5, zorder=18)
+            if len(fov_bins):
+                rs = np.array(fov_bins) * scale_factor
+                ts = np.linspace(t1, t2, 50)
+                for r in rs:
+                    binx = r * np.cos(ts) + sc.x
+                    biny = r * np.sin(ts) + sc.y
+                    ax.plot(binx, biny, color='w', alpha=0.75, lw=2.5,
+                            zorder=18)
+
+        if mark_derot_ax:
+            length = (10 if detail else 30) * scale_factor
+            ax.arrow(
+                sc.x[0] - length/2, sc.y[0], length, 0, color='.7', zorder=18)
+            ax.arrow(
+                sc.x[0], sc.y[0]-length/2, 0, length, color='.7', zorder=18)
+
+        if detail:
+            half_window = 8 * (u.R_sun.to(u.m))
+            ax.set_xlim(sc.x - half_window, sc.x + half_window)
+            ax.set_ylim(sc.y - half_window, sc.y + half_window)
+            ax.plot([0, sc.x[0]], [0, sc.y[0]], color='w', alpha=.5)
+            t = np.arctan2(sc.y[0], sc.x[0])
+            r = sc.r[0]
+            rs = np.arange(0, r, u.R_sun.to(u.m))
+            ax.scatter(
+                rs * np.cos(t), rs * np.sin(t), color='white', s=25, alpha=.5)
+        else:
+            margin = 1
+            xs = list(sc.at(self.t).x)
+            xmin, xmax = np.nanmin(xs), np.nanmax(xs)
+            xrange = xmax - xmin
+            
+            ys = list(sc.at(self.t).y)
+            ymin, ymax = np.nanmin(ys), np.nanmax(ys)
+            yrange = ymax - ymin
+
+            if yrange == 0:
+                yrange = xrange
+            if xrange == 0:
+                xrange = yrange
+            
+            tbounds = np.array([self.t[0], self.t[-1]])
+            for parcel in self.parcels:
+                with parcel.at_temp(tbounds) as p:
+                    xs.extend(p.x)
+                    ys.extend(p.y)
+            
+            xs = [x for x in xs
+                  if xmin - margin * xrange <= x <= xmax + margin * xrange]
+            ax.set_xlim(np.nanmin(xs)-1, np.nanmax(xs)+1)
+
+            ys = [y for y in ys
+                  if ymin - margin * yrange <= y <= ymax + margin * yrange]
+            
+            xmin, xmax = np.nanmax(xs), np.nanmin(xs)
+            if np.nanmax(np.abs(ys)) < 2 * (xmax - xmin) and xmin < 0 < xmax:
+                # Include the Sun in the plot y-range if it doesn't warp the
+                # aspect ratio too much and if the Sun is already included in
+                # the x plotting range
+                ys.append(0)
+            else:
+                # Put "To Sun" arrows?
+                pass
+
+            ax.set_ylim(np.nanmin(ys)-1, np.nanmax(ys) + 1)
+
+        ax.set_aspect('equal')
+        ax.set_facecolor('black')
+        ax.set_xlabel("X ($R_\odot$)")
+        if not detail:
+            ax.set_ylabel("Y ($R_\odot$)")
+
+        # Label axes in R_sun without having to re-scale every coordinate
+        formatter = matplotlib.ticker.FuncFormatter(
+            lambda x, pos: f"{x / u.R_sun.to(u.m):.0f}")
+        ax.xaxis.set_major_formatter(formatter)
+        ax.yaxis.set_major_formatter(formatter)
+        ax.xaxis.set_major_locator(
+            matplotlib.ticker.MultipleLocator(20*u.R_sun.to(u.m)))
+        ax.yaxis.set_major_locator(
+            matplotlib.ticker.MultipleLocator(20*u.R_sun.to(u.m)))
+    
+    def plot_and_synthesize(
+            self, t0, include_overhead=True, include_overhead_detail=False,
+            mark_epsilon=False, mark_FOV_pos=False, mark_FOV=False,
+            mark_bins=False, mark_derot_ax=False, synthesize=True,
+            radiants=False, vmin=0, vmax=None, parcel_width=1, synth_kw={},
+            synth_fixed_fov=None, synth_celest_wcs=False,
+            output_quantity='flux', use_default_figsize=False,
+            synth_colorbar=False):
+        sc = self.sc.at(t0)
+        n_plots = include_overhead + include_overhead_detail + synthesize
+        if use_default_figsize:
+            figsize = None
+        else:
+            figsize = (7 * n_plots, 7)
+        fig, axs = plt.subplots(1, n_plots, squeeze=False,
+                                layout='constrained')
+        axs = list(axs.flatten())
+        
+        ax_overhead = axs.pop(0) if include_overhead else None
+        ax_overhead_detail = axs.pop(0) if include_overhead_detail else None
+        ax_syn = axs.pop(0) if synthesize else None
+
+        # Even if we're not showing it, make an image so we can grab the FOV
+        image, wcs = synthesize_image(
+            self.sc, self.parcels, t0,
+            output_size_x=400, output_size_y=250 if synthesize else 1,
+            parcel_width=parcel_width, fixed_fov_range=synth_fixed_fov,
+            celestial_wcs=synth_celest_wcs, output_quantity=output_quantity,
+            projection='CAR' if synth_fixed_fov else 'ARC', **synth_kw)
+        if ax_syn is not None:
+            cmap = 'Greys_r'
+            if output_quantity in ('dsun', 'distance'):
+                image /= u.R_sun.to(u.m)
+                gamma = 1
+            else:
+                gamma = 1/2.2
+            if output_quantity == 'dsun':
+                cmap = 'coolwarm'
+            if output_quantity == 'distance':
+                cmap = 'viridis'
+            
+            # Recreate axis w/ WCS projection (I wish there were a better way!)
+            ax_syn.remove()
+            ax_syn = fig.add_subplot(100 + 10*n_plots + n_plots, projection=wcs)
+            if vmax is None:
+                if output_quantity == 'dsun':
+                    vmax = 2 * sc.at(t0).r / u.R_sun.to(u.m)
+                else:
+                    vmax = image.max()
+                    if vmax == 0:
+                        vmax = 1
+            im = ax_syn.imshow(image, origin='lower', aspect='equal', cmap=cmap,
+                            norm=matplotlib.colors.PowerNorm(
+                                gamma=gamma, vmin=vmin, vmax=vmax))
+            
+            lon, lat = ax_syn.coords
+            lat.set_major_formatter('dd')
+            lon.set_major_formatter('dd')
+            if synth_celest_wcs:
+                ax_syn.set_xlabel("Fixed Longitude")
+            else:
+                ax_syn.set_xlabel("HP Longitude")
+            ax_syn.set_ylabel(" ")
+            ax_syn.coords.grid(color='white', alpha=0.1)
+            
+            if radiants:
+                for parcel in self.parcels:
+                    radiant = calculate_radiant(self.sc, parcel, t0)
+                    if radiant is None:
+                        continue
+                    x, y = wcs.world_to_pixel(radiant * u.rad, 0 * u.rad)
+                    ax_syn.scatter(x, y, s=10, marker='x', color='green')
+            if synth_colorbar:
+                ax = [ax for ax in (ax_syn, ax_overhead, ax_overhead_detail)
+                      if ax is not None]
+                plt.colorbar(im, ax=ax)
+        
+        fov_bins = [20, 40, 60] if mark_bins else []
+        if ax_overhead is not None:
+            self.plot_overhead(
+                ax=ax_overhead, t0=t0, mark_epsilon=mark_epsilon,
+                mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
+                mark_derot_ax=mark_derot_ax, fov_bins=fov_bins, detail=False,
+                fovdat=(image, wcs))
+        
+        if ax_overhead_detail is not None:
+            self.plot_overhead(
+                ax=ax_overhead_detail, t0=t0, mark_epsilon=mark_epsilon,
+                mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
+                mark_derot_ax=mark_derot_ax, fov_bins=[], detail=True,
+                fovdat=(image, wcs))
+
+
+def create_simdat_from_spice(E, nt=400):
+    coords, times = planets.get_orbital_plane('psp', E, npts=10000,
+                                              return_times=True)
+    f = coords.represent_as('spherical').distance < 0.25 * u.au
+    coords = coords[f]
+    times = times[f]
+    x, y, z = (coords.x.to_value(u.m), coords.y.to_value(u.m),
+               coords.z.to_value(u.m))
+    sc = ArrayThing(times, x, y, z)
+    t = np.linspace(times.min(), times.max(), nt)
+    simdat = SimulationData(sc=sc, t=t, parcels=[], encounter=E)
+    return simdat
+
+
+def add_random_parcels(simdat, v=100_000, n_parcels=500, in_plane=False):
+    t_min = 120 * u.R_sun.to(u.m) / v
+    
+    frame = ops.OrbitalSliceWCS(None, None, None).orbital_frame
+    for this_theta, t_start in zip(
+            np.random.uniform(0, 2*np.pi, n_parcels),
+            np.random.uniform(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
+        r = 1.1 * u.R_sun
+        if in_plane:
+            c = astropy.coordinates.SkyCoord(
+                    this_theta * u.rad, 0*u.deg, r,
+                    representation_type='spherical', frame=frame)
+            c = c.transform_to(sunpy.coordinates.HeliocentricInertial)
+            x, y, z = c.cartesian.xyz
+        else:
+            x = r * np.cos(this_theta)
+            y = r * np.sin(this_theta)
+            z = 0 * u.m
+        
+        simdat.parcels.append(LinearThing(
+            x=x.value, y=y.value, z=z.value,
+            vx=(v * x / r).value, vy=(v * y / r).value, vz=(v * z / r).value,
+            t=t_start, t_min=t_start))
+
+
+def add_regular_near_impacts(simdat, v=100_000, hit_spacing=1, miss_t=1,
+                             miss_t_before=None, miss_t_after=None):
+    if miss_t_before is None:
+        miss_t_before = miss_t
+    if miss_t_after is None:
+        miss_t_after = miss_t
+
+    t_impacts = np.arange(simdat.t[0], simdat.t[-1], hit_spacing * 3600)
+    for t_impact in t_impacts:
+        with simdat.sc.at_temp(t_impact) as sc:
+            if np.isnan(miss_t_before):
+                dt = miss_t_after
+            elif np.isnan(miss_t_after):
+                dt = -miss_t_before
+            else:
+                dt = np.random.uniform(-miss_t_before, miss_t_after)
+            dt *= 3600
+            simdat.parcels.append(LinearThing(
+                x=sc.x, y=sc.y, z=sc.z,
+                vx=v*sc.x/sc.r, vy=v*sc.y/sc.r, vz=v*sc.z/sc.r,
+                t=t_impact + dt, t_min=t_impact + dt - sc.r / v))
+
+
+def add_random_near_impacts(simdat, v=100_000, n_parcels=40, miss_t=12*3600,
+                            miss_t_before=None, miss_t_after=None,):
+    if miss_t_before is None:
+        miss_t_before = miss_t
+    if miss_t_after is None:
+        miss_t_after = miss_t
+
+    for this_t, dt in zip(
+            np.random.uniform(simdat.t.min(), simdat.t.max(), n_parcels),
+            np.random.uniform(-miss_t_before, miss_t_after, n_parcels)):
+        this_sc = simdat.sc.at(this_t)
+        x, y, z = this_sc.x, this_sc.y, this_sc.z
+        r = this_sc.r
+        simdat.parcels.append(LinearThing(
+            x=x, y=y, z=z,
+            vx=v * x / r, vy=v * y / r, vz=v * z / r,
+            t=this_t+dt, t_min=this_t + dt - r/v))
+
+
+def clear_near_impacts(simdat, close_thresh):
+    parcels = []
+    for parcel in simdat.parcels:
+        diff = simdat.sc - parcel
+        dists = diff.at(simdat.t).r
+        if np.nanmin(dists) * u.m > close_thresh * u.R_sun:
+            parcels.append(parcel)
+    simdat.parcels = parcels
+
+
+def rad_var_v(r, V0=325*u.km/u.s, alpha=0.2):
+    # From https://www.sciencedirect.com/science/article/pii/S027311771930746X
+    # Higher alpha = steeper rise
+    return V0 / (1 + np.exp(np.e - alpha * r / u.R_sun))
+
+
+def gen_parcel_path(V0=325*u.km/u.s, alpha=0.2, end_point=250*u.R_sun):
+    r_start = 1*u.R_sun
+    t_start = 0*u.s
+    dt = 10 * u.min
+    
+    rs = [r_start]
+    ts = [t_start]
+    
+    r = r_start
+    t = t_start
+    while r < end_point:
+        r = r + rad_var_v(r, V0, alpha) * dt
+        t = t + dt
+        rs.append(r)
+        ts.append(t)
+    rs = u.Quantity(rs).to(u.m)
+    ts = u.Quantity(ts)
+    vs = rad_var_v(rs, V0, alpha)
+
+    dr = np.gradient(rs)
+    dv = np.gradient(vs)
+    grad_v = dv / dr
+    drho_over_rho = 1 / (1 + dt * grad_v) - 1
+    rho = 1
+    rhos = [rho]
+    for d in drho_over_rho[:-1]:
+        rhos.append(rhos[-1] + d * rhos[-1])
+
+    rhos = np.array(rhos)
+    rpar = 1 / rhos
+    rpar /= rpar[0]
+
+    rperp = rs.value**2
+    rperp /= rperp[0]
+
+    rhos *= 1 / rs.value**2
+    
+    return rs, ts, vs, rhos, rperp, rpar
+
+def add_random_parcels_rad_grad(simdat, n_parcels=500, V0=325*u.km/u.s,
+                                alpha=0.2, in_plane=False):
+    t_min = 120 * u.R_sun.to(u.m) / 200_000
+    rs, ts, vs, rhos, rperp, rpar = gen_parcel_path(V0, alpha)
+    
+    frame = ops.OrbitalSliceWCS(None, None, None).orbital_frame
+    for this_theta, t_start in zip(
+            np.random.uniform(0, 2*np.pi, n_parcels),
+            np.random.uniform(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
+        if in_plane:
+            c = astropy.coordinates.SkyCoord(
+                    this_theta*u.rad, 0*u.deg, rs,
+                    representation_type='spherical', frame=frame)
+            c = c.transform_to(sunpy.coordinates.HeliocentricInertial)
+            x, y, z = c.cartesian.xyz
+        else:
+            x = rs * np.cos(this_theta)
+            y = rs * np.sin(this_theta)
+            z = rs * 0
+        tvals = t_start + ts.to_value(u.s)
+        simdat.parcels.append(ArrayThing(
+            tvals, x.value, y.value, z.value,
+            t=t_start, rholist=rhos, rperplist=rperp, rparlist=rpar,
+            t_min=tvals[0], t_max=tvals[-1]))
+
+
+def add_regular_near_impacts_rad_grad(simdat, V0=325*u.km/u.s, alpha=0.2,
+                                      hit_spacing=1, miss_t=1,
+                                      miss_t_before=None, miss_t_after=None):
+    rs, ts, vs, rhos, rperp, rpar = gen_parcel_path(V0, alpha)
+    rs = rs.to_value(u.m)
+    ts = ts.to_value(u.s)
+    
+    if miss_t_before is None:
+        miss_t_before = miss_t
+    if miss_t_after is None:
+        miss_t_after = miss_t
+
+    t_impacts = np.arange(simdat.t[0], simdat.t[-1], hit_spacing * 3600)
+    for t_impact in t_impacts:
+        with simdat.sc.at_temp(t_impact) as sc_impact:
+            if np.isnan(miss_t_before):
+                dt = miss_t_after
+            elif np.isnan(miss_t_after):
+                dt = -miss_t_before
+            else:
+                dt = np.random.uniform(-miss_t_before, miss_t_after)
+            dt *= 3600
+            
+            r_impact = sc_impact.r
+            target_t = np.interp(r_impact, rs, ts)
+            these_ts = ts + (t_impact - target_t) + dt
+            
+            simdat.parcels.append(ArrayThing(
+                these_ts, rs * sc_impact.x / r_impact,
+                rs * sc_impact.y / r_impact, rs * sc_impact.z / r_impact,
+                t=these_ts[0], rholist=rhos, rperplist=rperp, rparlist=rpar,
+                t_min=these_ts[0], t_max=these_ts[-1]))
