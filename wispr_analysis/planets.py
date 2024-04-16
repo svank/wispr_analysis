@@ -342,7 +342,7 @@ def format_date(date):
             date = get_psp_perihelion_date(date)
         except KeyError:
             raise ValueError("Invalid encounter number")
-    elif isinstance(date, astropy.time.Time):
+    elif isinstance(date, (astropy.time.Time, datetime)):
         date = date.strftime("%Y-%m-%d %H:%M:%S")
     elif not isinstance(date, str):
         # Treat as FITS header
@@ -398,16 +398,16 @@ def get_orbital_plane(body, date, observer=None, return_times=False,
         coords.append(state[:3])
     coords = np.array(coords)
     
-    if observer is not None:
-        if body == '-96' and expand_psp_orbit:
-            # Expand the orbit so the projected plane comes out right
-            c = astropy.coordinates.CartesianRepresentation(*coords.T)
-            s = c.represent_as(astropy.coordinates.SphericalRepresentation)
-            s2 = astropy.coordinates.SphericalRepresentation(
-                    lon=s.lon, lat=s.lat, distance=4*s.distance)
-            c2 = s2.represent_as(astropy.coordinates.CartesianRepresentation)
-            coords = np.array([c2.x, c2.y, c2.z]).T
+    if body == '-96' and expand_psp_orbit:
+        # Expand the orbit so the projected plane comes out right
+        c = astropy.coordinates.CartesianRepresentation(*coords.T)
+        s = c.represent_as(astropy.coordinates.SphericalRepresentation)
+        s2 = astropy.coordinates.SphericalRepresentation(
+                lon=s.lon, lat=s.lat, distance=4*s.distance)
+        c2 = s2.represent_as(astropy.coordinates.CartesianRepresentation)
+        coords = np.array([c2.x, c2.y, c2.z]).T
         
+    if observer is not None:
         coords = _to_hp(coords.T, observer, date)
     else:
         coords = astropy.coordinates.SkyCoord(
