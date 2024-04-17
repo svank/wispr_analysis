@@ -420,19 +420,6 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
         imgs[i] = imgs[i][trim[2]:img.shape[0]-trim[3],
                           trim[0]:img.shape[1]-trim[1]]
     
-    def censor_wcs(wcs):
-        # The input images have slightly different viewpoints. If
-        # sunpy.coordinates has been imported, astropy will know enough
-        # about HPC to say this is an invalid coordinate transformation.
-        # Here we censor information from the WCS to pacify Sunpy.
-        wcs = wcs.deepcopy()
-        wcs.wcs.aux.hgln_obs = None
-        wcs.wcs.aux.hglt_obs = None
-        wcs.wcs.aux.dsun_obs = None
-        wcs.wcs.dateobs = ''
-        wcs.wcs.dateavg = ''
-        return wcs
-    
     wcs_target = censor_wcs(wcsh)
     wcses = [censor_wcs(wcs) for wcs in wcses]
     
@@ -455,3 +442,21 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
             **reproj_args)
         composite[footprint == 0] = np.nan
         return composite, wcsh
+
+
+def censor_wcs(wcs, obstime=True, observer=True):
+    """Removes observer details from a WCS
+    
+    When input images have slightly different viewpoints, Sunpy will say this
+    is an invalid coordinate transformation. Here we censor information from the
+    WCS to pacify Sunpy.
+    """
+    wcs = wcs.deepcopy()
+    if observer:
+        wcs.wcs.aux.hgln_obs = None
+        wcs.wcs.aux.hglt_obs = None
+        wcs.wcs.aux.dsun_obs = None
+    if obstime:
+        wcs.wcs.dateobs = ''
+        wcs.wcs.dateavg = ''
+    return wcs

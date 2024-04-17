@@ -1,8 +1,8 @@
 from collections.abc import Iterable
 import copy
 from datetime import datetime, timedelta, timezone
+import os
 
-from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy.visualization import quantity_support
 from astropy.visualization.wcsaxes import WCSAxes
@@ -54,6 +54,10 @@ def parse_level_preset(level_preset, header=None):
     else:
         if isinstance(level_preset, str) and level_preset[0] == 'L':
             level_preset = level_preset[1]
+        elif (isinstance(level_preset, str) and level_preset.endswith('.fits')):
+            level_preset = os.path.basename(level_preset)
+            if level_preset.startswith('psp_L'):
+                level_preset = level_preset[5]
     
     level_preset = str(level_preset)
     if level_preset not in ('1', '2', '3', 'W'):
