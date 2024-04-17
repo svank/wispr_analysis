@@ -15,7 +15,6 @@ import scipy
 import sunpy.coordinates
 
 from .. import orbital_frame, planets, utils
-from ..orbital_plane_slices import orbital_plane_slices as ops
 
 
 class Thing:
@@ -1090,8 +1089,9 @@ class SimulationData:
     parcels: list[Thing] = dataclasses.field(default_factory=list)
     encounter: int = None
     
-    def plot_overhead(self, t0=None, mark_epsilon=False, mark_FOV_pos=False, mark_FOV=False,
-                      fov_bins=[], mark_derot_ax=False, detail=False, fovdat=None, ax=None):
+    def plot_overhead(self, t0=None, mark_epsilon=False, mark_FOV_pos=False,
+                      mark_FOV=False, fov_bins=[], mark_derot_ax=False,
+                      detail=False, fovdat=None, ax=None, point_scale=1):
         scale_factor = u.R_sun.to(u.m)
         if ax is None:
             ax = plt.gca()
@@ -1099,19 +1099,22 @@ class SimulationData:
             t0 = np.mean(self.t)
         sc = self.sc.at(t0)
         
-        ax.scatter(0, 0, c='yellow', s=100, zorder=18, edgecolors='black')
-        ax.scatter(sc.x, sc.y, zorder=10, s=100, edgecolors='white')
-        ax.plot(sc.at(self.t).x, sc.at(self.t).y, zorder=9, lw=5)
+        ax.scatter(0, 0, c='yellow', s=100 * point_scale**2, zorder=18,
+                   edgecolors='black')
+        ax.scatter(sc.x, sc.y, zorder=10, s=100 * point_scale**2,
+                   edgecolors='white')
+        ax.plot(sc.at(self.t).x, sc.at(self.t).y, zorder=9, lw=5 * point_scale)
 
         pxs = []
         pys = []
         for parcel in self.parcels:
             with parcel.at_temp(self.t) as p:
-                ax.plot(p.x, p.y, 'C1', alpha=.3)
+                ax.plot(p.x, p.y, 'C1', alpha=.3, lw=1 * point_scale)
             with parcel.at_temp(t0) as p:
                 pxs.append(p.x)
                 pys.append(p.y)
-        ax.scatter(pxs, pys, color='C1', s=36 if detail else 24)
+        ax.scatter(pxs, pys, color='C1',
+                   s=(36 if detail else 24) * point_scale**2)
 
         if mark_epsilon:
             x = np.nanmean(pxs)
@@ -1238,7 +1241,7 @@ class SimulationData:
             radiants=False, vmin=0, vmax=None, parcel_width=1, synth_kw={},
             synth_fixed_fov=None, synth_celest_wcs=False,
             output_quantity='flux', use_default_figsize=False,
-            synth_colorbar=False):
+            synth_colorbar=False, point_scale=1):
         sc = self.sc.at(t0)
         n_plots = include_overhead + include_overhead_detail + synthesize
         if use_default_figsize:
@@ -1314,19 +1317,19 @@ class SimulationData:
                 ax=ax_overhead, t0=t0, mark_epsilon=mark_epsilon,
                 mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
                 mark_derot_ax=mark_derot_ax, fov_bins=fov_bins, detail=False,
-                fovdat=(image, wcs))
+                fovdat=(image, wcs), point_scale=point_scale)
         
         if ax_overhead_detail is not None:
             self.plot_overhead(
                 ax=ax_overhead_detail, t0=t0, mark_epsilon=mark_epsilon,
                 mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
                 mark_derot_ax=mark_derot_ax, fov_bins=[], detail=True,
-                fovdat=(image, wcs))
+                fovdat=(image, wcs), point_scale=point_scale)
 
 
 def create_simdat_from_spice(E, nt=400):
-    coords, times = planets.get_orbital_plane('psp', E, npts=10000,
-                                              return_times=True)
+    coords, times = planets.get_orbital_plane(
+        'psp', E, npts=10000, return_times=True, expand_psp_orbit=False)
     f = coords.represent_as('spherical').distance < 0.25 * u.au
     coords = coords[f]
     times = times[f]
@@ -1338,24 +1341,16 @@ def create_simdat_from_spice(E, nt=400):
     return simdat
 
 
-def add_random_parcels(simdat, v=100_000, n_parcels=500, in_plane=False):
+def add_random_parcels(simdat, v=100_000, n_parcels=500):
     t_min = 120 * u.R_sun.to(u.m) / v
     
-    frame = ops.OrbitalSliceWCS(None, None, None).orbital_frame
     for this_theta, t_start in zip(
             np.random.uniform(0, 2*np.pi, n_parcels),
             np.random.uniform(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
         r = 1.1 * u.R_sun
-        if in_plane:
-            c = astropy.coordinates.SkyCoord(
-                    this_theta * u.rad, 0*u.deg, r,
-                    representation_type='spherical', frame=frame)
-            c = c.transform_to(sunpy.coordinates.HeliocentricInertial)
-            x, y, z = c.cartesian.xyz
-        else:
-            x = r * np.cos(this_theta)
-            y = r * np.sin(this_theta)
-            z = 0 * u.m
+        x = r * np.cos(this_theta)
+        y = r * np.sin(this_theta)
+        z = 0 * u.m
         
         simdat.parcels.append(LinearThing(
             x=x.value, y=y.value, z=z.value,
@@ -1461,24 +1456,16 @@ def gen_parcel_path(V0=325*u.km/u.s, alpha=0.2, end_point=250*u.R_sun):
     return rs, ts, vs, rhos, rperp, rpar
 
 def add_random_parcels_rad_grad(simdat, n_parcels=500, V0=325*u.km/u.s,
-                                alpha=0.2, in_plane=False):
+                                alpha=0.2):
     t_min = 120 * u.R_sun.to(u.m) / 200_000
     rs, ts, vs, rhos, rperp, rpar = gen_parcel_path(V0, alpha)
     
-    frame = ops.OrbitalSliceWCS(None, None, None).orbital_frame
     for this_theta, t_start in zip(
             np.random.uniform(0, 2*np.pi, n_parcels),
             np.random.uniform(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
-        if in_plane:
-            c = astropy.coordinates.SkyCoord(
-                    this_theta*u.rad, 0*u.deg, rs,
-                    representation_type='spherical', frame=frame)
-            c = c.transform_to(sunpy.coordinates.HeliocentricInertial)
-            x, y, z = c.cartesian.xyz
-        else:
-            x = rs * np.cos(this_theta)
-            y = rs * np.sin(this_theta)
-            z = rs * 0
+        x = rs * np.cos(this_theta)
+        y = rs * np.sin(this_theta)
+        z = rs * 0
         tvals = t_start + ts.to_value(u.s)
         simdat.parcels.append(ArrayThing(
             tvals, x.value, y.value, z.value,
@@ -1518,3 +1505,31 @@ def add_regular_near_impacts_rad_grad(simdat, V0=325*u.km/u.s, alpha=0.2,
                 rs * sc_impact.y / r_impact, rs * sc_impact.z / r_impact,
                 t=these_ts[0], rholist=rhos, rperplist=rperp, rparlist=rpar,
                 t_min=these_ts[0], t_max=these_ts[-1]))
+
+
+def rotate_parcels_into_orbital_plane(simdat):
+    obstime = utils.from_timestamp(simdat.t[0])
+    for parcel in simdat.parcels:
+        if isinstance(parcel, LinearThing):
+            c = astropy.coordinates.SkyCoord(
+                x=parcel.x_t0, y=parcel.y_t0, z=parcel.z_t0,
+                v_x=parcel.vx_t0/u.s, v_y=parcel.vy_t0/u.s, v_z=parcel.vz_t0/u.s,
+                obstime=obstime, frame='psporbitalframe',
+                representation_type='cartesian')
+            c = c.transform_to('heliocentricinertial').cartesian
+            parcel.x_t0 = c.x.value
+            parcel.y_t0 = c.y.value
+            parcel.z_t0 = c.z.value
+            parcel.vx_t0 = c.differentials['s'].d_x.value
+            parcel.vy_t0 = c.differentials['s'].d_y.value
+            parcel.vz_t0 = c.differentials['s'].d_z.value
+        elif isinstance(parcel, ArrayThing):
+            c = astropy.coordinates.SkyCoord(
+                x=parcel.xlist, y=parcel.ylist, z=parcel.zlist,
+                obstime=obstime, frame='psporbitalframe',
+                representation_type='cartesian')
+            c = c.transform_to('heliocentricinertial').cartesian
+            parcel.xlist = c.x.value
+            parcel.ylist = c.y.value
+            parcel.zlist = c.z.value
+            
