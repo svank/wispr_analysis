@@ -32,10 +32,10 @@ cmap.set_bad('black')
 
 
 def make_WISPR_video(data_dir, between=(None, None), filters=None,
-                         n_procs=os.cpu_count(), debris_mask_dir=None,
-                         save_location=None, timestepper='inner', dt=None,
-                         duration=None, fps=30, blank_threshold=30*u.min,
-                         **plot_args):
+                     n_procs=os.cpu_count(), debris_mask_dir=None,
+                     save_location=None, timestepper='inner', dt=None,
+                     duration=None, fps=30, blank_threshold=30*u.min,
+                     output_wcs=None, **plot_args):
     ifiles, ofiles = utils.collect_files(data_dir, between=between,
                                          filters=filters, include_headers=True)
     ifiles, iheaders = zip(*ifiles)
@@ -102,16 +102,18 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
         if np.abs(file2time[ofiles[i]] - t) * u.s > blank_threshold:
             ofiles[i] = None
     
-    output_wcs, naxis1, naxis2 = composites.gen_header(iheaders[0], oheaders[0])
-    bounds = composites.find_collective_bounds(
-        [iheaders[::15], oheaders[::15]], output_wcs)
-    crpix = list(output_wcs.wcs.crpix)
-    crpix[0] -= bounds[0]
-    crpix[1] -= bounds[2]
-    output_wcs.wcs.crpix = crpix
-    naxis1 = bounds[1] - bounds[0]
-    naxis2 = bounds[3] - bounds[2]
-    output_wcs.pixel_shape = naxis1, naxis2
+    if output_wcs is None:
+        output_wcs, naxis1, naxis2 = composites.gen_header(
+            ifiles[0], ofiles[0])
+        bounds = composites.find_collective_bounds(
+            [ifiles[::15], ofiles[::15]], output_wcs)
+        crpix = list(output_wcs.wcs.crpix)
+        crpix[0] -= bounds[0]
+        crpix[1] -= bounds[2]
+        output_wcs.wcs.crpix = crpix
+        naxis1 = bounds[1] - bounds[0]
+        naxis2 = bounds[3] - bounds[2]
+        output_wcs.pixel_shape = naxis1, naxis2
     
     psp_poses, psp_times = planets.trace_psp_orbit(
         utils.extract_encounter_number(data_dir), t_start=timesteps[0],
@@ -137,7 +139,10 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
             wcs.wcs.aux.dsun_obs = psp.radius.to_value(u.m)
             wcs.fix()
             
-            output_wcses.append(wcs)
+            if wcs.wcs.ctype[0][:4] == 'HPLN':
+                output_wcses.append(wcs)
+            else:
+                output_wcses.append(output_wcs)
             
             # SPICE doesn't always play well with multiprocessing, so we
             # pre-compute the positions here in the main process.
@@ -175,18 +180,19 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         ifile, ofile, wcsh=wcs, bounds=False, image_trim=[[10]*4]*2)
     
     with matplotlib.style.context('dark_background'):
-        fig = plt.figure(figsize=(10, 7.5), dpi=150)
+        width, height = wcs.pixel_shape[0] / 280 + 1.5, wcs.pixel_shape[1] / 280 + 1.25
+        fig = plt.figure(
+            figsize=(width, height),
+            dpi=150)
+        fig.subplots_adjust(top=1-.5/height, bottom=.75/height, left=1.1/width, right=1-.4/width)
         plot_args = copy.copy(plot_args)
         plot_args['mark_planets'] = planet_poses
         plot_utils.plot_WISPR(composite, wcs=wcs, **plot_args)
         ax = plt.gca()
         timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
         ax.text(40, 30, timestamp.strftime("%Y-%m-%d, %H:%M"), color='white')
-        fig.subplots_adjust(top=0.96, bottom=0.10, left=0.05, right=0.98)
-        main_ax_pos = ax.get_position()
         
-        ax_orbit = fig.add_axes((.01 + main_ax_pos.xmin, .04 + main_ax_pos.ymin,
-                                 .12, .12))
+        ax_orbit = ax.inset_axes([50, 80, 300, 300], transform=ax.transData)
         cart = psp_poses.cartesian
         ax_orbit.margins(.1, .1)
         ax_orbit.set_aspect('equal')
@@ -205,15 +211,15 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         for spine in ax_orbit.spines.values():
             spine.set_color('.4')
         
-        fig.text(main_ax_pos.xmin + .13, main_ax_pos.ymin + .065,
+        ax.text(390, 230,
                  f"r = {r.to_value(u.R_sun):.1f}", color='white')
-        fig.text(main_ax_pos.xmin + .19, main_ax_pos.ymin + .065,
+        ax.text(580, 230,
                  f"R$_\odot$",color='white')
-        fig.text(main_ax_pos.xmin + .13, main_ax_pos.ymin + .04,
+        ax.text(390, 165,
                  f"      {r.to_value(u.AU):.2f}", color='white')
-        fig.text(main_ax_pos.xmin + .19, main_ax_pos.ymin + .04,
+        ax.text(580, 165,
                  f"AU", color='white')
-        fig.text(main_ax_pos.xmin + .13, main_ax_pos.ymin + .095,
+        ax.text(390, 100,
                  f"$\\theta$ = {theta:.1f} $^\ocirc$",
                  color='white')
         

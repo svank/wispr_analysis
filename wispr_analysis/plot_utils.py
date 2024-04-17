@@ -233,8 +233,12 @@ def setup_WCS_axes(ax, grid=True, lat_spacing=10, lon_spacing=10):
         if isinstance(grid, bool):
             grid = 0.2
         ax.coords.grid(color='white', alpha=grid)
-    lon.set_axislabel("Helioprojective longitude")
-    lat.set_axislabel("Helioprojective latitude")
+    if 'helioprojective' in lon.default_label:
+        lon.set_axislabel("Helioprojective longitude")
+        lat.set_axislabel("Helioprojective latitude")
+    elif 'pspframe' in lon.default_label:
+        lon.set_axislabel("PSP frame longitude")
+        lat.set_axislabel("PSP frame latitude")
 
 
 def blink(*imgs, vmins=None, vmaxs=None, cmaps=None, interval=500, show=True,

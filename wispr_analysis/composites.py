@@ -420,8 +420,11 @@ def gen_composite(fname_i, fname_o, proj='ARC', level=False, key=' ',
         imgs[i] = imgs[i][trim[2]:img.shape[0]-trim[3],
                           trim[0]:img.shape[1]-trim[1]]
     
-    wcs_target = censor_wcs(wcsh)
-    wcses = [censor_wcs(wcs) for wcs in wcses]
+    if wcsh.wcs.ctype[0][:4] == 'HPLN':
+        wcs_target = censor_wcs(wcsh)
+        wcses = [censor_wcs(wcs) for wcs in wcses]
+    else:
+        wcs_target = wcsh
     
     if bounds is None:
         bounds = find_collective_bounds(wcses, wcs_target, key=key)
