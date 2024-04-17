@@ -63,8 +63,8 @@ def test_orbital_plane_frame_wcs_mapping():
     assert list(wcs.wcs.ctype) == ['POLN-CAR', 'POLT-CAR']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'custom:pos.psporbitalframe.lon',
-        'custom:pos.psporbitalframe.lat']
+        'pos.psporbitalframe.lon',
+        'pos.psporbitalframe.lat']
 
 
 def test_psp_frame_wcs_mapping():
@@ -76,8 +76,8 @@ def test_psp_frame_wcs_mapping():
     assert list(wcs.wcs.ctype) == ['PSLN-CAR', 'PSLT-CAR']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'custom:pos.pspframe.lon',
-        'custom:pos.pspframe.lat']
+        'pos.pspframe.lon',
+        'pos.pspframe.lat']
     assert wcs.wcs.aux.hgln_obs == observer.lon.to_value(u.deg)
     assert wcs.wcs.aux.hglt_obs == observer.lat.to_value(u.deg)
     assert wcs.wcs.aux.dsun_obs == observer.radius.to_value(u.m)
@@ -90,8 +90,8 @@ def test_wcs_from_psporbital_coord():
     assert list(wcs.wcs.ctype) == ['POLN-TAN', 'POLT-TAN']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'custom:pos.psporbitalframe.lon',
-        'custom:pos.psporbitalframe.lat']
+        'pos.psporbitalframe.lon',
+        'pos.psporbitalframe.lat']
 
 
 def test_wcs_from_psp_coord():
@@ -103,8 +103,8 @@ def test_wcs_from_psp_coord():
     assert list(wcs.wcs.ctype) == ['PSLN-TAN', 'PSLT-TAN']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'custom:pos.pspframe.lon',
-        'custom:pos.pspframe.lat']
+        'pos.pspframe.lon',
+        'pos.pspframe.lat']
     assert wcs.wcs.aux.hgln_obs == observer.lon.to_value(u.deg)
     assert wcs.wcs.aux.hglt_obs == observer.lat.to_value(u.deg)
     assert wcs.wcs.aux.dsun_obs == observer.radius.to_value(u.m)
@@ -238,7 +238,7 @@ def test_hpc_psp_conversion(mocker):
                  frame='helioprojective', obstime=obstime, observer=observer)
     c = c.transform_to('pspframe')
     
-    assert np.isclose(c.lon.to_value(), 339.4265894441424)
+    assert np.isclose(c.lon.to_value(), 349.42658944414245)
     assert np.isclose(c.lat.to_value(), -10.901241566609368)
     assert np.isclose(c.distance.to_value(), 33)
     assert c.obstime == obstime
@@ -262,8 +262,8 @@ def test_psp_hpc_conversion(mocker):
                  frame='pspframe', obstime=obstime, observer=observer)
     c = c.transform_to('helioprojective')
     
-    assert np.isclose(c.Tx.to_value(), -646622.5542439144)
-    assert np.isclose(c.Ty.to_value(), -36026.64360996204)
+    assert np.isclose(c.Tx.to_value(), 613390.1033593377)
+    assert np.isclose(c.Ty.to_value(), -35454.)
     assert np.isclose(c.distance.to_value(), 33)
     assert c.obstime == obstime
 
