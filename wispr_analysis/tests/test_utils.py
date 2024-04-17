@@ -92,6 +92,24 @@ def test_to_timestamp_empty():
     assert utils.to_timestamp('', as_datetime=True) is None
 
 
+def test_to_from_timestamp():
+    assert (utils.from_timestamp(utils.to_timestamp('2021-02-03T12:13:14.5'))
+            == '2021-02-03T12:13:14.500000')
+    assert (utils.from_timestamp(utils.to_timestamp('2021-02-03T12:13:14'))
+            == '2021-02-03T12:13:14')
+
+
+def test_to_from_timestamp_list():
+    times = ['2021-02-03T12:13:14.500000', '2021-02-03T12:13:14']
+    
+    assert utils.from_timestamp(utils.to_timestamp(times)) == times
+
+
+def test_from_timestamp_invalid():
+    with pytest.raises(ValueError, match='Invalid timestamp type'):
+        utils.from_timestamp('2021-02-03T12:13:14')
+
+
 def test_get_PSP_path():
     dir_path = utils.test_data_path('WISPR_files_headers_only')
     times, positions, vs = utils.get_PSP_path(dir_path)

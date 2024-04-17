@@ -75,6 +75,19 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
     return dt.timestamp()
 
 
+def from_timestamp(timestamp):
+    if isinstance(timestamp, Iterable) and not isinstance(timestamp, str):
+        return [from_timestamp(ts) for ts in timestamp]
+    if not isinstance(timestamp, (float, int)):
+        raise ValueError("Invalid timestamp type")
+    datetime = to_timestamp(timestamp, as_datetime=True)
+    if timestamp - int(timestamp) == 0:
+        fmtstr = "%Y-%m-%dT%H:%M:%S"
+    else:
+        fmtstr = "%Y-%m-%dT%H:%M:%S.%f"
+    return datetime.strftime(fmtstr)
+
+
 def get_PSP_path(data_dir):
     data_dir = os.path.expanduser(data_dir)
     files = collect_files(data_dir, separate_detectors=False, order='date-avg',
