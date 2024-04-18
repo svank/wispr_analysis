@@ -35,7 +35,8 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                      n_procs=os.cpu_count(), debris_mask_dir=None,
                      save_location=None, timestepper='inner', dt=None,
                      duration=None, fps=30, blank_threshold=30*u.min,
-                     output_wcs=None, image_scale=1, **plot_args):
+                     output_wcs=None, image_scale=1,
+                     orbit_inset_full_encounter=False, **plot_args):
     if isinstance(data_dir, tuple):
         ifiles, ofiles = data_dir
         itimes = np.array(utils.to_timestamp(ifiles))
@@ -121,9 +122,16 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
         naxis2 = bounds[3] - bounds[2]
         output_wcs.pixel_shape = naxis1, naxis2
     
-    psp_poses, psp_times = planets.trace_psp_orbit(
-        utils.extract_encounter_number(ifiles[0]), t_start=timesteps[0],
-        t_stop=timesteps[-1])
+    if orbit_inset_full_encounter:
+        psp_poses, psp_times = planets.trace_psp_orbit(
+            utils.extract_encounter_number(ifiles[0]))
+        f = psp_poses.cartesian.norm() < 0.25 * u.au
+        psp_poses = psp_poses[f]
+        psp_times = psp_times[f]
+    else:
+        psp_poses, psp_times = planets.trace_psp_orbit(
+            utils.extract_encounter_number(ifiles[0]), t_start=timesteps[0],
+            t_stop=timesteps[-1])
     psp_poses = psp_poses.transform_to(orbital_frame.PSPOrbitalFrame)
     
     output_wcses = []
@@ -217,19 +225,19 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         ax_orbit.scatter(0, 0, color='yellow')
         ax_orbit.xaxis.set_visible(False)
         ax_orbit.yaxis.set_visible(False)
-        ax_orbit.set_title("S/C position", fontdict={'fontsize': 9})
+        ax_orbit.set_title("PSP position", fontdict={'fontsize': 9})
         for spine in ax_orbit.spines.values():
             spine.set_color('.4')
         
-        ax.text(390 / image_scale, 185 / image_scale,
+        ax.text(360 / image_scale, 185 / image_scale,
                  f"r = {r.to_value(u.R_sun):.1f}", color='white')
-        ax.text(580 / image_scale, 185 / image_scale,
+        ax.text(550 / image_scale, 185 / image_scale,
                  f"R$_\odot$",color='white')
-        ax.text(390 / image_scale, 135 / image_scale,
+        ax.text(360 / image_scale, 135 / image_scale,
                  f"      {r.to_value(u.AU):.2f}", color='white')
-        ax.text(580 / image_scale, 135 / image_scale,
+        ax.text(550 / image_scale, 135 / image_scale,
                  f"AU", color='white')
-        ax.text(390 / image_scale, 80 / image_scale,
+        ax.text(360 / image_scale, 80 / image_scale,
                  f"$\\theta$ = {theta:.1f} $^\ocirc$",
                  color='white')
         

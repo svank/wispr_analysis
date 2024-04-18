@@ -211,7 +211,8 @@ def _plot_internal(data, wcs, ax=None, draw_constellations=False,
             planet_wcs, planet_poses = mark_planets
         for planet, pos in zip(planets.planets, planet_poses):
             x, y = planet_wcs.world_to_pixel(pos)
-            if 0 < x < data.shape[1] and 0 < y < data.shape[0]:
+            if (0 < x < data.shape[1] and 0 < y < data.shape[0]
+                    and not np.isnan(data[int(y), int(x)])):
                 ax.annotate(planet,(x+4, y+1), (2, .3),
                             textcoords='offset fontsize',
                             fontsize='x-small',
