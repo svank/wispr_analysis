@@ -35,13 +35,19 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                      n_procs=os.cpu_count(), debris_mask_dir=None,
                      save_location=None, timestepper='inner', dt=None,
                      duration=None, fps=30, blank_threshold=30*u.min,
-                     output_wcs=None, **plot_args):
-    ifiles, ofiles = utils.collect_files(data_dir, between=between,
-                                         filters=filters, include_headers=True)
-    ifiles, iheaders = zip(*ifiles)
-    ofiles, oheaders = zip(*ofiles)
-    itimes = np.array(utils.to_timestamp(iheaders))
-    otimes = np.array(utils.to_timestamp(oheaders))
+                     output_wcs=None, image_scale=1, **plot_args):
+    if isinstance(data_dir, tuple):
+        ifiles, ofiles = data_dir
+        itimes = np.array(utils.to_timestamp(ifiles))
+        otimes = np.array(utils.to_timestamp(ofiles))
+    else:
+        ifiles, ofiles = utils.collect_files(data_dir, between=between,
+                                            filters=filters,
+                                            include_headers=True)
+        ifiles, iheaders = zip(*ifiles)
+        ofiles, oheaders = zip(*ofiles)
+        itimes = np.array(utils.to_timestamp(iheaders))
+        otimes = np.array(utils.to_timestamp(oheaders))
     file2time = dict(zip(ifiles + ofiles, np.concatenate((itimes, otimes))))
     file2next = dict(zip(ifiles[:-1] + ofiles[:-1], ifiles[1:] + ofiles[1:]))
     file2prev = dict(zip(ifiles[1:] + ofiles[1:], ifiles[:-1] + ofiles[:-1]))
@@ -68,7 +74,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     elif timestepper == 'fixed_dt':
         # Let's start at the image closest to perihelion, and then go out in
         # dts from there.
-        E = utils.extract_encounter_number(data_dir)
+        E = utils.extract_encounter_number(ifiles[0])
         tperi = utils.to_timestamp(planets.get_psp_perihelion_date(E))
         times = itimes
         iperi = np.argmin(np.abs(times - tperi))
@@ -116,7 +122,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
         output_wcs.pixel_shape = naxis1, naxis2
     
     psp_poses, psp_times = planets.trace_psp_orbit(
-        utils.extract_encounter_number(data_dir), t_start=timesteps[0],
+        utils.extract_encounter_number(ifiles[0]), t_start=timesteps[0],
         t_stop=timesteps[-1])
     psp_poses = psp_poses.transform_to(orbital_frame.PSPOrbitalFrame)
     
@@ -155,13 +161,13 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     generic_make_video(_draw_WISPR_video_frame, timesteps, ifiles, ofiles,
                        output_wcses, planet_poses, repeat(psp_poses),
                        repeat(psp_times), file2next, file2prev, plot_args,
-                       debris_mask_dir, parallel=n_procs, fps=fps,
+                       debris_mask_dir, image_scale, parallel=n_procs, fps=fps,
                        save_to=save_location)
 
 
 def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
                             psp_poses, psp_times, file2next, file2prev,
-                            plot_args, debris_mask_dir):
+                            plot_args, debris_mask_dir, image_scale):
     if debris_mask_dir is not None:
         if ifile is not None:
             mask = data_cleaning.find_mask(debris_mask_dir, ifile)
@@ -180,7 +186,8 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         ifile, ofile, wcsh=wcs, bounds=False, image_trim=[[10]*4]*2)
     
     with matplotlib.style.context('dark_background'):
-        width, height = wcs.pixel_shape[0] / 280 + 1.5, wcs.pixel_shape[1] / 280 + 1.25
+        width = wcs.pixel_shape[0] / 280 * image_scale + 1.5
+        height = wcs.pixel_shape[1] / 280 * image_scale + 1.5
         fig = plt.figure(
             figsize=(width, height),
             dpi=150)
@@ -190,9 +197,12 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         plot_utils.plot_WISPR(composite, wcs=wcs, **plot_args)
         ax = plt.gca()
         timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
-        ax.text(40, 30, timestamp.strftime("%Y-%m-%d, %H:%M"), color='white')
+        ax.text(40/image_scale, 30/image_scale,
+                timestamp.strftime("%Y-%m-%d, %H:%M"), color='white')
         
-        ax_orbit = ax.inset_axes([50, 80, 300, 300], transform=ax.transData)
+        ax_orbit = ax.inset_axes([50/image_scale, 80/image_scale,
+                                  300/image_scale, 300/image_scale],
+                                 transform=ax.transData)
         cart = psp_poses.cartesian
         ax_orbit.margins(.1, .1)
         ax_orbit.set_aspect('equal')
@@ -211,15 +221,15 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         for spine in ax_orbit.spines.values():
             spine.set_color('.4')
         
-        ax.text(390, 230,
+        ax.text(390 / image_scale, 185 / image_scale,
                  f"r = {r.to_value(u.R_sun):.1f}", color='white')
-        ax.text(580, 230,
+        ax.text(580 / image_scale, 185 / image_scale,
                  f"R$_\odot$",color='white')
-        ax.text(390, 165,
+        ax.text(390 / image_scale, 135 / image_scale,
                  f"      {r.to_value(u.AU):.2f}", color='white')
-        ax.text(580, 165,
+        ax.text(580 / image_scale, 135 / image_scale,
                  f"AU", color='white')
-        ax.text(390, 100,
+        ax.text(390 / image_scale, 80 / image_scale,
                  f"$\\theta$ = {theta:.1f} $^\ocirc$",
                  color='white')
         
