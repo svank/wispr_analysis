@@ -52,6 +52,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     file2time = dict(zip(ifiles + ofiles, np.concatenate((itimes, otimes))))
     file2next = dict(zip(ifiles[:-1] + ofiles[:-1], ifiles[1:] + ofiles[1:]))
     file2prev = dict(zip(ifiles[1:] + ofiles[1:], ifiles[:-1] + ofiles[:-1]))
+    E = utils.extract_encounter_number(ifiles[0])
     
     if timestepper == 'fixed_duration':
         wispr_time_duration = np.ptp(np.concatenate((itimes, otimes)))
@@ -75,7 +76,6 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     elif timestepper == 'fixed_dt':
         # Let's start at the image closest to perihelion, and then go out in
         # dts from there.
-        E = utils.extract_encounter_number(ifiles[0])
         tperi = utils.to_timestamp(planets.get_psp_perihelion_date(E))
         times = itimes
         iperi = np.argmin(np.abs(times - tperi))
@@ -123,15 +123,13 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
         output_wcs.pixel_shape = naxis1, naxis2
     
     if orbit_inset_full_encounter:
-        psp_poses, psp_times = planets.trace_psp_orbit(
-            utils.extract_encounter_number(ifiles[0]))
+        psp_poses, psp_times = planets.trace_psp_orbit(E)
         f = psp_poses.cartesian.norm() < 0.25 * u.au
         psp_poses = psp_poses[f]
         psp_times = psp_times[f]
     else:
         psp_poses, psp_times = planets.trace_psp_orbit(
-            utils.extract_encounter_number(ifiles[0]), t_start=timesteps[0],
-            t_stop=timesteps[-1])
+            E, t_start=timesteps[0], t_stop=timesteps[-1])
     psp_poses = psp_poses.transform_to(orbital_frame.PSPOrbitalFrame)
     
     output_wcses = []
@@ -169,14 +167,14 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     generic_make_video(_draw_WISPR_video_frame, timesteps, ifiles, ofiles,
                        output_wcses, planet_poses, repeat(psp_poses),
                        repeat(psp_times), file2next, file2prev, plot_args,
-                       debris_mask_dir, image_scale, extra_plot_fcn, 
+                       debris_mask_dir, image_scale, extra_plot_fcn, E,
                        parallel=n_procs, fps=fps, save_to=save_location)
 
 
 def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
                             psp_poses, psp_times, file2next, file2prev,
                             plot_args, debris_mask_dir, image_scale,
-                            extra_plot_fcn):
+                            extra_plot_fcn, E):
     if debris_mask_dir is not None:
         if ifile is not None:
             mask = data_cleaning.find_mask(debris_mask_dir, ifile)
@@ -211,7 +209,7 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
         timestamp = timestamp.strftime("%Y-%m-%d %H:%M")
         ax.text(40/image_scale, 30/image_scale,
-                f"E{utils.extract_encounter_number(ifile)}, {timestamp}",
+                f"E{E}, {timestamp}",
                 color='white')
         
         ax_orbit = ax.inset_axes([50/image_scale, 80/image_scale,
