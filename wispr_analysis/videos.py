@@ -35,7 +35,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                      n_procs=os.cpu_count(), debris_mask_dir=None,
                      save_location=None, timestepper='inner', dt=None,
                      duration=None, fps=30, blank_threshold=30*u.min,
-                     output_wcs=None, image_scale=1,
+                     output_wcs=None, image_scale=1, extra_plot_fcn=None,
                      orbit_inset_full_encounter=False, **plot_args):
     if isinstance(data_dir, tuple):
         ifiles, ofiles = data_dir
@@ -169,29 +169,33 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     generic_make_video(_draw_WISPR_video_frame, timesteps, ifiles, ofiles,
                        output_wcses, planet_poses, repeat(psp_poses),
                        repeat(psp_times), file2next, file2prev, plot_args,
-                       debris_mask_dir, image_scale, parallel=n_procs, fps=fps,
-                       save_to=save_location)
+                       debris_mask_dir, image_scale, extra_plot_fcn, 
+                       parallel=n_procs, fps=fps, save_to=save_location)
 
 
 def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
                             psp_poses, psp_times, file2next, file2prev,
-                            plot_args, debris_mask_dir, image_scale):
+                            plot_args, debris_mask_dir, image_scale,
+                            extra_plot_fcn):
     if debris_mask_dir is not None:
         if ifile is not None:
             mask = data_cleaning.find_mask(debris_mask_dir, ifile)
             data = data_cleaning.dust_streak_filter(
                 file2prev.get(ifile), ifile, file2next.get(ifile),
                 sliding_window_stride=3, precomputed_mask=mask, radec=False)
-            ifile = (data, ifile)
+            comp_input_i = (data, ifile)
         if ofile is not None:
             mask = data_cleaning.find_mask(debris_mask_dir, ofile)
             data = data_cleaning.dust_streak_filter(
                 file2prev.get(ofile), ofile, file2next.get(ofile),
                 sliding_window_stride=3, precomputed_mask=mask, radec=False)
-            ofile = (data, ofile)
+            comp_input_o = (data, ofile)
+    else:
+        comp_input_i = ifile
+        comp_input_o = ofile
     
     composite, _ = composites.gen_composite(
-        ifile, ofile, wcsh=wcs, bounds=False, image_trim=[[10]*4]*2)
+        comp_input_i, comp_input_o, wcsh=wcs, bounds=False, image_trim=[[10]*4]*2)
     
     with matplotlib.style.context('dark_background'):
         width = wcs.pixel_shape[0] / 280 * image_scale + 1.5
@@ -205,8 +209,10 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         plot_utils.plot_WISPR(composite, wcs=wcs, **plot_args)
         ax = plt.gca()
         timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
+        timestamp = timestamp.strftime("%Y-%m-%d %H:%M")
         ax.text(40/image_scale, 30/image_scale,
-                timestamp.strftime("%Y-%m-%d, %H:%M"), color='white')
+                f"E{utils.extract_encounter_number(ifile)}, {timestamp}",
+                color='white')
         
         ax_orbit = ax.inset_axes([50/image_scale, 80/image_scale,
                                   300/image_scale, 300/image_scale],
@@ -240,6 +246,9 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         ax.text(360 / image_scale, 80 / image_scale,
                  f"$\\theta$ = {theta:.1f} $^\ocirc$",
                  color='white')
+        
+        if extra_plot_fcn is not None:
+            extra_plot_fcn(ax, t, ifile, ofile, wcs)
         
         fig.savefig(out_file)
 
