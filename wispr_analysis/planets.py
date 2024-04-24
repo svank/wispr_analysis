@@ -116,7 +116,8 @@ def _to_hp(planet_pos, sc_pos, date):
     return c.transform_to(sunpy.coordinates.frames.Helioprojective)
 
 
-def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
+def locate_planets(date, only=None, cache_dir=None, sc_pos=None,
+                   as_helioprojective=True):
     """
     Returns the helioprojective coordinates of planets as seen by PSP
     
@@ -159,7 +160,7 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
     et = spice.str2et(date)
     
     sc_pos_orig = sc_pos
-    if sc_pos is None:
+    if sc_pos is None and as_helioprojective:
         spacecraft_id = '-96'
         state, _ = spice.spkezr(spacecraft_id, et, 'HCI', 'None', 'Sun')
         sc_pos = state[:3]
@@ -171,7 +172,16 @@ def locate_planets(date, only=None, cache_dir=None, sc_pos=None):
         if planet not in ("Mercury", "Venus", "Earth"):
             planet = planet + " Barycenter"
         state, _ = spice.spkezr(planet, et, 'HCI', 'None', 'Sun')
-        planet_poses.append(_to_hp(state[:3], sc_pos, date))
+        if as_helioprojective:
+            coord = _to_hp(state[:3], sc_pos, date)
+        else:
+            coord = astropy.coordinates.SkyCoord(
+            *state[:3],
+            frame=sunpy.coordinates.frames.HeliocentricInertial,
+            representation_type='cartesian',
+            unit='km',
+            obstime=date)
+        planet_poses.append(coord)
     
     if cache_dir is not None and sc_pos_orig is None:
         cache_path = os.path.join(cache_dir, cache_fname)

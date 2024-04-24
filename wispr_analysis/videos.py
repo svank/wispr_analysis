@@ -1,7 +1,5 @@
 import copy
 from datetime import datetime, timezone
-import functools
-import gc
 from itertools import repeat
 from math import floor
 import multiprocessing
@@ -44,11 +42,9 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     else:
         ifiles, ofiles = utils.collect_files(data_dir, between=between,
                                             filters=filters,
-                                            include_headers=True)
-        ifiles, iheaders = zip(*ifiles)
-        ofiles, oheaders = zip(*ofiles)
-        itimes = np.array(utils.to_timestamp(iheaders))
-        otimes = np.array(utils.to_timestamp(oheaders))
+                                            include_headers=False)
+        itimes = np.array(utils.to_timestamp(ifiles))
+        otimes = np.array(utils.to_timestamp(ofiles))
     file2time = dict(zip(ifiles + ofiles, np.concatenate((itimes, otimes))))
     file2next = dict(zip(ifiles[:-1] + ofiles[:-1], ifiles[1:] + ofiles[1:]))
     file2prev = dict(zip(ifiles[1:] + ofiles[1:], ifiles[:-1] + ofiles[:-1]))
@@ -160,7 +156,7 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
             # pre-compute the positions here in the main process.
             if plot_args.get('mark_planets', False):
                 planet_poses.append(
-                    (wcs, planets.locate_planets(wcs.wcs.dateavg)))
+                    (wcs, planets.locate_planets(wcs.wcs.dateavg, as_helioprojective=False)))
             else:
                 planet_poses.append(False)
     
