@@ -93,14 +93,20 @@ def test_to_timestamp_empty():
 
 
 def test_to_from_timestamp():
-    assert (utils.from_timestamp(utils.to_timestamp('2021-02-03T12:13:14.5'))
+    assert (utils.from_timestamp(utils.to_timestamp('2021-02-03T12:13:14.5'),
+                                 millis=True)
             == '2021-02-03T12:13:14.500000')
+    assert (utils.from_timestamp(utils.to_timestamp('2021-02-03T12:13:14.5'))
+            == '2021-02-03T12:13:14')
     assert (utils.from_timestamp(utils.to_timestamp('2021-02-03T12:13:14'))
             == '2021-02-03T12:13:14')
+    assert (utils.from_timestamp(utils.to_timestamp('2021-02-03T12:13:14'),
+                                 nice=True)
+            == '2021-02-03 12:13')
 
 
 def test_to_from_timestamp_list():
-    times = ['2021-02-03T12:13:14.500000', '2021-02-03T12:13:14']
+    times = ['2021-02-03T12:13:15', '2021-02-03T12:13:14']
     
     assert utils.from_timestamp(utils.to_timestamp(times)) == times
 
