@@ -81,13 +81,15 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
     return dt.timestamp()
 
 
-def from_timestamp(timestamp, millis=False):
+def from_timestamp(timestamp, millis=False, nice=False):
     if isinstance(timestamp, Iterable) and not isinstance(timestamp, str):
         return [from_timestamp(ts) for ts in timestamp]
     if not isinstance(timestamp, (float, int)):
         raise ValueError("Invalid timestamp type")
     datetime = to_timestamp(timestamp, as_datetime=True)
-    if not millis or timestamp - int(timestamp) == 0:
+    if nice:
+        fmtstr = "%Y-%m-%d %H:%M"
+    elif not millis or timestamp - int(timestamp) == 0:
         fmtstr = "%Y-%m-%dT%H:%M:%S"
     else:
         fmtstr = "%Y-%m-%dT%H:%M:%S.%f"
