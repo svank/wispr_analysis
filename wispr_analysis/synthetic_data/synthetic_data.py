@@ -1091,7 +1091,8 @@ class SimulationData:
     
     def plot_overhead(self, t0=None, mark_epsilon=False, mark_FOV_pos=False,
                       mark_FOV=False, fov_bins=[], mark_derot_ax=False,
-                      detail=False, fovdat=None, ax=None, point_scale=1):
+                      detail=False, fovdat=None, ax=None, point_scale=1,
+                      focus_sc=True):
         scale_factor = u.R_sun.to(u.m)
         if ax is None:
             ax = plt.gca()
@@ -1128,6 +1129,66 @@ class SimulationData:
             dy = sc.at(t0+.5).y - sc.y
             ax.plot([x, sc.x[0], sc.x[0] - dx[0]],
                     [y, sc.y[0], sc.y[0] + dy[0]], color='gray')
+
+        if mark_derot_ax:
+            length = (10 if detail else 30) * scale_factor
+            ax.arrow(
+                sc.x[0] - length/2, sc.y[0], length, 0, color='.7', zorder=18)
+            ax.arrow(
+                sc.x[0], sc.y[0]-length/2, 0, length, color='.7', zorder=18)
+
+        if detail:
+            half_window = 8 * (u.R_sun.to(u.m))
+            ax.set_xlim(sc.x - half_window, sc.x + half_window)
+            ax.set_ylim(sc.y - half_window, sc.y + half_window)
+            ax.plot([0, sc.x[0]], [0, sc.y[0]], color='w', alpha=.5)
+            t = np.arctan2(sc.y[0], sc.x[0])
+            r = sc.r[0]
+            rs = np.arange(0, r, u.R_sun.to(u.m))
+            ax.scatter(
+                rs * np.cos(t), rs * np.sin(t), color='white', s=25, alpha=.5)
+        elif focus_sc:
+            margin = 1
+            xs = list(sc.at(self.t).x)
+            xmin, xmax = np.nanmin(xs), np.nanmax(xs)
+            xrange = xmax - xmin
+            
+            ys = list(sc.at(self.t).y)
+            ymin, ymax = np.nanmin(ys), np.nanmax(ys)
+            yrange = ymax - ymin
+            
+            if yrange == 0:
+                yrange = xrange
+            if xrange == 0:
+                xrange = yrange
+            
+            tbounds = np.array([self.t[0], self.t[-1]])
+            for parcel in self.parcels:
+                with parcel.at_temp(tbounds) as p:
+                    xs.extend(p.x)
+                    ys.extend(p.y)
+            
+            xs = [x for x in xs
+                  if xmin - margin * xrange <= x <= xmax + margin * xrange]
+            ax.set_xlim(np.nanmin(xs)-1, np.nanmax(xs)+1)
+
+            ys = [y for y in ys
+                  if ymin - margin * yrange <= y <= ymax + margin * yrange]
+            
+            xmin, xmax = np.nanmax(xs), np.nanmin(xs)
+            if np.nanmax(np.abs(ys)) < 2 * (xmax - xmin) and xmin < 0 < xmax:
+                # Include the Sun in the plot y-range if it doesn't warp the
+                # aspect ratio too much and if the Sun is already included in
+                # the x plotting range
+                ys.append(0)
+            else:
+                # Put "To Sun" arrows?
+                pass
+
+            ax.set_ylim(np.nanmin(ys)-1, np.nanmax(ys) + 1)
+        else:
+            ax.autoscale()
+            ax.autoscale(False)
         
         if mark_FOV:
             x1, x2 = 0, fovdat[0].shape[1]
@@ -1161,63 +1222,6 @@ class SimulationData:
                     ax.plot(binx, biny, color='w', alpha=0.75, lw=2.5,
                             zorder=18)
 
-        if mark_derot_ax:
-            length = (10 if detail else 30) * scale_factor
-            ax.arrow(
-                sc.x[0] - length/2, sc.y[0], length, 0, color='.7', zorder=18)
-            ax.arrow(
-                sc.x[0], sc.y[0]-length/2, 0, length, color='.7', zorder=18)
-
-        if detail:
-            half_window = 8 * (u.R_sun.to(u.m))
-            ax.set_xlim(sc.x - half_window, sc.x + half_window)
-            ax.set_ylim(sc.y - half_window, sc.y + half_window)
-            ax.plot([0, sc.x[0]], [0, sc.y[0]], color='w', alpha=.5)
-            t = np.arctan2(sc.y[0], sc.x[0])
-            r = sc.r[0]
-            rs = np.arange(0, r, u.R_sun.to(u.m))
-            ax.scatter(
-                rs * np.cos(t), rs * np.sin(t), color='white', s=25, alpha=.5)
-        else:
-            margin = 1
-            xs = list(sc.at(self.t).x)
-            xmin, xmax = np.nanmin(xs), np.nanmax(xs)
-            xrange = xmax - xmin
-            
-            ys = list(sc.at(self.t).y)
-            ymin, ymax = np.nanmin(ys), np.nanmax(ys)
-            yrange = ymax - ymin
-
-            if yrange == 0:
-                yrange = xrange
-            if xrange == 0:
-                xrange = yrange
-            
-            tbounds = np.array([self.t[0], self.t[-1]])
-            for parcel in self.parcels:
-                with parcel.at_temp(tbounds) as p:
-                    xs.extend(p.x)
-                    ys.extend(p.y)
-            
-            xs = [x for x in xs
-                  if xmin - margin * xrange <= x <= xmax + margin * xrange]
-            ax.set_xlim(np.nanmin(xs)-1, np.nanmax(xs)+1)
-
-            ys = [y for y in ys
-                  if ymin - margin * yrange <= y <= ymax + margin * yrange]
-            
-            xmin, xmax = np.nanmax(xs), np.nanmin(xs)
-            if np.nanmax(np.abs(ys)) < 2 * (xmax - xmin) and xmin < 0 < xmax:
-                # Include the Sun in the plot y-range if it doesn't warp the
-                # aspect ratio too much and if the Sun is already included in
-                # the x plotting range
-                ys.append(0)
-            else:
-                # Put "To Sun" arrows?
-                pass
-
-            ax.set_ylim(np.nanmin(ys)-1, np.nanmax(ys) + 1)
-
         ax.set_aspect('equal')
         ax.set_facecolor('black')
         ax.set_xlabel("X ($R_\odot$)")
@@ -1229,10 +1233,14 @@ class SimulationData:
             lambda x, pos: f"{x / u.R_sun.to(u.m):.0f}")
         ax.xaxis.set_major_formatter(formatter)
         ax.yaxis.set_major_formatter(formatter)
+        spacing = 20 * u.R_sun.to(u.m)
+        xmin, xmax = ax.get_xlim()
+        while xmax - xmin < spacing * 6:
+            spacing /= 2
         ax.xaxis.set_major_locator(
-            matplotlib.ticker.MultipleLocator(20*u.R_sun.to(u.m)))
+            matplotlib.ticker.MultipleLocator(spacing))
         ax.yaxis.set_major_locator(
-            matplotlib.ticker.MultipleLocator(20*u.R_sun.to(u.m)))
+            matplotlib.ticker.MultipleLocator(spacing))
     
     def plot_and_synthesize(
             self, t0, include_overhead=True, include_overhead_detail=False,
@@ -1240,16 +1248,15 @@ class SimulationData:
             mark_bins=False, mark_derot_ax=False, synthesize=True,
             radiants=False, vmin=0, vmax=None, parcel_width=1, synth_kw={},
             synth_fixed_fov=None, synth_celest_wcs=False,
-            output_quantity='flux', use_default_figsize=False,
-            synth_colorbar=False, point_scale=1):
+            output_quantity='flux', use_default_figsize=False, figsize=None,
+            synth_colorbar=False, point_scale=1, focus_sc=True):
         sc = self.sc.at(t0)
         n_plots = include_overhead + include_overhead_detail + synthesize
         if use_default_figsize:
             figsize = None
-        else:
+        elif figsize is None:
             figsize = (7 * n_plots, 7)
-        fig, axs = plt.subplots(1, n_plots, squeeze=False,
-                                layout='constrained')
+        fig, axs = plt.subplots(1, n_plots, squeeze=False, figsize=figsize)
         axs = list(axs.flatten())
         
         ax_overhead = axs.pop(0) if include_overhead else None
@@ -1317,7 +1324,8 @@ class SimulationData:
                 ax=ax_overhead, t0=t0, mark_epsilon=mark_epsilon,
                 mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
                 mark_derot_ax=mark_derot_ax, fov_bins=fov_bins, detail=False,
-                fovdat=(image, wcs), point_scale=point_scale)
+                fovdat=(image, wcs), point_scale=point_scale,
+                focus_sc=focus_sc)
         
         if ax_overhead_detail is not None:
             self.plot_overhead(
