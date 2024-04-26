@@ -673,7 +673,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         slice = np.s_[::1]
     xx, yy = np.meshgrid(x[slice], y[slice])
     # Compute the LOS direction of each pixel (as helioprojective coordinates)
-    los = image_wcs.pixel_to_world(xx, yy)
+    los = image_wcs.pixel_to_world(xx, yy).transform_to('helioprojective')
     Tx, Ty = los.Tx, los.Ty
     
     # Compute the (approximate) width and height of each pixel in degrees,
@@ -1189,13 +1189,29 @@ class SimulationData:
         else:
             ax.autoscale()
             ax.autoscale(False)
+
+        # Label axes in R_sun without having to re-scale every coordinate
+        formatter = matplotlib.ticker.FuncFormatter(
+            lambda x, pos: f"{x / u.R_sun.to(u.m):.0f}")
+        ax.xaxis.set_major_formatter(formatter)
+        ax.yaxis.set_major_formatter(formatter)
+        tick_spacing = 20 * u.R_sun.to(u.m)
+        xmin, xmax = ax.get_xlim()
+        while xmax - xmin < tick_spacing * 6:
+            tick_spacing /= 2
+        ax.xaxis.set_major_locator(
+            matplotlib.ticker.MultipleLocator(tick_spacing))
+        ax.yaxis.set_major_locator(
+            matplotlib.ticker.MultipleLocator(tick_spacing))
         
         if mark_FOV:
             x1, x2 = 0, fovdat[0].shape[1]
             y1 = fovdat[0].shape[0] / 2
             y2 = y1
-            lon1, lat1 = fovdat[1].pixel_to_world_values(x1, y1)
-            lon2, lat2 = fovdat[1].pixel_to_world_values(x2, y2)
+            edge1 = fovdat[1].pixel_to_world(x1, y1).transform_to('helioprojective')
+            edge2 = fovdat[1].pixel_to_world(x2, y2).transform_to('helioprojective')
+            lon1 = edge1.Tx.to_value(u.deg)
+            lon2 = edge2.Tx.to_value(u.deg)
             
             to_sun_x = -sc.x
             to_sun_y = -sc.y
@@ -1203,7 +1219,8 @@ class SimulationData:
             t1 = to_sun_theta - lon1 * np.pi/180
             t2 = to_sun_theta - lon2 * np.pi/180
             
-            size = (max(fov_bins) if len(fov_bins) else 15) * scale_factor
+            size = (max(fov_bins) * scale_factor
+                    if len(fov_bins) else tick_spacing)
             x1 = size * np.cos(t1) + sc.x
             x2 = size * np.cos(t2) + sc.x
             y1 = size * np.sin(t1) + sc.y
@@ -1227,27 +1244,13 @@ class SimulationData:
         ax.set_xlabel("X ($R_\odot$)")
         if not detail:
             ax.set_ylabel("Y ($R_\odot$)")
-
-        # Label axes in R_sun without having to re-scale every coordinate
-        formatter = matplotlib.ticker.FuncFormatter(
-            lambda x, pos: f"{x / u.R_sun.to(u.m):.0f}")
-        ax.xaxis.set_major_formatter(formatter)
-        ax.yaxis.set_major_formatter(formatter)
-        spacing = 20 * u.R_sun.to(u.m)
-        xmin, xmax = ax.get_xlim()
-        while xmax - xmin < spacing * 6:
-            spacing /= 2
-        ax.xaxis.set_major_locator(
-            matplotlib.ticker.MultipleLocator(spacing))
-        ax.yaxis.set_major_locator(
-            matplotlib.ticker.MultipleLocator(spacing))
     
     def plot_and_synthesize(
             self, t0, include_overhead=True, include_overhead_detail=False,
             mark_epsilon=False, mark_FOV_pos=False, mark_FOV=False,
             mark_bins=False, mark_derot_ax=False, synthesize=True,
             radiants=False, vmin=0, vmax=None, parcel_width=1, synth_kw={},
-            synth_fixed_fov=None, synth_celest_wcs=False,
+            synth_fixed_fov=None, synth_celest_wcs=False, synth_wcs=None,
             output_quantity='flux', use_default_figsize=False, figsize=None,
             synth_colorbar=False, point_scale=1, focus_sc=True):
         sc = self.sc.at(t0)
@@ -1264,9 +1267,13 @@ class SimulationData:
         ax_syn = axs.pop(0) if synthesize else None
 
         # Even if we're not showing it, make an image so we can grab the FOV
+        if synth_wcs is not None and synth_wcs.pixel_shape is not None:
+            x, y = synth_wcs.pixel_shape
+        else:
+            x, y = 400, 250
         image, wcs = synthesize_image(
-            self.sc, self.parcels, t0,
-            output_size_x=400, output_size_y=250 if synthesize else 1,
+            self.sc, self.parcels, t0, image_wcs=synth_wcs,
+            output_size_x=x, output_size_y=y if synthesize else 1,
             parcel_width=parcel_width, fixed_fov_range=synth_fixed_fov,
             celestial_wcs=synth_celest_wcs, output_quantity=output_quantity,
             projection='CAR' if synth_fixed_fov else 'ARC', **synth_kw)
@@ -1301,8 +1308,10 @@ class SimulationData:
             lon.set_major_formatter('dd')
             if synth_celest_wcs:
                 ax_syn.set_xlabel("Fixed Longitude")
-            else:
+            elif wcs.wcs.ctype[0].startswith("HP"):
                 ax_syn.set_xlabel("HP Longitude")
+            elif wcs.wcs.ctype[0].startswith("PS"):
+                ax_syn.set_xlabel("PSP Frame Longitude")
             ax_syn.set_ylabel(" ")
             ax_syn.coords.grid(color='white', alpha=0.1)
             
