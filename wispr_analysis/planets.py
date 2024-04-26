@@ -338,6 +338,8 @@ def format_date(date):
     date : ``str``
         The date in "YYYY-MM-DD HH:MM:SS.SSS" format
     """
+    if isinstance(date, u.Quantity):
+        date = date.to_value(u.s)
     if isinstance(date, (int, float)):
         if isinstance(date, int) and date < 30:
             try:

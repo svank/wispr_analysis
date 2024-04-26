@@ -7,6 +7,7 @@ import re
 import warnings
 
 from astropy.io import fits
+import astropy.units as u
 from astropy.wcs import WCS
 from astropy.wcs.wcsapi import BaseLowLevelWCS, HighLevelWCSWrapper
 import numba
@@ -36,7 +37,10 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
     """
     if isinstance(datestring, fits.Header):
         datestring = datestring['date-avg']
-    if isinstance(datestring, Iterable) and not isinstance(datestring, str):
+    if (isinstance(datestring, Iterable)
+            and not isinstance(datestring, str)
+            and (not isinstance(datestring, u.Quantity)
+                 or datestring.size > 1)):
         return [to_timestamp(
                     x, as_datetime=as_datetime, read_headers=read_headers)
                 for x in datestring]
@@ -44,6 +48,8 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
         if as_datetime:
             return datetime.fromtimestamp(datestring, timezone.utc)
         return datestring
+    if isinstance(datestring, u.Quantity):
+        return to_timestamp(datestring.to_value(u.s), as_datetime=as_datetime)
     if datestring == '':
         if as_datetime:
             return None
