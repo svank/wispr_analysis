@@ -331,7 +331,12 @@ class InteractiveClicker:
         return observed_stationary_point, alpha, dalpha_dt, t0, tstart, tstop
 
 
-class NoninteractiveClicker(InteractiveClicker):
+class AutoClicker(InteractiveClicker):
+    """
+    A variant of InteractiveClicker that automatically "clicks" the peak pixel.
+    
+    Results can be collected with ``conclude``.
+    """
     def __init__(self, frames, wcs, times, plot_opts={}):
         self.frames = frames
         self.wcs = wcs
@@ -347,3 +352,7 @@ class NoninteractiveClicker(InteractiveClicker):
             clicked_coord = wcs.pixel_to_world(x, y)
             self.clicked_alphas.append(clicked_coord.lat)
             self.clicked_lons.append(clicked_coord.lon)
+    
+    def show(self):
+        raise NotImplementedError(
+            "This method does not exist for AutoClicker")
