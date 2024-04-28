@@ -1197,7 +1197,7 @@ class SimulationData:
         ax.yaxis.set_major_formatter(formatter)
         tick_spacing = 20 * u.R_sun.to(u.m)
         xmin, xmax = ax.get_xlim()
-        while xmax - xmin < tick_spacing * 6:
+        while xmax - xmin < tick_spacing * 5:
             tick_spacing /= 2
         ax.xaxis.set_major_locator(
             matplotlib.ticker.MultipleLocator(tick_spacing))
@@ -1226,10 +1226,8 @@ class SimulationData:
             y1 = size * np.sin(t1) + sc.y
             y2 = size * np.sin(t2) + sc.y
 
-            ax.plot([x1, sc.x, x2],
-                            [y1, sc.y, y2],
-                            color='w', alpha=0.75,
-                            lw=2.5, zorder=18)
+            ax.plot([x1, sc.x, x2], [y1, sc.y, y2],
+                    color='w', alpha=0.75, lw=2.5, zorder=18)
             if len(fov_bins):
                 rs = np.array(fov_bins) * scale_factor
                 ts = np.linspace(t1, t2, 50)
@@ -1252,15 +1250,20 @@ class SimulationData:
             radiants=False, vmin=0, vmax=None, parcel_width=1, synth_kw={},
             synth_fixed_fov=None, synth_celest_wcs=False, synth_wcs=None,
             output_quantity='flux', use_default_figsize=False, figsize=None,
-            synth_colorbar=False, point_scale=1, focus_sc=True):
+            synth_colorbar=False, point_scale=1, focus_sc=True,
+            as_column=False):
         sc = self.sc.at(t0)
         n_plots = include_overhead + include_overhead_detail + synthesize
         if use_default_figsize:
             figsize = None
         elif figsize is None:
             figsize = (7 * n_plots, 7)
-        fig, axs = plt.subplots(1, n_plots, squeeze=False, figsize=figsize)
+        if as_column:
+            fig, axs = plt.subplots(n_plots, 1, squeeze=False, figsize=figsize)
+        else:
+            fig, axs = plt.subplots(1, n_plots, squeeze=False, figsize=figsize)
         axs = list(axs.flatten())
+        all_axes = axs[:]
         
         ax_overhead = axs.pop(0) if include_overhead else None
         ax_overhead_detail = axs.pop(0) if include_overhead_detail else None
@@ -1291,7 +1294,12 @@ class SimulationData:
             
             # Recreate axis w/ WCS projection (I wish there were a better way!)
             ax_syn.remove()
-            ax_syn = fig.add_subplot(100 + 10*n_plots + n_plots, projection=wcs)
+            ax_idx = all_axes.index(ax_syn)
+            if as_column:
+                ax_syn = fig.add_subplot(n_plots, 1, n_plots, projection=wcs)
+            else:
+                ax_syn = fig.add_subplot(1, n_plots, n_plots, projection=wcs)
+            all_axes[ax_idx] = ax_syn
             if vmax is None:
                 if output_quantity == 'dsun':
                     vmax = 2 * sc.at(t0).r / u.R_sun.to(u.m)
@@ -1299,7 +1307,7 @@ class SimulationData:
                     vmax = image.max()
                     if vmax == 0:
                         vmax = 1
-            im = ax_syn.imshow(image, origin='lower', aspect='equal', cmap=cmap,
+            im = ax_syn.imshow(image, origin='lower',           aspect='equal', cmap=cmap,
                             norm=matplotlib.colors.PowerNorm(
                                 gamma=gamma, vmin=vmin, vmax=vmax))
             
@@ -1342,6 +1350,7 @@ class SimulationData:
                 mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
                 mark_derot_ax=mark_derot_ax, fov_bins=[], detail=True,
                 fovdat=(image, wcs), point_scale=point_scale)
+        return all_axes
 
 
 def create_simdat_from_spice(E, nt=400):
