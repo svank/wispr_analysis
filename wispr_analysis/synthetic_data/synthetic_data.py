@@ -1358,16 +1358,17 @@ def create_simdat_from_spice(E, nt=400):
     return simdat
 
 
-def add_random_parcels(simdat, v=100_000, n_parcels=500):
+def add_random_parcels(simdat, v=100_000, n_parcels=500, theta_dist=0):
     t_min = 120 * u.R_sun.to(u.m) / v
     
-    for this_theta, t_start in zip(
+    for this_phi, this_theta, t_start in zip(
             np.random.uniform(0, 2*np.pi, n_parcels),
+            np.random.uniform(-np.pi, np.pi, n_parcels) * theta_dist,
             np.random.uniform(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
         r = 1.1 * u.R_sun
-        x = r * np.cos(this_theta)
-        y = r * np.sin(this_theta)
-        z = 0 * u.m
+        x = r * np.cos(this_phi) * np.cos(this_theta)
+        y = r * np.sin(this_phi) * np.cos(this_theta)
+        z = r * np.sin(this_theta)
         
         simdat.parcels.append(LinearThing(
             x=x.value, y=y.value, z=z.value,
