@@ -149,6 +149,73 @@ def psp_to_hpc(PSPcoord, HPframe):
     return matrix
 
 
+class PSPFrameHelioprojective(astropy.coordinates.BaseCoordinateFrame):
+    """
+    This is a helioprojective frame with its equator tilted to align with the
+    PSP orbital plane. In this frame, WISPR's pointing is constant.
+    
+    This is a time-varying frame, as PSP's orbital plane changes with every
+    Venus encounter.
+    
+    This frame is registered under the WCS keys PSLN and PSLT.
+
+    Parameters
+    ----------
+    obstime
+        The time of the observation, defining the PSP orbital plane.
+    observer
+        The observer, defining the origin of the coordinate system.
+    """
+    default_representation = astropy.coordinates.representation.SphericalRepresentation
+    obstime = astropy.coordinates.TimeAttribute()
+    observer = sunpy.coordinates.frameattributes.ObserverCoordinateAttribute(
+        sunpy.coordinates.HeliographicStonyhurst)
+
+
+@astropy.coordinates.frame_transform_graph.transform(
+    astropy.coordinates.DynamicMatrixTransform,
+    sunpy.coordinates.Helioprojective,
+    PSPFrameHelioprojective)
+def hpc_to_psphp(HPcoord, PSPframe):
+    if not _observers_are_equal(HPcoord.observer, PSPframe.observer):
+        raise ValueError("Observers are not equal")
+    if not _times_are_equal(HPcoord.obstime, PSPframe.obstime):
+        raise ValueError("Obstimes are not equal")
+    obstime = HPcoord.obstime or PSPframe.obstime
+    observer = HPcoord.observer or PSPframe.observer
+    orbital_north = astropy.coordinates.SkyCoord(
+        0*u.m, 0*u.m, 1000*u.m, representation_type='cartesian',
+        frame=PSPOrbitalFrame, obstime=obstime, observer=observer)
+    orbital_north = orbital_north.transform_to('helioprojective')
+    angle = np.arctan2(orbital_north.Tx, orbital_north.Ty)
+    
+    matrix = spice.axisar([1, 0, 0], angle.to_value(u.rad))
+    
+    return matrix
+
+
+@astropy.coordinates.frame_transform_graph.transform(
+    astropy.coordinates.DynamicMatrixTransform,
+    PSPFrameHelioprojective,
+    sunpy.coordinates.Helioprojective)
+def psphp_to_hpc(PSPcoord, HPframe):
+    if not _observers_are_equal(PSPcoord.observer, HPframe.observer):
+        raise ValueError("Observers are not equal")
+    if not _times_are_equal(PSPcoord.obstime, HPframe.obstime):
+        raise ValueError("Obstimes are not equal")
+    obstime = PSPcoord.obstime or HPframe.obstime
+    observer = PSPcoord.observer or HPframe.observer
+    orbital_north = astropy.coordinates.SkyCoord(
+        0*u.m, 0*u.m, 1000*u.m, representation_type='cartesian',
+        frame=PSPOrbitalFrame, obstime=obstime, observer=observer)
+    orbital_north = orbital_north.transform_to('helioprojective')
+    angle = np.arctan2(orbital_north.Tx, orbital_north.Ty)
+    
+    matrix = spice.axisar([1, 0, 0], -angle.to_value(u.rad))
+    
+    return matrix
+
+
 def orbital_plane_wcs_frame_mapping(wcs):
     ctypes = {c[:4] for c in wcs.wcs.ctype}
     if ({'PSLN', 'PSLT'} <= ctypes):
@@ -156,6 +223,9 @@ def orbital_plane_wcs_frame_mapping(wcs):
         observer = _get_observer_from_wcs(wcs, dateobs)
         return PSPFrame(obstime=dateobs, observer=observer)
     if ({'POLN', 'POLT'} <= ctypes):
+        dateobs = wcs.wcs.dateavg or wcs.wcs.dateobs or None
+        return PSPOrbitalFrame(obstime=dateobs)
+    if ({'PFLN', 'PFLT'} <= ctypes):
         dateobs = wcs.wcs.dateavg or wcs.wcs.dateobs or None
         return PSPOrbitalFrame(obstime=dateobs)
     return None
@@ -178,6 +248,15 @@ def orbital_plane_frame_wcs_mapping(frame, projection='TAN'):
         wcs.wcs.ctype = f'PSLN-{projection}', f'PSLT-{projection}'
         wcs.wcs.cunit = ['deg', 'deg']
         return wcs
+    
+    if isinstance(frame, PSPFrameHelioprojective):
+        wcs = astropy.wcs.WCS(naxis=2)
+        if frame.obstime:
+            wcs.wcs.dateobs = frame.obstime.utc.isot
+        _set_wcs_aux_obs_coord(wcs, frame.observer)
+        wcs.wcs.ctype = f'PFLN-{projection}', f'PFLT-{projection}'
+        wcs.wcs.cunit = ['deg', 'deg']
+        return wcs
     return None
 
 
@@ -189,6 +268,8 @@ astropy.wcs.wcsapi.fitswcs.CTYPE_TO_UCD1_CUSTOM.append(
     {
         "PSLN": "pos.pspframe.lon",
         "PSLT": "pos.pspframe.lat",
+        "PFLN": "pos.pspframehelioprojective.lon",
+        "PFLT": "pos.pspframehelioprojective.lat",
         "POLN": "pos.psporbitalframe.lon",
         "POLT": "pos.psporbitalframe.lat",
     })
