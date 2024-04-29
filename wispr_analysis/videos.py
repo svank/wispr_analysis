@@ -33,8 +33,10 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
                      n_procs=os.cpu_count(), debris_mask_dir=None,
                      save_location=None, timestepper='inner', dt=None,
                      duration=None, fps=30, blank_threshold=30*u.min,
-                     output_wcs=None, image_scale=1, extra_plot_fcn=None,
-                     orbit_inset_full_encounter=False, **plot_args):
+                     output_wcs=None, image_scale=1, dpi=100, 
+                     extra_plot_fcn=None, orbit_inset_full_encounter=False,
+                     inset_scale=1,
+                     **plot_args):
     if isinstance(data_dir, tuple):
         ifiles, ofiles = data_dir
         itimes = np.array(utils.to_timestamp(ifiles))
@@ -163,14 +165,15 @@ def make_WISPR_video(data_dir, between=(None, None), filters=None,
     generic_make_video(_draw_WISPR_video_frame, timesteps, ifiles, ofiles,
                        output_wcses, planet_poses, repeat(psp_poses),
                        repeat(psp_times), file2next, file2prev, plot_args,
-                       debris_mask_dir, image_scale, extra_plot_fcn, E,
+                       debris_mask_dir, image_scale, extra_plot_fcn, E, dpi,
+                       inset_scale,
                        parallel=n_procs, fps=fps, save_to=save_location)
 
 
 def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
                             psp_poses, psp_times, file2next, file2prev,
                             plot_args, debris_mask_dir, image_scale,
-                            extra_plot_fcn, E):
+                            extra_plot_fcn, E, dpi, inset_scale):
     if debris_mask_dir is not None:
         if ifile is not None:
             mask = data_cleaning.find_mask(debris_mask_dir, ifile)
@@ -196,7 +199,7 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         height = wcs.pixel_shape[1] / 280 * image_scale + 1.5
         fig = plt.figure(
             figsize=(width, height),
-            dpi=150)
+            dpi=dpi)
         fig.subplots_adjust(top=1-.5/height, bottom=.75/height, left=1.1/width, right=1-.4/width)
         plot_args = copy.copy(plot_args)
         plot_args['mark_planets'] = planet_poses
@@ -204,42 +207,53 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
         ax = plt.gca()
         timestamp = datetime.fromtimestamp(t, tz=timezone.utc)
         timestamp = timestamp.strftime("%Y-%m-%d %H:%M")
-        ax.text(40/image_scale, 30/image_scale,
+        ax.text(40/image_scale*inset_scale, 30/image_scale*inset_scale,
                 f"E{E}, {timestamp}",
-                color='white')
+                color='white', fontsize=10*inset_scale)
         
-        ax_orbit = ax.inset_axes([50/image_scale, 80/image_scale,
-                                  300/image_scale, 300/image_scale],
+        ax_orbit = ax.inset_axes([50/image_scale*inset_scale,
+                                  80/image_scale*inset_scale,
+                                  300/image_scale*inset_scale,
+                                  300/image_scale*inset_scale],
                                  transform=ax.transData)
         cart = psp_poses.cartesian
         ax_orbit.margins(.1, .1)
         ax_orbit.set_aspect('equal')
-        ax_orbit.plot(cart.x, cart.y, color='.4', zorder=-1)
+        ax_orbit.plot(cart.x, cart.y, color='.4', zorder=-1, lw=1.5*inset_scale)
         r = np.interp(t, psp_times, psp_poses.distance)
         theta = np.interp(
             t, psp_times, np.unwrap(psp_poses.lon.to_value(u.deg), period=360))
         theta %= 360
         sc_x = r * np.cos(theta * np.pi/180)
         sc_y = r * np.sin(theta * np.pi/180)
-        ax_orbit.scatter(sc_x, sc_y, s=6, color='1')
-        ax_orbit.scatter(0, 0, color='yellow')
+        ax_orbit.scatter(sc_x, sc_y, s=6*inset_scale, color='1')
+        ax_orbit.scatter(0, 0, color='yellow', s=20*inset_scale)
         ax_orbit.xaxis.set_visible(False)
         ax_orbit.yaxis.set_visible(False)
-        ax_orbit.set_title("PSP position", fontdict={'fontsize': 9})
+        ax_orbit.set_title("PSP position", fontsize=10*inset_scale)
         for spine in ax_orbit.spines.values():
             spine.set_color('.4')
         
-        ax.text(360 / image_scale, 185 / image_scale,
-                 f"r = {r.to_value(u.R_sun):.1f}", color='white')
-        ax.text(550 / image_scale, 185 / image_scale,
-                 f"R$_\odot$",color='white')
-        ax.text(360 / image_scale, 135 / image_scale,
-                 f"      {r.to_value(u.AU):.2f}", color='white')
-        ax.text(550 / image_scale, 135 / image_scale,
-                 f"AU", color='white')
-        ax.text(360 / image_scale, 80 / image_scale,
+        ax.text(360 / image_scale * inset_scale,
+                185 / image_scale * inset_scale,
+                 f"r = {r.to_value(u.R_sun):.1f}",
+                 color='white', fontsize=10*inset_scale)
+        ax.text(550 / image_scale * inset_scale,
+                185 / image_scale * inset_scale,
+                 f"R$_\odot$",
+                 color='white', fontsize=10*inset_scale)
+        ax.text(360 / image_scale * inset_scale,
+                135 / image_scale * inset_scale,
+                 f"      {r.to_value(u.AU):.2f}",
+                 color='white', fontsize=10*inset_scale)
+        ax.text(550 / image_scale * inset_scale,
+                135 / image_scale * inset_scale,
+                 f"AU",
+                 color='white', fontsize=10*inset_scale)
+        ax.text(360 / image_scale * inset_scale,
+                80 / image_scale * inset_scale,
                  f"$\\theta$ = {theta:.1f} $^\ocirc$",
-                 color='white')
+                 color='white', fontsize=10*inset_scale)
         
         if extra_plot_fcn is not None:
             extra_plot_fcn(ax, t, ifile, ofile, wcs)
