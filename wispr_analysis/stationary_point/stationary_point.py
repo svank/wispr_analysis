@@ -115,23 +115,43 @@ class ConstraintsResult:
     v_pxy_c1: u.Quantity
     delta_phi_c2: u.Quantity
     v_pxy_c2: u.Quantity
+    delta_phi_c3: u.Quantity
+    v_pxy_c3: u.Quantity
     vxy2vp: None
     vp2vxy: None
     dphi_grid: u.Quantity
     vpxy_grid: u.Quantity
     dalpha_dt_err: u.Quantity
-    state: StationaryPointState
-
-    def get_intersects_vxy(self):
+    con_state: StationaryPointState
+    div_state: StationaryPointState
+    
+    def get_intersect_vxy(self, all=False):
+        likely = None
+        intersects = self._get_intersects_vxy(
+            self.delta_phi_c2, self.v_pxy_c2, self.delta_phi_c1, self.v_pxy_c1,
+            self.con_state)
+        if len(intersects):
+            likely = intersects[0]
+        intersects.extend(self._get_intersects_vxy(
+            self.delta_phi_c3, self.v_pxy_c3, self.delta_phi_c1, self.v_pxy_c1,
+            self.div_state))
+        if len(intersects):
+            likely = intersects[-1]
+        if all:
+            return likely, intersects
+        return likely
+    
+    @classmethod
+    def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, state):
         intersects = []
-        for i in range(len(self.delta_phi_c2)-1):
-            x1 = self.delta_phi_c2[i]
-            x2 = self.delta_phi_c2[i+1]
-            y1 = self.v_pxy_c2[i]
-            y2 = self.v_pxy_c2[i+1]
+        for i in range(len(xs1)-1):
+            x1 = xs1[i]
+            x2 = xs1[i+1]
+            y1 = ys1[i]
+            y2 = ys1[i+1]
             x3, x4 = x1, x2
-            y3 = np.interp(x3, self.delta_phi_c1, self.v_pxy_c1)
-            y4 = np.interp(x4, self.delta_phi_c1, self.v_pxy_c1)
+            y3 = np.interp(x3, xs2, ys2)
+            y4 = np.interp(x4, xs2, ys2)
             if np.any(np.isnan(u.Quantity((y1, y2, y3, y4)))):
                 continue
             if min(y3, y4) > max(y1, y2) or min(y1, y2) > max(y3, y4):
@@ -155,15 +175,11 @@ class ConstraintsResult:
             yint = ((a1 * c2) - (a2 * c1)) / det
             if xint < x1 or xint > x2:
                 continue
-            state = self.state.copy()
+            state = state.copy()
             state.delta_phi = xint
             state.v_pxy = yint
             intersects.append(state)
         return intersects
-
-    def get_intersects_vp(self):
-        dphi, vpxy = self.get_intersects_vxy()
-        return dphi, self.vxy2vp(vpxy, dphi)
 
     @property
     def v_p_c1(self):
@@ -173,8 +189,11 @@ class ConstraintsResult:
     def v_p_c2(self):
         return self.vxy2vp(self.v_pxy_c2, self.delta_phi_c2)
     
-def calc_constraints(time, stationary_point, alpha, dalpha_dt, diverging=False):
-    state = DivergingStationaryPointState if diverging else StationaryPointState
+    @property
+    def v_p_c3(self):
+        return self.vxy2vp(self.v_pxy_c3, self.delta_phi_c3)
+    
+def calc_constraints(time, stationary_point, alpha, dalpha_dt):
     forward_elongation = planets.get_psp_forward_as_elongation(time)
     forward = forward_elongation.transform_to('pspframe').lon
     sun = SkyCoord(0*u.deg, 0*u.deg, frame='helioprojective',
@@ -188,71 +207,71 @@ def calc_constraints(time, stationary_point, alpha, dalpha_dt, diverging=False):
     r_sc = psp.cartesian.norm()
     v_sc = psp.cartesian.differentials['s'].norm()
 
-    state = state(epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc, alpha=alpha)
+    con_state = StationaryPointState(
+        epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc, alpha=alpha)
+    div_state = DivergingStationaryPointState(
+        epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc, alpha=alpha)
     
-    delta_phi_c1 = np.arange(5, 130, 2) * u.deg
-    state.delta_phi = delta_phi_c1
-    v_pxy_c1 = state.v_pxy_constr1
+    delta_phis = [np.arange(0, 130, 2) * u.deg]
+    con_state.delta_phi = delta_phis[0]
+    v_pxys = [con_state.v_pxy_constr1]
+    
+    for state in (con_state, div_state):
+        dphis = np.linspace(5, 130, 500)*u.deg
+        vpxys = np.linspace(50, 350, 500) * u.km/u.s
+        dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
+        state.delta_phi = dphi_grid
+        state.v_pxy = vpxy_grid
+        dalpha_dt_grid = state.dalpha_dt
 
-    dphis = np.linspace(5, 130, 500)*u.deg
-    vpxys = np.linspace(50, 350, 500) * u.km/u.s
-    dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
-    state.delta_phi = dphi_grid
-    state.v_pxy = vpxy_grid
-    dalpha_dt_grid = state.dalpha_dt
-
-    dalpha_dt_err = dalpha_dt_grid - dalpha_dt
-    err_range = np.ptp(np.abs(dalpha_dt_err))
-    
-    # phibest = []
-    # for i in range(len(vpxys)):
-    #     strip = np.abs(dalpha_dt_err[i])
-    #     j = np.argmin(strip)
-    #     if j == 0 or j == len(strip) - 1 or strip[j] > 0.01 * err_range:
-    #         phibest.append(np.nan * u.deg)
-    #     else:
-    #         phibest.append(dphis[j])
-    
-    # phibest = u.Quantity(phibest)
-    # delta_phi_c2 = phibest
-    # v_pxy_c2 = vpxys
-    
-    vbest = []
-    for i in range(len(dphis)):
-        strip = np.abs(dalpha_dt_err[:, i])
-        j = np.argmin(strip)
-        if j == 0 or j == len(strip) - 1 or strip[j] > 0.01 * err_range:
-            vbest.append(np.nan * u.m/u.s)
-        else:
-            vbest.append(vpxys[j])
-    
-    vbest = u.Quantity(vbest)
-    delta_phi_c2 = dphis
-    v_pxy_c2 = vbest
+        dalpha_dt_err = dalpha_dt_grid - dalpha_dt
+        err_range = np.ptp(np.abs(dalpha_dt_err))
+        
+        # phibest = []
+        # for i in range(len(vpxys)):
+        #     strip = np.abs(dalpha_dt_err[i])
+        #     j = np.argmin(strip)
+        #     if j == 0 or j == len(strip) - 1 or strip[j] > 0.01 * err_range:
+        #         phibest.append(np.nan * u.deg)
+        #     else:
+        #         phibest.append(dphis[j])
+        
+        # phibest = u.Quantity(phibest)
+        # delta_phi_c2 = phibest
+        # v_pxy_c2 = vpxys
+        
+        vbest = []
+        for i in range(len(dphis)):
+            strip = np.abs(dalpha_dt_err[:, i])
+            j = np.argmin(strip)
+            if j == 0 or j == len(strip) - 1 or strip[j] > 0.01 * err_range:
+                vbest.append(np.nan * u.m/u.s)
+            else:
+                vbest.append(vpxys[j])
+        
+        vbest = u.Quantity(vbest)
+        delta_phis.append(dphis)
+        v_pxys.append(vbest)
 
     def vxy2vp(vxy, dphi):
-        dxy = r_sc * np.sin(dphi) / np.sin(180*u.deg - epsilon - dphi)
-        dz = dxy * np.tan(alpha)
-        gamma_prime = 180*u.deg - epsilon - dphi
-        rpxy = r_sc * np.sin(epsilon) / np.sin(gamma_prime)
-        theta = np.arctan(dz / rpxy)
-        
-        vp = vxy / np.cos(theta)
+        # con_state and div_state will produce the same results here
+        s = con_state.copy()
+        s.delta_phi = dphi
+        vp = vxy / np.cos(s.theta)
         return vp
     def vp2vxy(vp, dphi):
-        dxy = r_sc * np.sin(dphi) / np.sin(180*u.deg - epsilon - dphi)
-        dz = dxy * np.tan(alpha)
-        gamma_prime = 180*u.deg - epsilon - dphi
-        rpxy = r_sc * np.sin(epsilon) / np.sin(gamma_prime)
-        theta = np.arctan(dz / rpxy)
-        
-        vxy = vp * np.cos(theta)
+        # con_state and div_state will produce the same results here
+        s = con_state.copy()
+        s.delta_phi = dphi
+        vxy = vp * np.cos(s.theta)
         return vxy
 
     return ConstraintsResult(
-        delta_phi_c1=delta_phi_c1, v_pxy_c1=v_pxy_c1, delta_phi_c2=delta_phi_c2,
-        v_pxy_c2=v_pxy_c2, vxy2vp=vxy2vp, vp2vxy=vp2vxy, dphi_grid=dphis,
-        vpxy_grid=vpxys, dalpha_dt_err=dalpha_dt_err, state=state)
+        delta_phi_c1=delta_phis[0], v_pxy_c1=v_pxys[0],
+        delta_phi_c2=delta_phis[1], v_pxy_c2=v_pxys[1],
+        delta_phi_c3=delta_phis[2], v_pxy_c3=v_pxys[2],
+        vxy2vp=vxy2vp, vp2vxy=vp2vxy, dphi_grid=dphis, vpxy_grid=vpxys,
+        dalpha_dt_err=dalpha_dt_err, con_state=con_state, div_state=div_state)
 
 
 class InteractiveClicker:
@@ -325,7 +344,7 @@ class InteractiveClicker:
             print(f"alpha = {alpha.value:.3f} * u.Unit('{str(alpha.unit)}')")
             print(f"dalpha_dt = {dalpha_dt.value:.4e} "
                   f"* u.Unit('{str(dalpha_dt.unit)}')")
-            print(f"t0 = {t0.value:.4e} * u.Unit('{str(t0.unit)}')")
+            print(f"t0 = {t0.value:.0f} * u.Unit('{str(t0.unit)}')")
             print(f"tstart = {tstart.value:.0f} * u.Unit('{str(tstart.unit)}')")
             print(f"tstop = {tstop.value:.0f} * u.Unit('{str(tstop.unit)}')")
         return observed_stationary_point, alpha, dalpha_dt, t0, tstart, tstop
