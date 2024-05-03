@@ -1205,37 +1205,42 @@ class SimulationData:
             matplotlib.ticker.MultipleLocator(tick_spacing))
         
         if mark_FOV:
-            x1, x2 = 0, fovdat[0].shape[1]
-            y1 = fovdat[0].shape[0] / 2
-            y2 = y1
-            edge1 = fovdat[1].pixel_to_world(x1, y1).transform_to('helioprojective')
-            edge2 = fovdat[1].pixel_to_world(x2, y2).transform_to('helioprojective')
-            lon1 = edge1.Tx.to_value(u.deg)
-            lon2 = edge2.Tx.to_value(u.deg)
-            
-            to_sun_x = -sc.x
-            to_sun_y = -sc.y
-            to_sun_theta = np.arctan2(to_sun_y, to_sun_x)
-            t1 = to_sun_theta - lon1 * np.pi/180
-            t2 = to_sun_theta - lon2 * np.pi/180
-            
-            size = (max(fov_bins) * scale_factor
-                    if len(fov_bins) else tick_spacing)
-            x1 = size * np.cos(t1) + sc.x
-            x2 = size * np.cos(t2) + sc.x
-            y1 = size * np.sin(t1) + sc.y
-            y2 = size * np.sin(t2) + sc.y
+            if isinstance(fovdat[0], np.ndarray):
+                fovdat = [fovdat]
+            for fov, ls in zip(fovdat, ['-', '--', '-.', ':']):
+                x1, x2 = 0, fov[0].shape[1]
+                y1 = fov[0].shape[0] / 2
+                y2 = y1
+                edge1 = fov[1].pixel_to_world(x1, y1)
+                edge1 = edge1.transform_to('helioprojective')
+                edge2 = fov[1].pixel_to_world(x2, y2)
+                edge2 = edge2.transform_to('helioprojective')
+                lon1 = edge1.Tx.to_value(u.deg)
+                lon2 = edge2.Tx.to_value(u.deg)
+                
+                to_sun_x = -sc.x
+                to_sun_y = -sc.y
+                to_sun_theta = np.arctan2(to_sun_y, to_sun_x)
+                t1 = to_sun_theta - lon1 * np.pi/180
+                t2 = to_sun_theta - lon2 * np.pi/180
+                
+                size = (max(fov_bins) * scale_factor
+                        if len(fov_bins) else tick_spacing)
+                x1 = size * np.cos(t1) + sc.x
+                x2 = size * np.cos(t2) + sc.x
+                y1 = size * np.sin(t1) + sc.y
+                y2 = size * np.sin(t2) + sc.y
 
-            ax.plot([x1, sc.x, x2], [y1, sc.y, y2],
-                    color='w', alpha=0.75, lw=2.5, zorder=18)
-            if len(fov_bins):
-                rs = np.array(fov_bins) * scale_factor
-                ts = np.linspace(t1, t2, 50)
-                for r in rs:
-                    binx = r * np.cos(ts) + sc.x
-                    biny = r * np.sin(ts) + sc.y
-                    ax.plot(binx, biny, color='w', alpha=0.75, lw=2.5,
-                            zorder=18)
+                ax.plot([x1, sc.x, x2], [y1, sc.y, y2],
+                        color='w', alpha=0.75, lw=2.5, zorder=18, ls=ls)
+                if len(fov_bins):
+                    rs = np.array(fov_bins) * scale_factor
+                    ts = np.linspace(t1, t2, 50)
+                    for r in rs:
+                        binx = r * np.cos(ts) + sc.x
+                        biny = r * np.sin(ts) + sc.y
+                        ax.plot(binx, biny, color='w', alpha=0.75, lw=2.5,
+                                zorder=18, ls=ls)
 
         ax.set_aspect('equal')
         ax.set_facecolor('black')
