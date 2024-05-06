@@ -221,8 +221,8 @@ def calc_constraints(time, stationary_point, alpha, dalpha_dt):
     v_pxys = [con_state.v_pxy_constr1]
     
     for state in (con_state, div_state):
-        dphis = np.linspace(5, 130, 500)*u.deg
-        vpxys = np.linspace(50, 350, 500) * u.km/u.s
+        dphis = np.linspace(2, 130, 600)*u.deg
+        vpxys = np.linspace(0, 450, 600) * u.km/u.s
         dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
         state.delta_phi = dphi_grid
         state.v_pxy = vpxy_grid
