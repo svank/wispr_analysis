@@ -262,16 +262,14 @@ def orbital_plane_frame_wcs_mapping(frame, projection='TAN'):
 
 astropy.wcs.utils.WCS_FRAME_MAPPINGS.append([orbital_plane_wcs_frame_mapping])
 astropy.wcs.utils.FRAME_WCS_MAPPINGS.append([orbital_plane_frame_wcs_mapping])
-# TODO: Once astropy releases with PR 15626, these can/should get "custom:"
-# prefixes
 astropy.wcs.wcsapi.fitswcs.CTYPE_TO_UCD1_CUSTOM.append(
     {
-        "PSLN": "pos.pspframe.lon",
-        "PSLT": "pos.pspframe.lat",
-        "PFLN": "pos.pspframehelioprojective.lon",
-        "PFLT": "pos.pspframehelioprojective.lat",
-        "POLN": "pos.psporbitalframe.lon",
-        "POLT": "pos.psporbitalframe.lat",
+        "PSLN": "custom:pos.pspframe.lon",
+        "PSLT": "custom:pos.pspframe.lat",
+        "PFLN": "custom:pos.pspframehelioprojective.lon",
+        "PFLT": "custom:pos.pspframehelioprojective.lat",
+        "POLN": "custom:pos.psporbitalframe.lon",
+        "POLT": "custom:pos.psporbitalframe.lat",
     })
 
 

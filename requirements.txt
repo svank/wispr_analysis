@@ -1,7 +1,7 @@
 # This file may be used to create an environment using:
 # $ conda create --name <env> --file <this file>
 # platform: osx-arm64
-astropy  @ git+https://github.com/svank/astropy@slice_wcs_distortion_table
+astropy>=6.1
 ipython>=8.3
 ipywidgets>=8.0
 # Set version more strictly to avoid test failures

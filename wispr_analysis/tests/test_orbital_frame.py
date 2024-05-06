@@ -63,8 +63,8 @@ def test_orbital_plane_frame_wcs_mapping():
     assert list(wcs.wcs.ctype) == ['POLN-CAR', 'POLT-CAR']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'pos.psporbitalframe.lon',
-        'pos.psporbitalframe.lat']
+        'custom:pos.psporbitalframe.lon',
+        'custom:pos.psporbitalframe.lat']
 
 
 def test_psp_frame_wcs_mapping():
@@ -76,8 +76,8 @@ def test_psp_frame_wcs_mapping():
     assert list(wcs.wcs.ctype) == ['PSLN-CAR', 'PSLT-CAR']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'pos.pspframe.lon',
-        'pos.pspframe.lat']
+        'custom:pos.pspframe.lon',
+        'custom:pos.pspframe.lat']
     assert wcs.wcs.aux.hgln_obs == observer.lon.to_value(u.deg)
     assert wcs.wcs.aux.hglt_obs == observer.lat.to_value(u.deg)
     assert wcs.wcs.aux.dsun_obs == observer.radius.to_value(u.m)
@@ -90,8 +90,8 @@ def test_wcs_from_psporbital_coord():
     assert list(wcs.wcs.ctype) == ['POLN-TAN', 'POLT-TAN']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'pos.psporbitalframe.lon',
-        'pos.psporbitalframe.lat']
+        'custom:pos.psporbitalframe.lon',
+        'custom:pos.psporbitalframe.lat']
 
 
 def test_wcs_from_psp_coord():
@@ -103,8 +103,8 @@ def test_wcs_from_psp_coord():
     assert list(wcs.wcs.ctype) == ['PSLN-TAN', 'PSLT-TAN']
     assert wcs.wcs.dateobs == obstime
     assert wcs.world_axis_physical_types == [
-        'pos.pspframe.lon',
-        'pos.pspframe.lat']
+        'custom:pos.pspframe.lon',
+        'custom:pos.pspframe.lat']
     assert wcs.wcs.aux.hgln_obs == observer.lon.to_value(u.deg)
     assert wcs.wcs.aux.hglt_obs == observer.lat.to_value(u.deg)
     assert wcs.wcs.aux.dsun_obs == observer.radius.to_value(u.m)
