@@ -38,6 +38,10 @@ class StationaryPointState:
     @property
     def d_xy(self):
         return self.r_sc * np.sin(self.delta_phi) / np.sin(self.gamma_prime)
+    
+    @property
+    def d_p_sc(self):
+        return np.sqrt(self.d_xy**2 + self.d_z**2)
 
     @property
     def r_pxy(self):
