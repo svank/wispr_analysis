@@ -309,6 +309,7 @@ class InteractiveClicker:
                     self.clicked_times.append(t)
                 except Exception as e:
                     plt.title(e)
+            fig = plt.figure(figsize=(13, 13))
             plot_utils.plot_WISPR(
                 self.frames[i], wcs=self.wcs, **self.plot_opts)
             plt.title(utils.to_timestamp(self.times[i], as_datetime=True)
@@ -320,7 +321,6 @@ class InteractiveClicker:
                 marker_x, marker_y = self.wcs.world_to_pixel_values(
                     self.clicked_lons[j], self.clicked_alphas[j])
             marker, = plt.plot(marker_x, marker_y, '+', color='C1')
-            fig = plt.gcf()
             fig.canvas.mpl_connect('button_press_event', onclick)
             plt.show()
         return interactive(draw_frame, i=(0, len(self.frames)))
