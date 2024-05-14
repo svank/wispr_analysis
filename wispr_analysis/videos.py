@@ -1,3 +1,4 @@
+import base64
 import copy
 from datetime import datetime, timezone
 from itertools import repeat
@@ -9,11 +10,13 @@ import subprocess
 import tempfile
 import warnings
 
+import matplotlib.animation
+
 from astropy.io import fits
 import astropy.time
 import astropy.units as u
 from astropy.wcs import WCS
-from IPython.display import display, Video
+from IPython.display import display, HTML, Video
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -500,7 +503,7 @@ def _function_caller(*args, **kwargs):
 
 
 def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
-        save_to=None):
+        display_fps=None, save_to=None, display_fmt='mp4'):
     """
     Helper function for generating a video
     
@@ -529,10 +532,20 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         the maximum number of worker processes.
     fps : int
         The frames-per-second to use for the final video.
+    display_fps : int
+        The frames-per-second at which to display. While the ``fps`` parameter
+        determines how many frames are rendered, those frames will be duplicated
+        to achieve this frame rate. This may produce a smoother-playing video,
+        and ApJ may require this to reach at least 30 fps.
     save_to : str
         An output path where the video should be saved. If None, the video is
         displayed in Jupyter.
+    display_fmt : str
+        If ``save_to`` is ``None``, sets how the movie will be rendered in
+        Jupyter. Options are ``mp4`` and ``js``.
     """
+    if display_fps is None:
+        display_fps = fps
     with tempfile.TemporaryDirectory() as tmpdir:
         def output_names():
             i = 0
@@ -571,16 +584,39 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
             for args in tqdm(zip(*ready_arg_list), total=n):
                 _function_caller(*args)
         
-        video_file = os.path.join(tmpdir, 'out.mp4')
-        subprocess.call(
-                f"ffmpeg -loglevel error -r {fps} "
-                f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
-                 "-pix_fmt yuv420p -x264-params keyint=30 "
-                f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {video_file}",
-                shell=True)
-        if save_to is None:
-            display(Video(video_file, embed=True,
-                html_attributes="controls loop"))
+        if display_fmt == 'mp4' or save_to is not None:
+            video_file = os.path.join(tmpdir, 'out.mp4')
+            subprocess.call(
+                    f"ffmpeg -loglevel error -r {fps} "
+                    f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
+                    "-pix_fmt yuv420p -x264-params keyint=30 "
+                    f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' "
+                    f"-filter:v fps={display_fps} "
+                    f"{video_file}",
+                    shell=True)
+            if save_to is None:
+                display(Video(video_file, embed=True,
+                    html_attributes="controls loop"))
+            else:
+                shutil.move(video_file, os.path.expanduser(save_to))
+        elif display_fmt == 'js':
+            # This is a very hackish effort to connect my parallel frame
+            # rendering to matplotlib's nice JS output
+            writer = matplotlib.animation.HTMLWriter(fps=fps, embed_frames=True)
+            writer.frame_format = 'png'
+            out_file = os.path.join(tmpdir, "output.html")
+            fig = matplotlib.figure.Figure()
+            writer.setup(fig, out_file)
+            for file in sorted(os.listdir(tmpdir)):
+                with open(os.path.join(tmpdir, file), 'rb') as f:
+                    data = f.read()
+                imgdata64 = base64.encodebytes(data).decode('ascii')
+                writer._saved_frames.append(imgdata64)
+            writer.finish()
+            plt.close(fig)
+            with open(out_file) as f:
+                html = f.read()
+            display(HTML(html))
         else:
-            shutil.move(video_file, os.path.expanduser(save_to))
+            raise ValueError("Unrecognized display_fmt {display_fmt}")
 
