@@ -544,8 +544,6 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         If ``save_to`` is ``None``, sets how the movie will be rendered in
         Jupyter. Options are ``mp4`` and ``js``.
     """
-    if display_fps is None:
-        display_fps = fps
     with tempfile.TemporaryDirectory() as tmpdir:
         def output_names():
             i = 0
@@ -586,12 +584,14 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         
         if display_fmt == 'mp4' or save_to is not None:
             video_file = os.path.join(tmpdir, 'out.mp4')
+            display_fps_insert = (f"-filter:v fps={display_fps} "
+                                  if display_fps is not None else "")
             subprocess.call(
                     f"ffmpeg -loglevel error -r {fps} "
                     f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
                     "-pix_fmt yuv420p -x264-params keyint=30 "
                     f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' "
-                    f"-filter:v fps={display_fps} "
+                    + display_fps_insert +
                     f"{video_file}",
                     shell=True)
             if save_to is None:
