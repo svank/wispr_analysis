@@ -139,7 +139,7 @@ class ConstraintsResult:
         intersects.extend(self._get_intersects_vxy(
             self.delta_phi_c3, self.v_pxy_c3, self.delta_phi_c1, self.v_pxy_c1,
             self.div_state))
-        if len(intersects):
+        if len(intersects) and likely is None:
             likely = intersects[-1]
         if all:
             return likely, intersects
@@ -221,8 +221,12 @@ def calc_constraints(time, stationary_point, alpha, dalpha_dt):
     v_pxys = [con_state.v_pxy_constr1]
     
     for state in (con_state, div_state):
+        # TODO: Sometimes, the curve we compute from the grid points will have
+        # little jitters that cause one intersect to actually be multiple
+        # intersects. Those could be deduplicated somehow---maybe use them as
+        # seeds to iteratively find the "true" intersect?
         dphis = np.linspace(2, 130, 600)*u.deg
-        vpxys = np.linspace(0, 450, 600) * u.km/u.s
+        vpxys = np.linspace(0, 450, 1000) * u.km/u.s
         dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
         state.delta_phi = dphi_grid
         state.v_pxy = vpxy_grid
