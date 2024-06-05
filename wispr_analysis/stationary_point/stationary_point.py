@@ -197,24 +197,27 @@ class ConstraintsResult:
     def v_p_c3(self):
         return self.vxy2vp(self.v_pxy_c3, self.delta_phi_c3)
     
-def calc_constraints(time, stationary_point, alpha, dalpha_dt):
-    forward_elongation = planets.get_psp_forward_as_elongation(time)
+def calc_constraints(measured_angles):
+    forward_elongation = planets.get_psp_forward_as_elongation(
+        measured_angles.t0)
     forward = forward_elongation.transform_to('pspframe').lon
     sun = SkyCoord(0*u.deg, 0*u.deg, frame='helioprojective',
                    observer=forward_elongation.observer,
                    obstime=forward_elongation.obstime)
     to_sun = sun.transform_to('pspframe').lon
-    beta = forward - stationary_point
-    epsilon = stationary_point - to_sun
+    beta = forward - measured_angles.stationary_point
+    epsilon = measured_angles.stationary_point - to_sun
     
-    psp = planets.locate_psp(time)
+    psp = planets.locate_psp(measured_angles.t0)
     r_sc = psp.cartesian.norm()
     v_sc = psp.cartesian.differentials['s'].norm()
 
     con_state = StationaryPointState(
-        epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc, alpha=alpha)
+        epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
+        alpha=measured_angles.alpha)
     div_state = DivergingStationaryPointState(
-        epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc, alpha=alpha)
+        epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
+        alpha=measured_angles.alpha)
     
     delta_phis = [np.arange(0, 130, 2) * u.deg]
     con_state.delta_phi = delta_phis[0]
@@ -232,7 +235,7 @@ def calc_constraints(time, stationary_point, alpha, dalpha_dt):
         state.v_pxy = vpxy_grid
         dalpha_dt_grid = state.dalpha_dt
 
-        dalpha_dt_err = dalpha_dt_grid - dalpha_dt
+        dalpha_dt_err = dalpha_dt_grid - measured_angles.dalpha_dt
         err_range = np.ptp(np.abs(dalpha_dt_err))
         
         # phibest = []
@@ -329,7 +332,7 @@ class InteractiveClicker:
             plt.show()
         return interactive(draw_frame, i=(0, len(self.frames)))
     
-    def conclude(self, print_outputs=True):
+    def conclude(self):
         observed_stationary_point = np.mean(u.Quantity(self.clicked_lons))
         
         alphas = u.Quantity(self.clicked_alphas)
@@ -345,17 +348,15 @@ class InteractiveClicker:
         tstop = times[-1]
         alpha = np.interp(t0, times, alphas)
         
-        if print_outputs:
-            print(f"observed_stationary_point = "
-                  f"{observed_stationary_point.value:.3f} "
-                  f"* u.Unit('{str(observed_stationary_point.unit)}')")
-            print(f"alpha = {alpha.value:.3f} * u.Unit('{str(alpha.unit)}')")
-            print(f"dalpha_dt = {dalpha_dt.value:.4e} "
-                  f"* u.Unit('{str(dalpha_dt.unit)}')")
-            print(f"t0 = {t0.value:.0f} * u.Unit('{str(t0.unit)}')")
-            print(f"tstart = {tstart.value:.0f} * u.Unit('{str(tstart.unit)}')")
-            print(f"tstop = {tstop.value:.0f} * u.Unit('{str(tstop.unit)}')")
-        return observed_stationary_point, alpha, dalpha_dt, t0, tstart, tstop
+        result = MeasuredAngles(
+            stationary_point=observed_stationary_point,
+            alpha=alpha,
+            dalpha_dt=dalpha_dt,
+            t0=t0,
+            tstart=tstart,
+            tstop=tstop)
+        
+        return result
 
 
 class AutoClicker(InteractiveClicker):
@@ -383,3 +384,28 @@ class AutoClicker(InteractiveClicker):
     def show(self):
         raise NotImplementedError(
             "This method does not exist for AutoClicker")
+
+
+@dataclass
+class MeasuredAngles:
+    stationary_point: u.Quantity
+    alpha: u.Quantity
+    dalpha_dt: u.Quantity
+    t0: u.Quantity
+    tstart: u.Quantity
+    tstop: u.Quantity
+    
+    def __str__(self):
+        return (f"MeasuredAngles(\n\tstationary_point="
+                f"{self.stationary_point.value:.3f} "
+                f"* u.Unit('{str(self.stationary_point.unit)}'),\n\t"
+                f"alpha={self.alpha.value:.3f} "
+                f"* u.Unit('{str(self.alpha.unit)}'),\n\t"
+                f"dalpha_dt={self.dalpha_dt.value:.4e} "
+                f"* u.Unit('{str(self.dalpha_dt.unit)}'),\n\t"
+                f"t0={self.t0.value:.0f} "
+                f"* u.Unit('{str(self.t0.unit)}'),\n\t"
+                f"tstart={self.tstart.value:.0f} "
+                f"* u.Unit('{str(self.tstart.unit)}'),\n\t"
+                f"tstop={self.tstop.value:.0f} "
+                f"* u.Unit('{str(self.tstop.unit)}'))")
