@@ -129,21 +129,23 @@ class ConstraintsResult:
     con_state: StationaryPointState
     div_state: StationaryPointState
     
-    def get_intersect_vxy(self, all=False):
-        likely = None
+    def get_intersect_vxy(self):
         intersects = self._get_intersects_vxy(
             self.delta_phi_c2, self.v_pxy_c2, self.delta_phi_c1, self.v_pxy_c1,
             self.con_state)
-        if len(intersects):
-            likely = intersects[0]
         intersects.extend(self._get_intersects_vxy(
             self.delta_phi_c3, self.v_pxy_c3, self.delta_phi_c1, self.v_pxy_c1,
             self.div_state))
-        if len(intersects) and likely is None:
-            likely = intersects[-1]
-        if all:
-            return likely, intersects
-        return likely
+        if len(intersects) == 0:
+            return None
+        if len(intersects) > 1:
+            # Sometimes you get duplicates at a single "real" intersection if
+            # the line from the numerical grid is a bit jittery
+            delta_phis = [intersect.delta_phi for intersect in intersects]
+            vpxys = [intersect.v_pxy for intersect in intersects]
+            assert np.all((delta_phis - np.mean(delta_phis)) < 1 * u.deg)
+            assert np.all((vpxys - np.mean(vpxys)) < 5 * u.km / u.s)
+        return intersects[0]
     
     @classmethod
     def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, state):
@@ -197,7 +199,7 @@ class ConstraintsResult:
     def v_p_c3(self):
         return self.vxy2vp(self.v_pxy_c3, self.delta_phi_c3)
     
-def calc_constraints(measured_angles):
+def calc_constraints(measured_angles, cutoff_c2_variants=True):
     forward_elongation = planets.get_psp_forward_as_elongation(
         measured_angles.t0)
     forward = forward_elongation.transform_to('pspframe').lon
@@ -207,6 +209,7 @@ def calc_constraints(measured_angles):
     to_sun = sun.transform_to('pspframe').lon
     beta = forward - measured_angles.stationary_point
     epsilon = measured_angles.stationary_point - to_sun
+    kappa = 180 * u.deg - beta - epsilon
     
     psp = planets.locate_psp(measured_angles.t0)
     r_sc = psp.cartesian.norm()
@@ -219,7 +222,7 @@ def calc_constraints(measured_angles):
         epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
         alpha=measured_angles.alpha)
     
-    delta_phis = [np.arange(0, 130, 2) * u.deg]
+    delta_phis = [np.arange(0, 130, 1) * u.deg]
     con_state.delta_phi = delta_phis[0]
     v_pxys = [con_state.v_pxy_constr1]
     
@@ -229,12 +232,19 @@ def calc_constraints(measured_angles):
         # intersects. Those could be deduplicated somehow---maybe use them as
         # seeds to iteratively find the "true" intersect?
         dphis = np.linspace(2, 130, 600)*u.deg
+        if cutoff_c2_variants:
+            if state is con_state:
+                dphis = dphis[dphis <= kappa]
+                dphis = np.append(dphis, kappa)
+            else:
+                dphis = dphis[dphis > kappa]
+                dphis = np.insert(dphis, 0, kappa)
         vpxys = np.linspace(0, 450, 1000) * u.km/u.s
         dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
         state.delta_phi = dphi_grid
         state.v_pxy = vpxy_grid
         dalpha_dt_grid = state.dalpha_dt
-
+        
         dalpha_dt_err = dalpha_dt_grid - measured_angles.dalpha_dt
         err_range = np.ptp(np.abs(dalpha_dt_err))
         
