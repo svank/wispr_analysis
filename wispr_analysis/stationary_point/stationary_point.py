@@ -6,6 +6,7 @@ import astropy.units as u
 from ipywidgets import interactive
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.optimize
 
 from .. import orbital_frame, planets, plot_utils, utils
 
@@ -75,6 +76,10 @@ class StationaryPointState:
     def dalpha_dt(self):
         return ((self.v_a * np.tan(self.alpha) + self.v_pxy * np.tan(self.theta))
                 / (self.d_xy * (1 + np.tan(self.alpha)**2)) * u.rad)
+    
+    @property
+    def kappa(self):
+        return 180 * u.deg - self.beta - self.epsilon
 
     def copy(self):
         return copy.deepcopy(self)
@@ -128,6 +133,7 @@ class ConstraintsResult:
     dalpha_dt_err: u.Quantity
     con_state: StationaryPointState
     div_state: StationaryPointState
+    measured_angles: "MeasuredAngles"
     
     def get_intersect_vxy(self):
         intersects = self._get_intersects_vxy(
@@ -136,16 +142,45 @@ class ConstraintsResult:
         intersects.extend(self._get_intersects_vxy(
             self.delta_phi_c3, self.v_pxy_c3, self.delta_phi_c1, self.v_pxy_c1,
             self.div_state))
+        # We'll take the intersection on our grid as a starting point to
+        # iteratively find the "true" intersection.
         if len(intersects) == 0:
-            return None
-        if len(intersects) > 1:
+            # If the parcel is very close to dphi = kappa, the first constraint
+            # crosses the second at or veeeery near the discontinuity, and so
+            # the intersect might be in that discontinuity. (I think the
+            # discont shouldn't exist if the parcel really is at kappa, but if
+            # the beta measurement is slightly off, kappa might be slightly off
+            # and the discont doesn't close perfectly). So if the edges of the
+            # two variants are close enough, try that as our initial guess.
+            if np.abs(self.v_pxy_c2[-1] - self.v_pxy_c3[0]) < 10 * u.km / u.s:
+                start_dphi = self.delta_phi_c2[-1]
+                intersects.append(self.con_state)
+            else:
+                return None
+        else:
             # Sometimes you get duplicates at a single "real" intersection if
-            # the line from the numerical grid is a bit jittery
-            delta_phis = [intersect.delta_phi for intersect in intersects]
-            vpxys = [intersect.v_pxy for intersect in intersects]
-            assert np.all((delta_phis - np.mean(delta_phis)) < 1 * u.deg)
-            assert np.all((vpxys - np.mean(vpxys)) < 5 * u.km / u.s)
-        return intersects[0]
+            # the line from the numerical grid is a bit jittery, so let's just
+            # take the mean as our starting point.
+            start_dphi = np.mean(
+                u.Quantity([intersect.delta_phi for intersect in intersects]))
+        con_state = self.con_state.copy()
+        div_state = self.div_state.copy()
+        def calc_resid(delta_phi):
+            delta_phi = delta_phi * u.deg
+            if delta_phi < con_state.kappa:
+                state = con_state
+            else:
+                state = div_state
+            state.delta_phi = delta_phi
+            state.v_pxy = state.v_pxy_constr1
+            return (state.dalpha_dt - self.measured_angles.dalpha_dt).value
+        root = scipy.optimize.root_scalar(calc_resid, bracket=[5, 130], x0=start_dphi.to_value(u.deg))
+        
+        intersect = intersects[0]
+        intersect.delta_phi = root.root * u.deg
+        intersect.v_pxy = intersect.v_pxy_constr1
+        
+        return intersect
     
     @classmethod
     def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, state):
@@ -209,7 +244,6 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True):
     to_sun = sun.transform_to('pspframe').lon
     beta = forward - measured_angles.stationary_point
     epsilon = measured_angles.stationary_point - to_sun
-    kappa = 180 * u.deg - beta - epsilon
     
     psp = planets.locate_psp(measured_angles.t0)
     r_sc = psp.cartesian.norm()
@@ -231,15 +265,15 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True):
         # little jitters that cause one intersect to actually be multiple
         # intersects. Those could be deduplicated somehow---maybe use them as
         # seeds to iteratively find the "true" intersect?
-        dphis = np.linspace(2, 130, 600)*u.deg
+        dphis = np.linspace(2, 130, 300) * u.deg
         if cutoff_c2_variants:
             if state is con_state:
-                dphis = dphis[dphis <= kappa]
-                dphis = np.append(dphis, kappa)
+                dphis = dphis[dphis <= state.kappa]
+                dphis = np.append(dphis, state.kappa)
             else:
-                dphis = dphis[dphis > kappa]
-                dphis = np.insert(dphis, 0, kappa)
-        vpxys = np.linspace(0, 450, 1000) * u.km/u.s
+                dphis = dphis[dphis > state.kappa]
+                dphis = np.insert(dphis, 0, state.kappa)
+        vpxys = np.linspace(0, 450, 600) * u.km/u.s
         dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
         state.delta_phi = dphi_grid
         state.v_pxy = vpxy_grid
@@ -292,7 +326,7 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True):
         delta_phi_c2=delta_phis[1], v_pxy_c2=v_pxys[1],
         delta_phi_c3=delta_phis[2], v_pxy_c3=v_pxys[2],
         vxy2vp=vxy2vp, vp2vxy=vp2vxy, dphi_grid=dphis, vpxy_grid=vpxys,
-        dalpha_dt_err=dalpha_dt_err, con_state=con_state, div_state=div_state)
+        dalpha_dt_err=dalpha_dt_err, con_state=con_state, div_state=div_state, measured_angles=measured_angles)
 
 
 class InteractiveClicker:
