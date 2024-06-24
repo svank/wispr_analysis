@@ -15,11 +15,11 @@ def test_calc_epsilon():
     
     Tx, Ty = sd.calc_hpc(sc, p)
     el, pa = sd.hpc_to_elpa(Tx, Ty)
-    assert el == approx(0)
+    assert el.to_value(u.deg) == approx(0)
     
     Tx, Ty = sd.calc_hpc(sc, p, t=1)
     el, pa = sd.hpc_to_elpa(Tx, Ty)
-    assert el == approx(45)
+    assert el.to_value(u.deg) == approx(45)
     
     p.vy = 0
     sc.vy = 5
@@ -27,11 +27,11 @@ def test_calc_epsilon():
     
     Tx, Ty = sd.calc_hpc(sc, p, t=1)
     el, pa = sd.hpc_to_elpa(Tx, Ty)
-    assert el == approx(90)
+    assert el.to_value(u.deg) == approx(90)
     
     Tx, Ty = sd.calc_hpc(sc, p, t=[0, 1])
     el, pa = sd.hpc_to_elpa(Tx, Ty)
-    np.testing.assert_allclose(el, [0, 90])
+    np.testing.assert_allclose(el, [0, 90]*u.deg)
 
 
 def setup_test_synthesize_image():
@@ -264,23 +264,23 @@ def test_calc_hpc():
     
     p = sd.LinearThing(x=10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(45)
-    assert Ty == approx(0)
+    assert Tx.to_value(u.deg) == approx(45)
+    assert Ty.to_value(u.deg) == approx(0)
     
     p = sd.LinearThing(x=-10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(-45)
-    assert Ty == approx(0)
+    assert Tx.to_value(u.deg) == approx(-45)
+    assert Ty.to_value(u.deg) == approx(0)
     
     p = sd.LinearThing(z=10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(0)
-    assert Ty == approx(45)
+    assert Tx.to_value(u.deg) == approx(0)
+    assert Ty.to_value(u.deg) == approx(45)
     
     p = sd.LinearThing(z=-10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(0)
-    assert Ty == approx(-45)
+    assert Tx.to_value(u.deg) == approx(0)
+    assert Ty.to_value(u.deg) == approx(-45)
     
     p = sd.LinearThing(x=10/np.sqrt(2), z=-10/np.sqrt(2))
     Tx, Ty = sd.calc_hpc(sc, p)
@@ -292,8 +292,8 @@ def test_calc_hpc():
     Tx_expected = np.arctan2(-np.sin(el) * np.sin(pa), np.cos(el))
     Ty_expected = np.arcsin(np.sin(el) * np.cos(pa))
     
-    assert Tx == approx(Tx_expected[0] * 180 / np.pi)
-    assert Ty == approx(Ty_expected[0] * 180 / np.pi)
+    assert Tx.to_value(u.deg) == approx(Tx_expected[0] * 180 / np.pi)
+    assert Ty.to_value(u.deg) == approx(Ty_expected[0] * 180 / np.pi)
 
 
 def test_calc_hpc_from_x():
@@ -301,23 +301,23 @@ def test_calc_hpc_from_x():
     
     p = sd.LinearThing(y=10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(45)
-    assert Ty == approx(0)
+    assert Tx.to_value(u.deg) == approx(45)
+    assert Ty.to_value(u.deg) == approx(0)
     
     p = sd.LinearThing(y=-10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(-45)
-    assert Ty == approx(0)
+    assert Tx.to_value(u.deg) == approx(-45)
+    assert Ty.to_value(u.deg) == approx(0)
     
     p = sd.LinearThing(z=10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(0)
-    assert Ty == approx(45)
+    assert Tx.to_value(u.deg) == approx(0)
+    assert Ty.to_value(u.deg) == approx(45)
     
     p = sd.LinearThing(z=-10)
     Tx, Ty = sd.calc_hpc(sc, p)
-    assert Tx == approx(0)
-    assert Ty == approx(-45)
+    assert Tx.to_value(u.deg) == approx(0)
+    assert Ty.to_value(u.deg) == approx(-45)
     
     p = sd.LinearThing(y=10/np.sqrt(2), z=-10/np.sqrt(2))
     Tx, Ty = sd.calc_hpc(sc, p)
@@ -329,8 +329,8 @@ def test_calc_hpc_from_x():
     Tx_expected = np.arctan2(-np.sin(el) * np.sin(pa), np.cos(el))
     Ty_expected = np.arcsin(np.sin(el) * np.cos(pa))
     
-    assert Tx == approx(Tx_expected[0] * 180 / np.pi)
-    assert Ty == approx(Ty_expected[0] * 180 / np.pi)
+    assert Tx.to_value(u.deg) == approx(Tx_expected[0] * 180 / np.pi)
+    assert Ty.to_value(u.deg) == approx(Ty_expected[0] * 180 / np.pi)
 
 
 def test_calculate_radiant():

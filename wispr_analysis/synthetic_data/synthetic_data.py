@@ -530,26 +530,32 @@ def xyz_to_hpc(xs, ys, zs, scx, scy, scz):
             sunpy.coordinates.frames.Helioprojective(
                 observer=sc_hc, obstime=obstime))
     
-    Tx = p_hpc.Tx.to(u.deg).value
-    Ty = p_hpc.Ty.to(u.deg).value
+    Tx = p_hpc.Tx.to(u.deg)
+    Ty = p_hpc.Ty.to(u.deg)
     
     return Tx, Ty
 
 
 def hpc_to_elpa(Tx, Ty):
-    Tx = np.deg2rad(Tx)
-    Ty = np.deg2rad(Ty)
+    if not isinstance(Tx, u.Quantity):
+        Tx = np.deg2rad(Tx)
+    if not isinstance(Ty, u.Quantity):
+        Ty = np.deg2rad(Ty)
     
     elongation = np.arctan2(
-            np.sqrt(np.cos(Ty)**2 * np.sin(Tx)**2 + np.sin(Ty)**2),
-            np.cos(Ty) * np.cos(Tx)
-            )
+        np.sqrt(np.cos(Ty)**2 * np.sin(Tx)**2 + np.sin(Ty)**2),
+        np.cos(Ty) * np.cos(Tx)
+    )
     pa = np.arctan2(
-        -np.cos(Ty) * np.sin(Tx),
-        np.sin(Ty)
+         -np.cos(Ty) * np.sin(Tx),
+         np.sin(Ty)
     )
     
-    return np.rad2deg(elongation), np.rad2deg(pa)
+    if not isinstance(elongation, u.Quantity):
+        elongation = np.rad2deg(elongation)
+    if not isinstance(pa, u.Quantity):
+        pa = np.rad2deg(pa)
+    return elongation, pa
 
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
