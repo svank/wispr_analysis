@@ -226,6 +226,7 @@ def locate_psp(date, cache_dir=None):
     psp_pos = astropy.coordinates.SkyCoord(x=x, y=y, z=z,
                                            v_x=vx, v_y=vy, v_z=vz,
                                            representation_type='cartesian',
+                                           observer='self',
                                            frame='heliocentricinertial',
                                            obstime=date)
     
