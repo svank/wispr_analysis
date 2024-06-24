@@ -1414,9 +1414,9 @@ class SimulationData:
 
         ax.set_aspect('equal')
         ax.set_facecolor('black')
-        ax.set_xlabel("X ($R_\odot$)")
+        ax.set_xlabel(r"X ($R_\odot$)")
         if not detail:
-            ax.set_ylabel("Y ($R_\odot$)")
+            ax.set_ylabel(r"Y ($R_\odot$)")
     
     def plot_and_synthesize(
             self, t0, include_overhead=True, include_overhead_detail=False,
