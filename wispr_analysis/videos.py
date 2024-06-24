@@ -510,10 +510,6 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
     Calls a function repeatedly to render each frame, then uses ffmpeg to
     combine the frames into a video, which is displayed in the current Jupyter
     notebook or saved to disk.
-    
-    Note: In some cases (particularly when using the parallel mode with many
-    cores), it may be helpful to apply the `wrap_with_gc` decorator to the
-    frame-rendering function.
 
     Parameters
     ----------

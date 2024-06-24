@@ -20,8 +20,10 @@ release = "0.0.1"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = ["autoapi.extension",
-              "sphinx.ext.autodoc",
+              #"sphinx.ext.autodoc",
               "sphinx.ext.napoleon"]
+
+autoapi_python_class_content = 'both'
 
 templates_path = ["_templates"]
 exclude_patterns = []
