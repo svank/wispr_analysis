@@ -1256,13 +1256,12 @@ class SimulationData:
     
     def plot_and_synthesize(
             self, t0, include_overhead=True, include_overhead_detail=False,
-            mark_epsilon=False, mark_FOV_pos=False, mark_FOV=False,
-            mark_bins=False, mark_derot_ax=False, synthesize=True,
-            radiants=False, vmin=0, vmax=None, parcel_width=1, synth_kw={},
+            synthesize=True,
+            vmin=0, vmax=None, parcel_width=1, synth_kw={},
             synth_fixed_fov=None, synth_celest_wcs=False, synth_wcs=None,
             output_quantity='flux', use_default_figsize=False, figsize=None,
-            synth_colorbar=False, point_scale=1, focus_sc=True,
-            as_column=False):
+            synth_colorbar=False, focus_sc=True,
+            as_column=False, **kwargs):
         sc = self.sc.at(t0)
         n_plots = include_overhead + include_overhead_detail + synthesize
         if use_default_figsize:
@@ -1318,9 +1317,10 @@ class SimulationData:
                     vmax = image.max()
                     if vmax == 0:
                         vmax = 1
-            im = ax_syn.imshow(image, origin='lower',           aspect='equal', cmap=cmap,
-                            norm=matplotlib.colors.PowerNorm(
-                                gamma=gamma, vmin=vmin, vmax=vmax))
+            im = ax_syn.imshow(image, origin='lower',
+                               aspect='equal', cmap=cmap,
+                               norm=matplotlib.colors.PowerNorm(
+                               gamma=gamma, vmin=vmin, vmax=vmax))
             
             lon, lat = ax_syn.coords
             lat.set_major_formatter('dd')
@@ -1334,33 +1334,22 @@ class SimulationData:
             ax_syn.set_ylabel(" ")
             ax_syn.coords.grid(color='white', alpha=0.1)
             
-            if radiants:
-                for parcel in self.parcels:
-                    radiant = calculate_radiant(self.sc, parcel, t0)
-                    if radiant is None:
-                        continue
-                    x, y = wcs.world_to_pixel(radiant * u.rad, 0 * u.rad)
-                    ax_syn.scatter(x, y, s=10, marker='x', color='green')
             if synth_colorbar:
                 ax = [ax for ax in (ax_syn, ax_overhead, ax_overhead_detail)
                       if ax is not None]
                 plt.colorbar(im, ax=ax)
         
-        fov_bins = [20, 40, 60] if mark_bins else []
         if ax_overhead is not None:
             self.plot_overhead(
-                ax=ax_overhead, t0=t0, mark_epsilon=mark_epsilon,
-                mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
-                mark_derot_ax=mark_derot_ax, fov_bins=fov_bins, detail=False,
-                fovdat=(image, wcs), point_scale=point_scale,
-                focus_sc=focus_sc)
+                ax=ax_overhead, t0=t0, detail=False,
+                fovdat=(image, wcs), focus_sc=focus_sc, **kwargs)
         
         if ax_overhead_detail is not None:
+            if 'focus_sc' in kwargs:
+                del kwargs['focus_sc']
             self.plot_overhead(
-                ax=ax_overhead_detail, t0=t0, mark_epsilon=mark_epsilon,
-                mark_FOV_pos=mark_FOV_pos, mark_FOV=mark_FOV,
-                mark_derot_ax=mark_derot_ax, fov_bins=[], detail=True,
-                fovdat=(image, wcs), point_scale=point_scale)
+                ax=ax_overhead_detail, t0=t0, detail=True,
+                fovdat=(image, wcs), **kwargs)
         return all_axes
 
 
