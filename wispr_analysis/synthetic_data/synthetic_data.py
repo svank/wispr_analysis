@@ -29,6 +29,10 @@ class Thing:
     t_max: float = None
     
     def strip_units(self):
+        """
+        Returns a copy of this object with all values converted from
+        Quantities to numpy objects in SI units.
+        """
         out = self.copy()
         for attr in 't', 't_min', 't_max':
             value = getattr(out, attr)
@@ -63,11 +67,17 @@ class Thing:
         return quantity
     
     def is_same_time(self, other):
-        """ Returns True if the two objects are set to the same time """
+        """ Returns True if the two objects are set to the same time 
+        
+        Parameters
+        ----------
+        out : `Thing`
+            Another `Thing` to compare to
+        """
         return np.all(self.t == other.t)
     
     def at(self, t):
-        """ Returns a copy of the object at time ``t``. """
+        """ Returns a copy of this object at time ``t``. """
         t = np.atleast_1d(t)
         out = self.copy()
         out.set_t(t)
@@ -75,6 +85,7 @@ class Thing:
     
     @contextmanager
     def at_temp(self, t):
+        """Temporarily sets this objects time to ``t``, without copying"""
         if t is None:
             yield self
             return
@@ -152,11 +163,17 @@ class Thing:
 class LinearThing(Thing):
     """ Represents an object with constant velocity """
     x_t0: float = 0
+    """The x position at t=0"""
     y_t0: float = 0
+    """The y position at t=0"""
     z_t0: float = 0
+    """The z position at t=0"""
     vx_t0: float = 0
+    """The constant x velocity"""
     vy_t0: float = 0
+    """The constant y velocity"""
     vz_t0: float = 0
+    """The constant z velocity"""
     rperp0: float = 1
     rpar0: float = 1
     rho0: float = 1
@@ -178,9 +195,29 @@ class LinearThing(Thing):
         """
         Accepts physical parameters, as well as the corresponding time
         
-        That is, ``x``, ``y``, etc. need not be specified for ``t=0`` if the
-        appropriate time is provided.
-        
+        Parameters
+        ----------
+        x, y, z : ``float`` or ``Quantity``
+            The position of the object at the reference time
+        vx, vy, vz : ``float`` or ``Quantity``
+            The velocity of the object at the reference time
+        t : ``float`` or ``Quantity``
+            The reference time
+        t_min, t_max : ``float`` or ``Quantity``
+            Can be set to limit the time range over which this parcel is valid.
+            For times outside this range, positions and velocities will be
+            computed as ``nan``
+        rperp, rpar : ``float`` or ``Quantity``
+            The radius of the parcel at the reference time measured
+            perpendicular to and parallel to the parcel--Sun line.
+        rho : ``float`` or ``Quantity``
+            The density of the parcel at the reference time
+        density_r2 : ``bool``
+            Whether ``rho`` should be scaled by 1/r^2, with r being the object's
+            distance from the Sun
+        rperp_r2 : ``bool``
+            Whether ``rperp`` should be scaled by 1/r^2, with r being the object's
+            distance from the Sun
         """
         self.vx_t0 = vx
         self.vy_t0 = vy
@@ -202,24 +239,28 @@ class LinearThing(Thing):
     
     @property
     def x(self):
+        """ The object's ``x`` position at the currently-set time"""
         x = self.x_t0 + self.vx_t0 * self.t
         x = self.process_t_bounds(x)
         return x
     
     @property
     def y(self):
+        """ The object's ``y`` position at the currently-set time"""
         y = self.y_t0 + self.vy_t0 * self.t
         y = self.process_t_bounds(y)
         return y
     
     @property
     def z(self):
+        """ The object's ``z`` position at the currently-set time"""
         z = self.z_t0 + self.vz_t0 * self.t
         z = self.process_t_bounds(z)
         return z
     
     @property
     def vx(self):
+        """ The object's ``x`` velocity, which is constant"""
         vx = self.process_t_bounds(self.vx_t0)
         return vx
     
@@ -229,6 +270,7 @@ class LinearThing(Thing):
     
     @property
     def vy(self):
+        """ The object's ``y`` velocity, which is constant"""
         vy = self.process_t_bounds(self.vy_t0)
         return vy
     
@@ -238,6 +280,7 @@ class LinearThing(Thing):
     
     @property
     def vz(self):
+        """ The object's ``z`` velocity, which is constant"""
         vz = self.process_t_bounds(self.vz_t0)
         return vz
     
@@ -277,6 +320,10 @@ class LinearThing(Thing):
         self.rho0 = value
     
     def offset_by_time(self, dt):
+        """
+        Creates a copy of this object that represents, at the current time,
+        where this object will be ``dt`` into the future
+        """
         out = self.copy()
         out.x_t0 += out.vx_t0 * dt
         out.y_t0 += out.vy_t0 * dt
@@ -287,16 +334,20 @@ class LinearThing(Thing):
 @dataclasses.dataclass
 class ArrayThing(Thing):
     """
-    Represents an object whose position over time is specified numerically
+    Represents an object whose position over time is specified numerically.
     
     Positions are provided at a number of points in time, and those positions
     are interpolated between as needed.
     """
     
     xlist: np.ndarray = 0
+    """The array of x points"""
     ylist: np.ndarray = 0
+    """The array of y points"""
     zlist: np.ndarray = 0
+    """The array of z points"""
     tlist: np.ndarray = 0
+    """The array of times"""
     rperplist: np.ndarray = 0
     rparlist: np.ndarray = 0
     rholist: np.ndarray = 0
@@ -317,13 +368,25 @@ class ArrayThing(Thing):
         """
         Parameters
         ----------
-        tlist : ``np.ndarray``
+        tlist : ``np.ndarray`` or ``Quantity``
             The list of time points at which positions are provided
-        xlist, ylist, zlist : ``np.ndarray`` or float
+        xlist, ylist, zlist : ``np.ndarray`` or float or ``Quantity``
             The specified positions. If either is a single number, that number
             is used at all points in time.
-        t : float
+        t : float or ``Quantity``
             The time the object is currently at.
+        t_min, t_max : ``float`` or ``Quantity``
+            Can be set to limit the time range over which this parcel is valid.
+            For times outside this range, positions and velocities will be
+            computed as ``nan``
+        rperplist, rparlist : ``float`` or ``np.ndarray`` or ``Quantity``
+            The radius of the parcel at each point in time, measured
+            perpendicular to and parallel to the parcel--Sun line.
+        rholist: ``float`` or ``np.ndarray`` or ``Quantity``
+            The density of the parcel at each point in time
+        default_density_r2 : ``bool``
+            If ``rholist`` is not provided, this controls whether the default
+            density should scale with 1/r^2
         """
         if len(tlist) <= 1:
             raise ValueError("tlist must have >= 2 entries")
@@ -334,6 +397,7 @@ class ArrayThing(Thing):
             name = var + 'list'
             arr = np.atleast_1d(locals()[name])
             if len(arr) == 1:
+                
                 arr = np.repeat(arr, len(tlist))
                 if var == 'rho':
                     self.scale_rho_r2 = default_density_r2
@@ -352,18 +416,22 @@ class ArrayThing(Thing):
     
     @property
     def x(self):
+        """ The object's ``x`` position at the currently-set time"""
         return self._access_quantity(self.xlist)
     
     @property
     def y(self):
+        """ The object's ``y`` position at the currently-set time"""
         return self._access_quantity(self.ylist)
     
     @property
     def z(self):
+        """ The object's ``z`` position at the currently-set time"""
         return self._access_quantity(self.zlist)
     
     @property
     def vx(self):
+        """ The object's ``x`` velocity at the currently-set time"""
         dt = .0001
         if isinstance(self.t, u.Quantity):
             dt *= u.s
@@ -372,6 +440,7 @@ class ArrayThing(Thing):
     
     @property
     def vy(self):
+        """ The object's ``y`` velocity at the currently-set time"""
         dt = .0001
         if isinstance(self.t, u.Quantity):
             dt *= u.s
@@ -380,6 +449,7 @@ class ArrayThing(Thing):
     
     @property
     def vz(self):
+        """ The object's ``z`` velocity at the currently-set time"""
         dt = .0001
         if isinstance(self.t, u.Quantity):
             dt *= u.s
@@ -439,6 +509,10 @@ class ArrayThing(Thing):
         return (y2 - y1) / dt
     
     def offset_by_time(self, dt):
+        """
+        Creates a copy of this object that represents, at the current time,
+        where this object will be ``dt`` into the future
+        """
         out = self.copy()
         out.tlist += dt
         return out
@@ -498,6 +572,20 @@ class DifferenceThing(Thing):
 
 
 def calc_hpc(sc: "Thing", parcels: list["Thing"], t=None):
+    """Computes object(s)' HPC coordinates as viewed by a given spacecraft
+
+    Parameters
+    ----------
+    sc : `Thing`
+        The observer
+    parcels : `Thing` or ``List[Thing]``
+        The object(s) being observed
+
+    Returns
+    -------
+    Tx, Ty : ``Quantity``
+        The HPC coordinate(s) of the object(s)
+    """
     was_not_list = False
     if isinstance(parcels, Thing):
         parcels = [parcels]
@@ -519,6 +607,20 @@ def calc_hpc(sc: "Thing", parcels: list["Thing"], t=None):
     
 
 def xyz_to_hpc(xs, ys, zs, scx, scy, scz):
+    """Computes object(s)' HPC coordinates as viewed by a given spacecraft
+
+    Parameters
+    ----------
+    xs, ys, zs : ``float`` or ``np.ndarray`` or ``Quantity``
+        The position(s) of the object(s) being observed
+    scx, scy, scz : ``float`` or ``np.ndarray`` or ``Quantity``
+        The position of the observer
+
+    Returns
+    -------
+    Tx, Ty : ``Quantity``
+        The HPC coordinate(s) of the object(s)
+    """
     obstime = '2023/07/05T04:21:00'
     sc_hc = astropy.coordinates.SkyCoord(x=scx, y=scy, z=scz, unit='m',
             representation_type='cartesian', obstime=obstime,
@@ -537,6 +639,18 @@ def xyz_to_hpc(xs, ys, zs, scx, scy, scz):
 
 
 def hpc_to_elpa(Tx, Ty):
+    """Converts HPC coordinates to elongation and position angle
+
+    Parameters
+    ----------
+    Tx, Ty : ``float`` or ``np.ndarray`` or ``Quantity``
+        The input HPC coordinates
+
+    Returns
+    -------
+    elongation, pa : ``float`` or ``np.ndarray`` or ``Quantity``
+        The output elongation and position angle
+    """
     if not isinstance(Tx, u.Quantity):
         Tx = np.deg2rad(Tx)
     if not isinstance(Ty, u.Quantity):
@@ -574,13 +688,13 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         Objects representing the plasma blobs
     t0 : float
         The time at which to generate the image
-    fov : int, optional
+    fov : ``int``, optional
         Camera field-of-view width
-    projection : str, optional
+    projection : ``str``, optional
         Projection to use
-    output_size_x, output_size_y : int, optional
+    output_size_x, output_size_y : ``int``, optional
         Size of the generated image
-    parcel_width : int or Quantity, optional
+    parcel_width : ``int`` or ``Quantity``, optional
         Width of each plasma blob, in R_sun
     image_wcs : ``WCS``, optional
         The WCS to use for the output image. If not provided, a WISPR-like WCS
@@ -596,6 +710,12 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     dmin, dmax : ``float``
         If given, only render parcels when their distance to the camera is
         within this range.
+    dsunmin, dsunmax : ``float``
+        If given, only render parcels when their distance to the Sun is
+        within this range.
+    only_side_of_sun : ``str``
+        Can be set to 'near' or 'far', in which case only parcels on the near or
+        far side of the Sun will be rendered.
     antialias : ``bool``
         If True, a hacky quasi-antialiasing is applied to parcels that appear
         small compared to the pixel size
@@ -613,6 +733,9 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         and the size parallel to the radial line (which grows when there is a
         radial velocity gradient). These two effects are combined according to
         the viewing angle.
+    scale_sun_dist : ``bool``
+        Whether to scale parcels' brightness inversely with the square of their
+        distance from the Sun.
 
     Returns
     -------
@@ -1090,15 +1213,56 @@ def elongation_to_FOV(sc, elongation):
 
 @dataclasses.dataclass
 class SimulationData:
+    """
+    Container for a spacecraft and a list of parcels
+    """
     sc: Thing
-    t: list
+    """
+    The spacecraft, which sets the camera location
+    """
+    t: np.ndarray
+    """A list of time points for this scenario"""
     parcels: list[Thing] = dataclasses.field(default_factory=list)
+    """A list of plasma parcels"""
     encounter: int = None
+    """If set, the PSP encounter this scenario models"""
     
     def plot_overhead(self, t0=None, mark_epsilon=False, mark_FOV_pos=False,
                       mark_FOV=False, fov_bins=[], mark_derot_ax=False,
                       detail=False, fovdat=None, ax=None, point_scale=1,
                       focus_sc=True):
+        """Produces a top-down view of this scenario
+
+        Parameters
+        ----------
+        t0 : ``float`` or ``Quantity``, optional
+            The time to depict. If not given, the average time is used
+        mark_epsilon : ``bool``, optional
+            Draws lines marking the elongation of the average position of the parcels
+        mark_FOV_pos : ``bool``, optional
+            Draws lines marking the FOV position angle of the average position
+            of the parcels
+        mark_FOV : ``bool``, optional
+            Draws lines showing the extent of the camera FOV. Requires
+            ``fovdat`` to be provided.
+        fov_bins : ``list``, optional
+            A list of distances from the spacecraft. If given, the marked FOV
+            will be divided into regions at these distances.
+        mark_derot_ax : ``bool``, optional
+            Overlays reference axes for the derotated frame
+        detail : ``bool``, optional
+            Renders in a mode zoomed in on the spacecraft
+        fovdat : ``tuple`` or ``list[tuple]``, optional
+            A tuple of a synthesized image and its WCS, for determining the
+            camera FOV. Can also be a list of tuples, to mark multiple FOVs.
+        ax : ``Axes``, optional
+            The Axes on which to plot
+        point_scale : ``float``, optional
+            Scale factor for the sizes of points
+        focus_sc : ``bool``, optional
+            Whether the FOV should be set by the extent of the spacecraft orbit.
+            If False, the FOV instead includes all parcel trajectories as well.
+        """
         scale_factor = u.R_sun.to(u.m)
         if ax is None:
             ax = plt.gca()
@@ -1262,6 +1426,49 @@ class SimulationData:
             output_quantity='flux', use_default_figsize=False, figsize=None,
             synth_colorbar=False, focus_sc=True,
             as_column=False, **kwargs):
+        """Helper to plot overhead view and synthesized image size-by-size
+
+        Parameters
+        ----------
+        t0 : ``float`` or ``Quantity``
+            The time at which to plot
+        include_overhead : ``bool``, optional
+            Whether to include the overhead view
+        include_overhead_detail : ``bool``, optional
+            Whether to include a zoomed-in overhead view
+        synthesize : ``bool``, optional
+            Whether to include a synthetic image
+        vmin, vmax : ``int``, optional
+            The colorbar range to use for the synthetic image
+        parcel_width : ``float``, optional
+            The width to use for parcels in the synthetic image
+        synth_kw : ``dict``, optional
+            A dictionary of arguments to pass to `synthesize_image`
+        synth_fixed_fov : ``tuple``, optional
+            If set, the synthetic image is in a fixed direction, with the
+            elements of this tuple setting the starting and stopping latitude.
+        synth_celest_wcs : ``bool``, optional
+            Whether to synthesize onto a celestial WCS instead of
+            helioprojective
+        synth_wcs : ``WCS``, optional
+            The WCS to use when rendering the synthetic image
+        output_quantity : ``str``, optional
+            The quantity to render in the synthetic image
+        use_default_figsize : ``bool``, optional
+            Whether to use the default figure size of the current Matplotlib
+            style
+        figsize : ``tuple``, optional
+            The figure size to use
+        synth_colorbar : ``bool``, optional
+            Whether to show a colorbar for the synthetic image
+        as_column : ``bool``, optional
+            Whether to arrange the plots in a column instead of a row
+
+        Returns
+        -------
+        _type_
+            _description_
+        """
         sc = self.sc.at(t0)
         n_plots = include_overhead + include_overhead_detail + synthesize
         if use_default_figsize:
@@ -1354,6 +1561,22 @@ class SimulationData:
 
 
 def create_simdat_from_spice(E, nt=400):
+    """Creates a `SimulationData` containing a spacecraft moving along a real
+    PSP trajectory, calculated from SPICE
+
+    Parameters
+    ----------
+    E : ``int`` or ``str``
+        The PSP encounter to reproduce
+    nt : ``int``, optional
+        The number of points in time at which to compute the trajectory
+
+    Returns
+    -------
+    simdat : `SimulationData`
+        A `SimulationData` containing a spacecraft object and the corresponding
+        points in time
+    """
     coords, times = planets.get_orbital_plane(
         'psp', E, npts=10000, return_times=True, expand_psp_orbit=False)
     f = coords.represent_as('spherical').distance < 0.25 * u.au
@@ -1368,6 +1591,20 @@ def create_simdat_from_spice(E, nt=400):
 
 
 def add_random_parcels(simdat, v=100_000, n_parcels=500, theta_dist=0):
+    """Adds constant-velocity parcels with random trajectories and launch times
+
+    Parameters
+    ----------
+    simdat : `SimulationData`
+        The SimulationData to add parcels to
+    v : ``float``, optional
+        The velocity of the parcels
+    n_parcels : ``int``, optional
+        The number of parcels to add
+    theta_dist : ``float``, optional
+        A scale factor from 0 to 1 controlling how far out of the HCI equatorial
+        plane the parcels can point
+    """
     t_min = 120 * u.R_sun.to(u.m) / v
     
     for this_phi, this_theta, t_start in zip(
@@ -1444,6 +1681,7 @@ def rad_var_v(r, V0=325*u.km/u.s, alpha=0.2):
 
 
 def gen_parcel_path(V0=325*u.km/u.s, alpha=0.2, end_point=250*u.R_sun):
+    """Generates a trajectory with a radial gradient to the velocity"""
     r_start = 1*u.R_sun
     t_start = 0*u.s
     dt = 10 * u.min
@@ -1484,6 +1722,19 @@ def gen_parcel_path(V0=325*u.km/u.s, alpha=0.2, end_point=250*u.R_sun):
 
 def add_random_parcels_rad_grad(simdat, n_parcels=500, V0=325*u.km/u.s,
                                 alpha=0.2):
+    """Adds random parcels with a radial gradient in their velocity
+
+    Parameters
+    ----------
+    simdat : `SimulationData`
+        The SimulationData to add parcels to
+    n_parcels : ``int``, optional
+        The number of parcels to add    
+    V0 : ``Quantity``, optional
+        The V0 parameter for the velocities
+    alpha : ``float``, optional
+        The alpha parameter for the gradient
+    """
     t_min = 120 * u.R_sun.to(u.m) / 200_000
     rs, ts, vs, rhos, rperp, rpar = gen_parcel_path(V0, alpha)
     
@@ -1535,6 +1786,14 @@ def add_regular_near_impacts_rad_grad(simdat, V0=325*u.km/u.s, alpha=0.2,
 
 
 def rotate_parcels_into_orbital_plane(simdat):
+    """Rotates all parcels so that any parcel that was in the HCI equatorial
+    plane is now in the PSP orbital plane
+
+    Parameters
+    ----------
+    simdat : `SimulationData`
+        The SimulationData to adjust in-place
+    """
     obstime = utils.from_timestamp(simdat.t[0])
     for parcel in simdat.parcels:
         if isinstance(parcel, LinearThing):
