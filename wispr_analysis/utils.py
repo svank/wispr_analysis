@@ -82,9 +82,13 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
 
 
 def from_timestamp(timestamp, millis=False, nice=False):
-    if isinstance(timestamp, Iterable) and not isinstance(timestamp, str):
+    if (isinstance(timestamp, Iterable)
+            and not isinstance(timestamp, str)
+            and (not isinstance(timestamp, u.Quantity)
+                 or timestamp.size > 1)
+    ):
         return [from_timestamp(ts) for ts in timestamp]
-    if not isinstance(timestamp, (float, int)):
+    if not isinstance(timestamp, (float, int, u.Quantity, np.ndarray)):
         raise ValueError("Invalid timestamp type")
     datetime = to_timestamp(timestamp, as_datetime=True)
     if nice:

@@ -13,8 +13,8 @@ from ... import planets, utils
 
 def generate_strips():
     # A cloud of parcels
-    sc = sd.LinearThing(x=-6, y=-100, vx=3)
-    ts = np.linspace(0, 6, 50)
+    sc = sd.LinearThing(x=-6*u.m, y=-100*u.m, vx=3*u.m/u.s)
+    ts = np.linspace(0, 6, 50) * u.s
 
     parcels = []
     np.random.seed(4)
@@ -28,7 +28,7 @@ def generate_strips():
         r = np.sqrt(x**2 + y**2)
         vx = x / r * v
         vy = y / r * v
-        parcels.append(sd.LinearThing(x=x, y=y, vy=vy, vx=vx))
+        parcels.append(sd.LinearThing(x=x*u.m, y=y*u.m, vy=vy*u.m/u.s, vx=vx*u.m/u.s))
         
     fov = 70
     strips = []
@@ -77,6 +77,7 @@ def test_select_speed_range():
 
 def test_find_radiant():
     strips, ts, fov_angles = generate_strips()
+    ts = ts.value
     rads, rad_ts = radiants.find_radiant(strips, ts, fov_angles,
             window_size=43, v_halfwindow=1.1)
     

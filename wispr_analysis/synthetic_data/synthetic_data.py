@@ -2,10 +2,10 @@ from contextlib import ExitStack, contextmanager
 import copy
 import dataclasses
 
-import astropy.constants as c
 import astropy.coordinates
 import astropy.time
 import astropy.units as u
+from astropy.visualization import quantity_support
 from astropy.wcs import WCS
 import matplotlib.ticker
 import matplotlib.pyplot as plt
@@ -17,6 +17,9 @@ import sunpy.coordinates
 from .. import orbital_frame, planets, utils
 
 
+quantity_support()
+
+
 class Thing:
     """Represents a generic object with a position and a velocity in 2-space
     
@@ -24,9 +27,9 @@ class Thing:
     those quantities. Instances can be set to a specific time, which then
     determines how those attributes are computed
     """
-    t: float = 0
-    t_min: float = None
-    t_max: float = None
+    t: u.Quantity = 0 * u.s
+    t_min: u.Quantity = None
+    t_max: u.Quantity = None
     
     def strip_units(self):
         """
@@ -55,7 +58,8 @@ class Thing:
                 or (isinstance(self.t, np.ndarray)
                     and self.t.shape == tuple())):
             if bad_t:
-                return np.nan
+                # Maintain units
+                return np.nan * quantity
             return quantity
         if np.any(bad_t):
             quantity = np.broadcast_to(quantity, bad_t.shape, subok=True)
@@ -71,12 +75,13 @@ class Thing:
         
         Parameters
         ----------
-        out : `Thing`
+        other : `Thing`
             Another `Thing` to compare to
         """
         return np.all(self.t == other.t)
-    
-    def at(self, t):
+
+    @u.quantity_input
+    def at(self, t: u.s):
         """ Returns a copy of this object at time ``t``. """
         t = np.atleast_1d(t)
         out = self.copy()
@@ -84,7 +89,8 @@ class Thing:
         return out
     
     @contextmanager
-    def at_temp(self, t):
+    @u.quantity_input
+    def at_temp(self, t: (u.s, None)):
         """Temporarily sets this objects time to ``t``, without copying"""
         if t is None:
             yield self
@@ -93,13 +99,15 @@ class Thing:
         self.set_t(t)
         yield self
         self.t = old_t
-     
-    def set_t(self, t):
+
+    @u.quantity_input
+    def set_t(self, t: u.s):
         """ Sets the object's time to ``t``. """
         t = np.atleast_1d(t)
         self.t = t
-    
-    def in_front_of(self, other: "Thing", t=None):
+
+    @u.quantity_input(t=(u.s, None))
+    def in_front_of(self, other, t=None):
         """Returns whether this object is in front of the given object.
         
         "In front" is defined relative to the forward direction of the other
@@ -129,7 +137,7 @@ class Thing:
                 separation_vector.x,
                 separation_vector.y,
                 separation_vector.z)
-            in_front = np.atleast_1d(np.abs(angle) < np.pi/2)
+            in_front = np.atleast_1d(np.abs(angle) < np.pi/2 * u.rad)
             in_front[separation_vector.r == 0] = False
             return in_front
     
@@ -162,35 +170,30 @@ class Thing:
 @dataclasses.dataclass
 class LinearThing(Thing):
     """ Represents an object with constant velocity """
-    x_t0: float = 0
+    x_t0: u.Quantity
     """The x position at t=0"""
-    y_t0: float = 0
+    y_t0: u.Quantity
     """The y position at t=0"""
-    z_t0: float = 0
+    z_t0: u.Quantity
     """The z position at t=0"""
-    vx_t0: float = 0
+    vx_t0: u.Quantity
     """The constant x velocity"""
-    vy_t0: float = 0
+    vy_t0: u.Quantity
     """The constant y velocity"""
-    vz_t0: float = 0
+    vz_t0: u.Quantity
     """The constant z velocity"""
     rperp0: float = 1
     rpar0: float = 1
     rho0: float = 1
     rperp_r2: bool = False
     density_r2: bool = False
-    
-    def strip_units(self):
-        out = super().strip_units()
-        for attr in ('x_t0', 'y_t0', 'z_t0', 'vx_t0', 'vy_t0', 'vz_t0',
-                     'rperp0', 'rpar0', 'rho0'):
-            value = getattr(out, attr)
-            if isinstance(value, u.Quantity):
-                setattr(out, attr, value.si.value)
-        return out
-    
-    def __init__(self, x=0, y=0, z=0, vx=0, vy=0, vz=0,
-                 t=0, t_min=None, t_max=None,
+
+    @u.quantity_input(x=u.m, y=u.m, z=u.m,
+                 vx=u.m/u.s, vy=u.m/u.s, vz=u.m/u.s,
+                 t=u.s, t_min=(u.s, None), t_max=(u.s, None))
+    def __init__(self, x=0*u.m, y=0*u.m, z=0*u.m,
+                 vx=0*u.m/u.s, vy=0*u.m/u.s, vz=0*u.m/u.s,
+                 t=0*u.s, t_min=None, t_max=None,
                  rperp=1, rpar=1, rho=1, density_r2=False, rperp_r2=False):
         """
         Accepts physical parameters, as well as the corresponding time
@@ -265,7 +268,8 @@ class LinearThing(Thing):
         return vx
     
     @vx.setter
-    def vx(self, value):
+    @u.quantity_input
+    def vx(self, value: u.m/u.s):
         self.vx_t0 = value
     
     @property
@@ -275,7 +279,8 @@ class LinearThing(Thing):
         return vy
     
     @vy.setter
-    def vy(self, value):
+    @u.quantity_input
+    def vy(self, value: u.m/u.s):
         self.vy_t0 = value
     
     @property
@@ -285,14 +290,16 @@ class LinearThing(Thing):
         return vz
     
     @vz.setter
-    def vz(self, value):
+    @u.quantity_input
+    def vz(self, value: u.m/u.s):
         self.vz_t0 = value
     
     @property
     def rperp(self):
         rperp = self.rperp0
         if self.rperp_r2:
-            rperp *= 1 / self.r**2
+            scale = 1 / self.r**2
+            rperp *= scale.si.value
         return rperp
     
     @rperp.setter
@@ -312,14 +319,16 @@ class LinearThing(Thing):
     def rho(self):
         rho = self.rho0
         if self.density_r2:
-            rho *= 1 / self.r**2
+            scale = 1 / self.r**2
+            rho *= scale.si.value
         return rho
     
     @rho.setter
     def rho(self, value):
         self.rho0 = value
-    
-    def offset_by_time(self, dt):
+
+    @u.quantity_input
+    def offset_by_time(self, dt: u.s):
         """
         Creates a copy of this object that represents, at the current time,
         where this object will be ``dt`` into the future
@@ -328,6 +337,15 @@ class LinearThing(Thing):
         out.x_t0 += out.vx_t0 * dt
         out.y_t0 += out.vy_t0 * dt
         out.z_t0 += out.vz_t0 * dt
+        return out
+
+    def strip_units(self):
+        out = super().strip_units()
+        for attr in ('x_t0', 'y_t0', 'z_t0', 'vx_t0', 'vy_t0', 'vz_t0',
+                     'rperp0', 'rpar0', 'rho0'):
+            value = getattr(out, attr)
+            if isinstance(value, u.Quantity):
+                setattr(out, attr, value.si.value)
         return out
 
 
@@ -340,30 +358,23 @@ class ArrayThing(Thing):
     are interpolated between as needed.
     """
     
-    xlist: np.ndarray = 0
+    xlist: u.Quantity
     """The array of x points"""
-    ylist: np.ndarray = 0
+    ylist: u.Quantity
     """The array of y points"""
-    zlist: np.ndarray = 0
+    zlist: u.Quantity
     """The array of z points"""
-    tlist: np.ndarray = 0
+    tlist: u.Quantity
     """The array of times"""
     rperplist: np.ndarray = 0
     rparlist: np.ndarray = 0
     rholist: np.ndarray = 0
     scale_rho_r2: bool = False
-    
-    def strip_units(self):
-        out = super().strip_units()
-        for attr in ('xlist', 'ylist', 'zlist', 'tlist', 'rperplist',
-                     'rparlist', 'rholist'):
-            value = getattr(out, attr)
-            if isinstance(value, u.Quantity):
-                setattr(out, attr, value.si.value)
-        return out
-    
-    def __init__(self, tlist, xlist=0, ylist=0, zlist=0,
-            t=0, t_min=None, t_max=None, rperplist=1, rparlist=1,
+
+    @u.quantity_input(tlist=u.s, xlist=u.m, ylist=u.m, zlist=u.m,
+                 t=0*u.s, t_min=(u.s, None), t_max=(u.s, None))
+    def __init__(self, tlist, xlist=0*u.m, ylist=0*u.m, zlist=0*u.m,
+            t=0*u.s, t_min=None, t_max=None, rperplist=1, rparlist=1,
             rholist=1, default_density_r2=False):
         """
         Parameters
@@ -470,7 +481,8 @@ class ArrayThing(Thing):
     def rho(self):
         values = self._access_quantity(self.rholist)
         if self.scale_rho_r2:
-            values /= self.r**2
+            scale = 1 / self.r**2
+            values *= scale.si.value
         return values
     
     def _finite_difference(self, spatial_quantity, dt):
@@ -517,6 +529,16 @@ class ArrayThing(Thing):
         out.tlist += dt
         return out
 
+    def strip_units(self):
+        out = super().strip_units()
+        for attr in ('xlist', 'ylist', 'zlist', 'tlist', 'rperplist',
+                     'rparlist', 'rholist'):
+            value = getattr(out, attr)
+            if isinstance(value, u.Quantity):
+                setattr(out, attr, value.si.value)
+        return out
+
+
 class DifferenceThing(Thing):
     """ Represents a difference between two Things """
     
@@ -545,7 +567,7 @@ class DifferenceThing(Thing):
     
     @property
     def vx(self):
-        dt = .0001
+        dt = .0001 * u.s
         with (self.at_temp(self.t - dt/2)):
             before = self.x
         with (self.at_temp(self.t + dt/2)):
@@ -554,7 +576,7 @@ class DifferenceThing(Thing):
     
     @property
     def vy(self):
-        dt = .0001
+        dt = .0001 * u.s
         with (self.at_temp(self.t - dt/2)):
             before = self.y
         with (self.at_temp(self.t + dt/2)):
@@ -563,7 +585,7 @@ class DifferenceThing(Thing):
     
     @property
     def vz(self):
-        dt = .0001
+        dt = .0001 * u.s
         with (self.at_temp(self.t - dt/2)):
             before = self.z
         with (self.at_temp(self.t + dt/2)):
@@ -595,9 +617,9 @@ def calc_hpc(sc: "Thing", parcels: list["Thing"], t=None):
         sc = stack.enter_context(sc.at_temp(t))
         parcels = [stack.enter_context(p.at_temp(t)) for p in parcels]
     
-        px = np.array([p.x for p in parcels])
-        py = np.array([p.y for p in parcels])
-        pz = np.array([p.z for p in parcels])
+        px = u.Quantity([p.x for p in parcels])
+        py = u.Quantity([p.y for p in parcels])
+        pz = u.Quantity([p.z for p in parcels])
         
         Tx, Ty = xyz_to_hpc(px, py, pz, sc.x, sc.y, sc.z)
         if was_not_list:
@@ -745,19 +767,32 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         The corresponding WCS
     """
     output_quantity = output_quantity.lower()
-    sc = sc.at(t0)
+    with sc.at_temp(t0) as sc:
+        sc = sc.strip_units()
+    # Copy the list
+    parcels = parcels[:]
+    for i in range(len(parcels)):
+        with parcels[i].at_temp(t0) as p:
+            parcels[i] = p.strip_units()
     date = astropy.time.Time(t0, format='unix').fits
     if isinstance(parcel_width, u.Quantity):
         parcel_width = parcel_width.to(u.m).value
     else:
         parcel_width *= u.R_sun.to(u.m)
+    if isinstance(dmin, u.Quantity):
+        dmin = dmin.si.value
+    if isinstance(dmax, u.Quantity):
+        dmax = dmax.si.value
+    if isinstance(t0, u.Quantity):
+        t0 = t0.si.value
     
     # Build output image WCS
     if image_wcs is None:
         image_wcs = WCS(naxis=2)
         if point_forward:
             x, y, z = sc.x, sc.y, sc.z
-            sc_soon = sc.at(t0 + 1)
+            sc_soon = sc.copy()
+            sc_soon.t += 1
             xp, yp, zp = sc_soon.x, sc_soon.y, sc_soon.z
             observer = astropy.coordinates.SkyCoord(
                 x, y, z, representation_type='cartesian', obstime=date,
@@ -795,6 +830,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     x = np.arange(-1, output_image.shape[1] + 1)
     y = np.arange(-1, output_image.shape[0] + 1)
     
+    # If there are a lot of pixels, then when calculating the lines of sight of
+    # each pixel, we'll calculate on a grid and interpolate (this affects only
+    # figuring out where each line of sight is pointed---calculating the flux on
+    # each LOS is still done individually for each pixel)
     do_interp = len(x) > 100 and len(y) > 100
     if do_interp:
         slice = np.s_[1::3]
@@ -870,8 +909,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     # Find the center of each parcel as a pixel position
     parcel_poses = np.empty((len(parcels), 3))
     for i, parcel in enumerate(parcels):
-        with parcel.at_temp(t0) as p:
-            parcel_poses[i] = p.x[0], p.y[0], p.z[0]
+        parcel_poses[i] = parcel.x[0], parcel.y[0], parcel.z[0]
     p_coord = astropy.coordinates.SkyCoord(
         parcel_poses[..., 0], parcel_poses[..., 1], parcel_poses[..., 2],
         frame='heliocentricinertial', representation_type='cartesian',
@@ -891,10 +929,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     except KeyError:
         raise ValueError(
             f"Invalid value {output_quantity} for output_quantity")
-    
+
     for i, parcel in enumerate(parcels):
-        # Draw each parcel onto the output canvas
         parcel_pos = parcel_poses[i]
+        # Draw each parcel onto the output canvas
         d_p_sc = np.linalg.norm(parcel_pos - sc_pos)
         if (dmin is not None and d_p_sc < dmin
                 or dmax is not None and d_p_sc > dmax):
@@ -909,7 +947,6 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
                 continue
             elif only_side_of_sun == 'far' and component > 0:
                 continue
-                
         
         # Apply all brightness scalings that apply to the parcel as a whole (to
         # a good approximation)
@@ -924,20 +961,18 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         
         if use_density:
             # Intensity is proportional to density
-            with parcel.at_temp(t0) as p:
-                I_scale *= p.rho
+            I_scale *= parcel.rho
         if expansion:
             # Solar wind parcels grow in volume as r^2
             # For our spherical parcels, that means radius grows as r^2/3
             radius_scale = (d_p_sun / (10 * u.R_sun.to(u.m))) ** (2/3)
             parcel_size = parcel_width * radius_scale
-            
-            with parcel.at_temp(t0) as p:
-                # This is a blend of the LOS component perpendicular and
-                # parallel to the parcel--Sun radial line (as those components
-                # expand differently with radius)
-                los = np.sqrt((p.rperp * np.sin(scattering_angle))**2
-                            + (p.rpar * np.cos(scattering_angle))**2)
+
+            # This is a blend of the LOS component perpendicular and
+            # parallel to the parcel--Sun radial line (as those components
+            # expand differently with radius)
+            los = np.sqrt((parcel.rperp * np.sin(scattering_angle))**2
+                        + (parcel.rpar * np.cos(scattering_angle))**2)
             I_scale *= los
         else:
             parcel_size = parcel_width
@@ -949,7 +984,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         if isinstance(I_scale, np.ndarray):
             # Make sure we have an honest-to-goodness number and not a numpy scalar.
             I_scale = I_scale.item()
-        
+
         _synth_data_one_parcel(sc_pos, parcel_pos, x, x_over_xdotx,
                                px_scale, parcel_size, output_image,
                                d_p_sc, px[i], py[i], antialias,
@@ -1161,21 +1196,23 @@ def _synth_data_one_pixel(i, j, x, x_over_xdotx, px_scale,
     return True
 
 
-def calculate_radiant(sc, parcel, t0=0):
+def calculate_radiant(sc, parcel, t0=0*u.s):
     t0 = np.atleast_1d(t0)
     if len(t0) > 1 or t0 != 0:
         sc = sc.at(t0)
         parcel = parcel.at(t0)
     infront = np.atleast_1d(parcel.in_front_of(sc))
     if not np.any(infront):
-        return np.full(max(len(t0), len(np.atleast_1d(parcel.x))), np.nan)
+        return np.full(max(len(t0), len(np.atleast_1d(parcel.x))), np.nan) * u.deg
     v_sc = sc.v
     e_sc = np.atleast_1d(
-            utils.angle_between_vectors(sc.vx, sc.vy, 0, -sc.x, -sc.y, 0))
+            utils.angle_between_vectors(
+                sc.vx, sc.vy, 0*u.m/u.s, -sc.x, -sc.y, 0*u.m))
     v_p = parcel.v
     dphi = np.atleast_1d(
-            utils.angle_between_vectors(sc.x, sc.y, 0, parcel.x, parcel.y, 0))
-    epsilons = np.linspace(0, np.pi, 300)[None, :]
+            utils.angle_between_vectors(
+                sc.x, sc.y, 0*u.m, parcel.x, parcel.y, 0*u.m))
+    epsilons = np.linspace(0, np.pi, 300)[None, :] << u.rad
     with np.errstate(divide='ignore'):
         i = np.argmin(
                 np.abs(1 - v_sc / v_p
@@ -1207,7 +1244,7 @@ def elongation_to_FOV(sc, elongation):
         Field-of-view position in radians
     """
     sc_direction = utils.angle_between_vectors(
-            sc.vx, sc.vy, 0, -sc.x, -sc.y, 0)
+            sc.vx, sc.vy, 0*u.km/u.s, -sc.x, -sc.y, 0*u.m)
     return elongation - sc_direction
 
 
@@ -1220,7 +1257,7 @@ class SimulationData:
     """
     The spacecraft, which sets the camera location
     """
-    t: np.ndarray
+    t: u.Quantity
     """A list of time points for this scenario"""
     parcels: list[Thing] = dataclasses.field(default_factory=list)
     """A list of plasma parcels"""
@@ -1245,7 +1282,7 @@ class SimulationData:
         mark_FOV : ``bool``, optional
             Draws lines showing the extent of the camera FOV. Requires
             ``fovdat`` to be provided.
-        fov_bins : ``list``, optional
+        fov_bins : ``list[Quantity]``, optional
             A list of distances from the spacecraft. If given, the marked FOV
             will be divided into regions at these distances.
         mark_derot_ax : ``bool``, optional
@@ -1263,14 +1300,13 @@ class SimulationData:
             Whether the FOV should be set by the extent of the spacecraft orbit.
             If False, the FOV instead includes all parcel trajectories as well.
         """
-        scale_factor = u.R_sun.to(u.m)
         if ax is None:
             ax = plt.gca()
         if t0 is None:
             t0 = np.mean(self.t)
         sc = self.sc.at(t0)
         
-        ax.scatter(0, 0, c='yellow', s=100 * point_scale**2, zorder=18,
+        ax.scatter(0*u.R_sun, 0*u.R_sun, c='yellow', s=100 * point_scale**2, zorder=18,
                    edgecolors='black')
         ax.scatter(sc.x, sc.y, zorder=10, s=100 * point_scale**2,
                    edgecolors='white')
@@ -1284,46 +1320,48 @@ class SimulationData:
             with parcel.at_temp(t0) as p:
                 pxs.append(p.x)
                 pys.append(p.y)
+        pxs = u.Quantity(pxs)
+        pys = u.Quantity(pys)
         ax.scatter(pxs, pys, color='C1',
                    s=(36 if detail else 24) * point_scale**2)
 
         if mark_epsilon:
             x = np.nanmean(pxs)
             y = np.nanmean(pys)
-            ax.plot([0, sc.x[0], x], [0, sc.y[0], y], color='gray')
+            ax.plot(u.Quantity([0*u.m, sc.x[0], x]), u.Quantity([0*u.m, sc.y[0], y]), color='gray')
         
         if mark_FOV_pos:
             x = np.nanmean(pxs)
             y = np.nanmean(pys)
-            dx = sc.at(t0+.5).x - sc.x
-            dy = sc.at(t0+.5).y - sc.y
-            ax.plot([x, sc.x[0], sc.x[0] - dx[0]],
-                    [y, sc.y[0], sc.y[0] + dy[0]], color='gray')
+            dx = sc.at(t0+.5*u.s).x - sc.x
+            dy = sc.at(t0+.5*u.s).y - sc.y
+            ax.plot(u.Quantity([x, sc.x[0], sc.x[0] - dx[0]]),
+                    u.Quantity(  [y, sc.y[0], sc.y[0] + dy[0]]), color='gray')
 
         if mark_derot_ax:
-            length = (10 if detail else 30) * scale_factor
+            length = (10 if detail else 30) * u.R_sun
             ax.arrow(
                 sc.x[0] - length/2, sc.y[0], length, 0, color='.7', zorder=18)
             ax.arrow(
                 sc.x[0], sc.y[0]-length/2, 0, length, color='.7', zorder=18)
 
         if detail:
-            half_window = 8 * (u.R_sun.to(u.m))
+            half_window = 8 * u.R_sun
             ax.set_xlim(sc.x - half_window, sc.x + half_window)
             ax.set_ylim(sc.y - half_window, sc.y + half_window)
-            ax.plot([0, sc.x[0]], [0, sc.y[0]], color='w', alpha=.5)
+            ax.plot(u.Quantity([0*u.m, sc.x[0]]), u.Quantity([0*u.m, sc.y[0]]), color='w', alpha=.5)
             t = np.arctan2(sc.y[0], sc.x[0])
             r = sc.r[0]
-            rs = np.arange(0, r, u.R_sun.to(u.m))
+            rs = _arange_from_units(0*u.R_sun, r.to(u.R_sun), 1*u.R_sun)
             ax.scatter(
                 rs * np.cos(t), rs * np.sin(t), color='white', s=25, alpha=.5)
         elif focus_sc:
             margin = 1
-            xs = list(sc.at(self.t).x)
+            xs = u.Quantity(sc.at(self.t).x)
             xmin, xmax = np.nanmin(xs), np.nanmax(xs)
             xrange = xmax - xmin
             
-            ys = list(sc.at(self.t).y)
+            ys = u.Quantity(sc.at(self.t).y)
             ymin, ymax = np.nanmin(ys), np.nanmax(ys)
             yrange = ymax - ymin
             
@@ -1332,47 +1370,33 @@ class SimulationData:
             if xrange == 0:
                 xrange = yrange
             
-            tbounds = np.array([self.t[0], self.t[-1]])
+            tbounds = u.Quantity([self.t[0], self.t[-1]])
             for parcel in self.parcels:
                 with parcel.at_temp(tbounds) as p:
-                    xs.extend(p.x)
-                    ys.extend(p.y)
+                    xs = np.concatenate((xs, p.x))
+                    ys = np.concatenate((ys, p.y))
             
-            xs = [x for x in xs
-                  if xmin - margin * xrange <= x <= xmax + margin * xrange]
-            ax.set_xlim(np.nanmin(xs)-1, np.nanmax(xs)+1)
+            xs = u.Quantity([x for x in xs
+                             if xmin - margin * xrange <= x <= xmax + margin * xrange])
+            ax.set_xlim(np.nanmin(xs)-1*u.R_sun, np.nanmax(xs)+1*u.R_sun)
 
-            ys = [y for y in ys
-                  if ymin - margin * yrange <= y <= ymax + margin * yrange]
+            ys = u.Quantity([y for y in ys
+                             if ymin - margin * yrange <= y <= ymax + margin * yrange])
             
             xmin, xmax = np.nanmax(xs), np.nanmin(xs)
             if np.nanmax(np.abs(ys)) < 2 * (xmax - xmin) and xmin < 0 < xmax:
                 # Include the Sun in the plot y-range if it doesn't warp the
                 # aspect ratio too much and if the Sun is already included in
                 # the x plotting range
-                ys.append(0)
+                ys.append(0*u.m)
             else:
                 # Put "To Sun" arrows?
                 pass
 
-            ax.set_ylim(np.nanmin(ys)-1, np.nanmax(ys) + 1)
+            ax.set_ylim(np.nanmin(ys)-1*u.R_sun, np.nanmax(ys) + 1*u.R_sun)
         else:
             ax.autoscale()
             ax.autoscale(False)
-
-        # Label axes in R_sun without having to re-scale every coordinate
-        formatter = matplotlib.ticker.FuncFormatter(
-            lambda x, pos: f"{x / u.R_sun.to(u.m):.0f}")
-        ax.xaxis.set_major_formatter(formatter)
-        ax.yaxis.set_major_formatter(formatter)
-        tick_spacing = 20 * u.R_sun.to(u.m)
-        xmin, xmax = ax.get_xlim()
-        while xmax - xmin < tick_spacing * 5:
-            tick_spacing /= 2
-        ax.xaxis.set_major_locator(
-            matplotlib.ticker.MultipleLocator(tick_spacing))
-        ax.yaxis.set_major_locator(
-            matplotlib.ticker.MultipleLocator(tick_spacing))
         
         if mark_FOV:
             if isinstance(fovdat[0], np.ndarray):
@@ -1385,26 +1409,26 @@ class SimulationData:
                 edge1 = edge1.transform_to('helioprojective')
                 edge2 = fov[1].pixel_to_world(x2, y2)
                 edge2 = edge2.transform_to('helioprojective')
-                lon1 = edge1.Tx.to_value(u.deg)
-                lon2 = edge2.Tx.to_value(u.deg)
+                lon1 = edge1.Tx
+                lon2 = edge2.Tx
                 
                 to_sun_x = -sc.x
                 to_sun_y = -sc.y
                 to_sun_theta = np.arctan2(to_sun_y, to_sun_x)
-                t1 = to_sun_theta - lon1 * np.pi/180
-                t2 = to_sun_theta - lon2 * np.pi/180
-                
-                size = (max(fov_bins) * scale_factor
-                        if len(fov_bins) else tick_spacing)
+                t1 = to_sun_theta - lon1
+                t2 = to_sun_theta - lon2
+
+                size = (max(fov_bins) if len(fov_bins)
+                        else np.ptp(plt.xlim()) / 8 * u.R_sun)
                 x1 = size * np.cos(t1) + sc.x
                 x2 = size * np.cos(t2) + sc.x
                 y1 = size * np.sin(t1) + sc.y
                 y2 = size * np.sin(t2) + sc.y
 
-                ax.plot([x1, sc.x, x2], [y1, sc.y, y2],
+                ax.plot(u.Quantity([x1, sc.x, x2]), u.Quantity([y1, sc.y, y2]),
                         color='w', alpha=0.75, lw=2.5, zorder=18, ls=ls)
                 if len(fov_bins):
-                    rs = np.array(fov_bins) * scale_factor
+                    rs = u.Quantity(fov_bins)
                     ts = np.linspace(t1, t2, 50)
                     for r in rs:
                         binx = r * np.cos(ts) + sc.x
@@ -1420,8 +1444,7 @@ class SimulationData:
     
     def plot_and_synthesize(
             self, t0, include_overhead=True, include_overhead_detail=False,
-            synthesize=True,
-            vmin=0, vmax=None, parcel_width=1, synth_kw={},
+            synthesize=True, vmin=0, vmax=None, parcel_width=1*u.R_sun, synth_kw={},
             synth_fixed_fov=None, synth_celest_wcs=False, synth_wcs=None,
             output_quantity='flux', use_default_figsize=False, figsize=None,
             synth_colorbar=False, focus_sc=True,
@@ -1430,7 +1453,7 @@ class SimulationData:
 
         Parameters
         ----------
-        t0 : ``float`` or ``Quantity``
+        t0 : ``Quantity``
             The time at which to plot
         include_overhead : ``bool``, optional
             Whether to include the overhead view
@@ -1440,7 +1463,7 @@ class SimulationData:
             Whether to include a synthetic image
         vmin, vmax : ``int``, optional
             The colorbar range to use for the synthetic image
-        parcel_width : ``float``, optional
+        parcel_width : ``Quantity``, optional
             The width to use for parcels in the synthetic image
         synth_kw : ``dict``, optional
             A dictionary of arguments to pass to `synthesize_image`
@@ -1466,8 +1489,8 @@ class SimulationData:
 
         Returns
         -------
-        _type_
-            _description_
+        axes : ``List[Axes]``
+            The axes which were plotted on
         """
         sc = self.sc.at(t0)
         n_plots = include_overhead + include_overhead_detail + synthesize
@@ -1497,6 +1520,7 @@ class SimulationData:
             parcel_width=parcel_width, fixed_fov_range=synth_fixed_fov,
             celestial_wcs=synth_celest_wcs, output_quantity=output_quantity,
             projection='CAR' if synth_fixed_fov else 'ARC', **synth_kw)
+
         if ax_syn is not None:
             cmap = 'Greys_r'
             if output_quantity in ('dsun', 'distance'):
@@ -1545,7 +1569,7 @@ class SimulationData:
                 ax = [ax for ax in (ax_syn, ax_overhead, ax_overhead_detail)
                       if ax is not None]
                 plt.colorbar(im, ax=ax)
-        
+
         if ax_overhead is not None:
             self.plot_overhead(
                 ax=ax_overhead, t0=t0, detail=False,
@@ -1582,22 +1606,28 @@ def create_simdat_from_spice(E, nt=400):
     f = coords.represent_as('spherical').distance < 0.25 * u.au
     coords = coords[f]
     times = times[f]
-    x, y, z = (coords.x.to_value(u.m), coords.y.to_value(u.m),
-               coords.z.to_value(u.m))
-    sc = ArrayThing(times, x, y, z)
-    t = np.linspace(times.min(), times.max(), nt)
+    sc = ArrayThing(times << u.s, coords.x, coords.y, coords.z)
+    t = np.linspace(times.min(), times.max(), nt) << u.s
     simdat = SimulationData(sc=sc, t=t, parcels=[], encounter=E)
     return simdat
 
 
-def add_random_parcels(simdat, v=100_000, n_parcels=500, theta_dist=0):
+def _random_from_units(low, high, n=1):
+    return np.random.uniform(low.si.value, high.si.value, n) << low.si.unit
+
+
+def _arange_from_units(start, stop, step=1):
+    return np.arange(start.si.value, stop.si.value, step.si.value) << start.si.unit
+
+
+def add_random_parcels(simdat, v=100*u.km/u.s, n_parcels=500, theta_dist=0):
     """Adds constant-velocity parcels with random trajectories and launch times
 
     Parameters
     ----------
     simdat : `SimulationData`
         The SimulationData to add parcels to
-    v : ``float``, optional
+    v : ``Quantity``, optional
         The velocity of the parcels
     n_parcels : ``int``, optional
         The number of parcels to add
@@ -1605,31 +1635,32 @@ def add_random_parcels(simdat, v=100_000, n_parcels=500, theta_dist=0):
         A scale factor from 0 to 1 controlling how far out of the HCI equatorial
         plane the parcels can point
     """
-    t_min = 120 * u.R_sun.to(u.m) / v
+    t_min = 120 * u.R_sun / v
     
     for this_phi, this_theta, t_start in zip(
-            np.random.uniform(0, 2*np.pi, n_parcels),
-            np.random.uniform(-np.pi, np.pi, n_parcels) * theta_dist,
-            np.random.uniform(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
+            np.random.uniform(0, 2*np.pi, n_parcels) << u.rad,
+            np.random.uniform(-np.pi, np.pi, n_parcels) * theta_dist * u.rad,
+            _random_from_units(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
         r = 1.1 * u.R_sun
         x = r * np.cos(this_phi) * np.cos(this_theta)
         y = r * np.sin(this_phi) * np.cos(this_theta)
         z = r * np.sin(this_theta)
         
         simdat.parcels.append(LinearThing(
-            x=x.value, y=y.value, z=z.value,
-            vx=(v * x / r).value, vy=(v * y / r).value, vz=(v * z / r).value,
+            x=x, y=y, z=z,
+            vx=(v * x / r), vy=(v * y / r), vz=(v * z / r),
             t=t_start, t_min=t_start))
 
 
-def add_regular_near_impacts(simdat, v=100_000, hit_spacing=1, miss_t=1,
-                             miss_t_before=None, miss_t_after=None):
+def add_regular_near_impacts(simdat, v=100*u.km/u.s, hit_spacing=1,
+                             miss_t=1*u.hr, miss_t_before=None,
+                             miss_t_after=None):
     if miss_t_before is None:
         miss_t_before = miss_t
     if miss_t_after is None:
         miss_t_after = miss_t
 
-    t_impacts = np.arange(simdat.t[0], simdat.t[-1], hit_spacing * 3600)
+    t_impacts = _arange_from_units(simdat.t[0], simdat.t[-1], hit_spacing)
     for t_impact in t_impacts:
         with simdat.sc.at_temp(t_impact) as sc:
             if np.isnan(miss_t_before):
@@ -1637,24 +1668,24 @@ def add_regular_near_impacts(simdat, v=100_000, hit_spacing=1, miss_t=1,
             elif np.isnan(miss_t_after):
                 dt = -miss_t_before
             else:
-                dt = np.random.uniform(-miss_t_before, miss_t_after)
-            dt *= 3600
+                dt = _random_from_units(-miss_t_before, miss_t_after)
             simdat.parcels.append(LinearThing(
                 x=sc.x, y=sc.y, z=sc.z,
                 vx=v*sc.x/sc.r, vy=v*sc.y/sc.r, vz=v*sc.z/sc.r,
                 t=t_impact + dt, t_min=t_impact + dt - sc.r / v))
 
 
-def add_random_near_impacts(simdat, v=100_000, n_parcels=40, miss_t=12*3600,
-                            miss_t_before=None, miss_t_after=None,):
+def add_random_near_impacts(simdat, v=100*u.km/u.s, n_parcels=40,
+                            miss_t=12*u.hr, miss_t_before=None,
+                            miss_t_after=None):
     if miss_t_before is None:
         miss_t_before = miss_t
     if miss_t_after is None:
         miss_t_after = miss_t
 
     for this_t, dt in zip(
-            np.random.uniform(simdat.t.min(), simdat.t.max(), n_parcels),
-            np.random.uniform(-miss_t_before, miss_t_after, n_parcels)):
+            _random_from_units(simdat.t.min(), simdat.t.max(), n_parcels),
+            _random_from_units(-miss_t_before, miss_t_after, n_parcels)):
         this_sc = simdat.sc.at(this_t)
         x, y, z = this_sc.x, this_sc.y, this_sc.z
         r = this_sc.r
@@ -1669,7 +1700,7 @@ def clear_near_impacts(simdat, close_thresh):
     for parcel in simdat.parcels:
         diff = simdat.sc - parcel
         dists = diff.at(simdat.t).r
-        if np.nanmin(dists) * u.m > close_thresh * u.R_sun:
+        if np.nanmin(dists) > close_thresh:
             parcels.append(parcel)
     simdat.parcels = parcels
 
@@ -1735,35 +1766,33 @@ def add_random_parcels_rad_grad(simdat, n_parcels=500, V0=325*u.km/u.s,
     alpha : ``float``, optional
         The alpha parameter for the gradient
     """
-    t_min = 120 * u.R_sun.to(u.m) / 200_000
+    t_min = 120 * u.R_sun / (200 * u.km / u.s)
     rs, ts, vs, rhos, rperp, rpar = gen_parcel_path(V0, alpha)
     
     for this_theta, t_start in zip(
             np.random.uniform(0, 2*np.pi, n_parcels),
-            np.random.uniform(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
+            _random_from_units(simdat.t[0] - t_min, simdat.t[-1], n_parcels)):
         x = rs * np.cos(this_theta)
         y = rs * np.sin(this_theta)
         z = rs * 0
-        tvals = t_start + ts.to_value(u.s)
+        tvals = t_start + ts
         simdat.parcels.append(ArrayThing(
-            tvals, x.value, y.value, z.value,
+            tvals, x, y, z,
             t=t_start, rholist=rhos, rperplist=rperp, rparlist=rpar,
             t_min=tvals[0], t_max=tvals[-1]))
 
 
 def add_regular_near_impacts_rad_grad(simdat, V0=325*u.km/u.s, alpha=0.2,
-                                      hit_spacing=1, miss_t=1,
+                                      hit_spacing=1*u.hr, miss_t=1*u.hr,
                                       miss_t_before=None, miss_t_after=None):
     rs, ts, vs, rhos, rperp, rpar = gen_parcel_path(V0, alpha)
-    rs = rs.to_value(u.m)
-    ts = ts.to_value(u.s)
     
     if miss_t_before is None:
         miss_t_before = miss_t
     if miss_t_after is None:
         miss_t_after = miss_t
 
-    t_impacts = np.arange(simdat.t[0], simdat.t[-1], hit_spacing * 3600)
+    t_impacts = _arange_from_units(simdat.t[0], simdat.t[-1], hit_spacing)
     for t_impact in t_impacts:
         with simdat.sc.at_temp(t_impact) as sc_impact:
             if np.isnan(miss_t_before):
@@ -1772,7 +1801,6 @@ def add_regular_near_impacts_rad_grad(simdat, V0=325*u.km/u.s, alpha=0.2,
                 dt = -miss_t_before
             else:
                 dt = np.random.uniform(-miss_t_before, miss_t_after)
-            dt *= 3600
             
             r_impact = sc_impact.r
             target_t = np.interp(r_impact, rs, ts)
@@ -1799,23 +1827,23 @@ def rotate_parcels_into_orbital_plane(simdat):
         if isinstance(parcel, LinearThing):
             c = astropy.coordinates.SkyCoord(
                 x=parcel.x_t0, y=parcel.y_t0, z=parcel.z_t0,
-                v_x=parcel.vx_t0/u.s, v_y=parcel.vy_t0/u.s, v_z=parcel.vz_t0/u.s,
+                v_x=parcel.vx_t0, v_y=parcel.vy_t0, v_z=parcel.vz_t0,
                 obstime=obstime, frame='psporbitalframe',
                 representation_type='cartesian')
             c = c.transform_to('heliocentricinertial').cartesian
-            parcel.x_t0 = c.x.value
-            parcel.y_t0 = c.y.value
-            parcel.z_t0 = c.z.value
-            parcel.vx_t0 = c.differentials['s'].d_x.value
-            parcel.vy_t0 = c.differentials['s'].d_y.value
-            parcel.vz_t0 = c.differentials['s'].d_z.value
+            parcel.x_t0 = c.x
+            parcel.y_t0 = c.y
+            parcel.z_t0 = c.z
+            parcel.vx_t0 = c.differentials['s'].d_x
+            parcel.vy_t0 = c.differentials['s'].d_y
+            parcel.vz_t0 = c.differentials['s'].d_z
         elif isinstance(parcel, ArrayThing):
             c = astropy.coordinates.SkyCoord(
                 x=parcel.xlist, y=parcel.ylist, z=parcel.zlist,
                 obstime=obstime, frame='psporbitalframe',
                 representation_type='cartesian')
             c = c.transform_to('heliocentricinertial').cartesian
-            parcel.xlist = c.x.value
-            parcel.ylist = c.y.value
-            parcel.zlist = c.z.value
+            parcel.xlist = c.x
+            parcel.ylist = c.y
+            parcel.zlist = c.z
             
