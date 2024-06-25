@@ -135,3 +135,4 @@ dmypy.json
 docs/api
 
 .vscode
+.idea
