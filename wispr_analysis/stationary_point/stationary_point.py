@@ -218,6 +218,43 @@ class ConstraintsResult:
             intersects.append(state)
         return intersects
 
+    def plot(self, vel_in_plane=True, mark_intersect=True, ax=None,
+             show_full_c2=False):
+        if ax is None:
+            ax = plt.gca()
+        ax.plot(self.delta_phi_c1,
+                self.v_pxy_c1 if vel_in_plane else self.v_p_c1)
+        ax.plot(self.delta_phi_c2,
+                self.v_pxy_c2 if vel_in_plane else self.v_p_c2)
+        ax.plot(self.delta_phi_c3,
+                self.v_pxy_c3 if vel_in_plane else self.v_p_c3)
+        ax.set_xlabel("Assumed separation in heliographic longitude")
+        if vel_in_plane:
+            ax.set_ylabel("Plasma in-plane velocity component (km/s)")
+        else:
+            ax.set_ylabel("Plasma radial velocity (km/s)")
+        if show_full_c2:
+            if show_full_c2 not in ('con', 'div', 'both'):
+                raise ValueError(
+                    "show_full_c2 must be one of 'con', 'div', 'both'")
+            if show_full_c2 == 'both':
+                states = [self.div_state, self.con_state]
+            else:
+                states = ([self.con_state] if show_full_c2 == 'con' else
+                         [self.div_state])
+            for state in states:
+                ax.pcolormesh(state.delta_phi,
+                              state.v_pxy if vel_in_plane else state.v_p,
+                              (state.dalpha_dt -
+                               self.measured_angles.dalpha_dt).value,
+                              cmap='bwr', vmin=-2e-5, vmax=2e-5, zorder=-20)
+        if mark_intersect:
+            intersect = self.get_intersect_vxy()
+            if intersect:
+                ax.scatter(intersect.delta_phi,
+                           intersect.v_pxy if vel_in_plane else intersect.v_p,
+                           color='C3')
+
     @property
     def v_p_c1(self):
         return self.vxy2vp(self.v_pxy_c1, self.delta_phi_c1)
