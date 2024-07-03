@@ -137,32 +137,19 @@ class ConstraintsResult:
     
     def get_intersect_vxy(self):
         intersects = self._get_intersects_vxy(
-            self.delta_phi_c2, self.v_pxy_c2, self.delta_phi_c1, self.v_pxy_c1,
-            self.con_state)
-        intersects.extend(self._get_intersects_vxy(
-            self.delta_phi_c3, self.v_pxy_c3, self.delta_phi_c1, self.v_pxy_c1,
-            self.div_state))
+            np.concatenate((self.delta_phi_c2, self.delta_phi_c3)),
+            np.concatenate((self.v_pxy_c2, self.v_pxy_c3)),
+            self.delta_phi_c1, self.v_pxy_c1,
+            self.con_state, self.div_state)
         # We'll take the intersection on our grid as a starting point to
         # iteratively find the "true" intersection.
         if len(intersects) == 0:
-            # If the parcel is very close to dphi = kappa, the first constraint
-            # crosses the second at or veeeery near the discontinuity, and so
-            # the intersect might be in that discontinuity. (I think the
-            # discont shouldn't exist if the parcel really is at kappa, but if
-            # the beta measurement is slightly off, kappa might be slightly off
-            # and the discont doesn't close perfectly). So if the edges of the
-            # two variants are close enough, try that as our initial guess.
-            if np.abs(self.v_pxy_c2[-1] - self.v_pxy_c3[0]) < 10 * u.km / u.s:
-                start_dphi = self.delta_phi_c2[-1]
-                intersects.append(self.con_state)
-            else:
-                return None
-        else:
-            # Sometimes you get duplicates at a single "real" intersection if
-            # the line from the numerical grid is a bit jittery, so let's just
-            # take the mean as our starting point.
-            start_dphi = np.mean(
-                u.Quantity([intersect.delta_phi for intersect in intersects]))
+            return None
+        # Sometimes you get duplicates at a single "real" intersection if
+        # the line from the numerical grid is a bit jittery, so let's just
+        # take the mean as our starting point.
+        start_dphi = np.mean(
+            u.Quantity([intersect.delta_phi for intersect in intersects]))
         con_state = self.con_state.copy()
         div_state = self.div_state.copy()
         def calc_resid(delta_phi):
@@ -174,7 +161,15 @@ class ConstraintsResult:
             state.delta_phi = delta_phi
             state.v_pxy = state.v_pxy_constr1
             return (state.dalpha_dt - self.measured_angles.dalpha_dt).value
-        root = scipy.optimize.root_scalar(calc_resid, bracket=[5, 130], x0=start_dphi.to_value(u.deg))
+        start = start_dphi.to_value(u.deg)
+        try:
+            root = scipy.optimize.root_scalar(
+                calc_resid, bracket=[0, 130],x0=start)
+        except ValueError:
+            # If there's a discontinuity in the first constraint, minimizing
+            # over the whole range will fail
+            root = scipy.optimize.root_scalar(
+                calc_resid, bracket=[start - 2, start + 2], x0=start)
         
         intersect = intersects[0]
         intersect.delta_phi = root.root * u.deg
@@ -183,7 +178,7 @@ class ConstraintsResult:
         return intersect
     
     @classmethod
-    def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, state):
+    def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, con_state, div_state):
         intersects = []
         for i in range(len(xs1)-1):
             x1 = xs1[i]
@@ -191,8 +186,8 @@ class ConstraintsResult:
             y1 = ys1[i]
             y2 = ys1[i+1]
             x3, x4 = x1, x2
-            y3 = np.interp(x3, xs2, ys2)
-            y4 = np.interp(x4, xs2, ys2)
+            y3 = np.interp(x3, xs2, ys2, left=np.nan, right=np.nan)
+            y4 = np.interp(x4, xs2, ys2, left=np.nan, right=np.nan)
             if np.any(np.isnan(u.Quantity((y1, y2, y3, y4)))):
                 continue
             if min(y3, y4) > max(y1, y2) or min(y1, y2) > max(y3, y4):
@@ -216,6 +211,7 @@ class ConstraintsResult:
             yint = ((a1 * c2) - (a2 * c1)) / det
             if xint < x1 or xint > x2:
                 continue
+            state = con_state if xint < con_state.kappa else div_state
             state = state.copy()
             state.delta_phi = xint
             state.v_pxy = yint
