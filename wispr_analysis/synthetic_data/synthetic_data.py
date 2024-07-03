@@ -2,7 +2,7 @@ from contextlib import ExitStack, contextmanager
 import copy
 import dataclasses
 
-import astropy.coordinates
+from astropy.coordinates import SkyCoord
 import astropy.time
 import astropy.units as u
 from astropy.visualization import quantity_support
@@ -644,10 +644,10 @@ def xyz_to_hpc(xs, ys, zs, scx, scy, scz):
         The HPC coordinate(s) of the object(s)
     """
     obstime = '2023/07/05T04:21:00'
-    sc_hc = astropy.coordinates.SkyCoord(x=scx, y=scy, z=scz, unit='m',
+    sc_hc = SkyCoord(x=scx, y=scy, z=scz, unit='m',
             representation_type='cartesian', obstime=obstime,
             frame=sunpy.coordinates.frames.HeliocentricInertial)
-    p_hc = astropy.coordinates.SkyCoord(x=xs, y=ys, z=zs, unit='m',
+    p_hc = SkyCoord(x=xs, y=ys, z=zs, unit='m',
             representation_type='cartesian', obstime=obstime,
             frame=sunpy.coordinates.frames.HeliocentricInertial)
     p_hpc = p_hc.transform_to(
@@ -794,10 +794,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
             sc_soon = sc.copy()
             sc_soon.t += 1
             xp, yp, zp = sc_soon.x, sc_soon.y, sc_soon.z
-            observer = astropy.coordinates.SkyCoord(
+            observer = SkyCoord(
                 x, y, z, representation_type='cartesian', obstime=date,
                 frame='heliocentricinertial', unit='m')
-            forward = astropy.coordinates.SkyCoord(
+            forward = SkyCoord(
                 xp, yp, zp, representation_type='cartesian', obstime=date,
                 frame='heliocentricinertial', unit='m', observer=observer)
             forward = forward.transform_to('helioprojective')
@@ -866,10 +866,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     # Turn the LOS directions into distant points and transform them to HCI
     # (x,y,z) points
     obstime = date
-    sc_coord = astropy.coordinates.SkyCoord(
+    sc_coord = SkyCoord(
         sc.x, sc.y, sc.z, frame='heliocentricinertial',
         representation_type='cartesian', unit='m', obstime=obstime)
-    los = astropy.coordinates.SkyCoord(
+    los = SkyCoord(
         Tx, Ty, 100*u.au, frame='helioprojective', observer=sc_coord)
     los = los.transform_to('heliocentricinertial').cartesian
     los = np.array(
@@ -910,7 +910,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     parcel_poses = np.empty((len(parcels), 3))
     for i, parcel in enumerate(parcels):
         parcel_poses[i] = parcel.x[0], parcel.y[0], parcel.z[0]
-    p_coord = astropy.coordinates.SkyCoord(
+    p_coord = SkyCoord(
         parcel_poses[..., 0], parcel_poses[..., 1], parcel_poses[..., 2],
         frame='heliocentricinertial', representation_type='cartesian',
         unit='m', obstime=obstime, observer=sc_coord)
@@ -1813,6 +1813,50 @@ def add_regular_near_impacts_rad_grad(simdat, V0=325*u.km/u.s, alpha=0.2,
                 t_min=these_ts[0], t_max=these_ts[-1]))
 
 
+def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy):
+    sct = simdat.sc.at(t0)
+    sc_coord = SkyCoord(
+        sct.x, sct.y, sct.z,
+        v_x=sct.vx, v_y=sct.vy, v_z=sct.vz,
+        representation_type='cartesian', frame='heliocentricinertial',
+        obstime=utils.from_timestamp(t0)).transform_to('psporbitalframe')
+    # Create an in-plane parcel at the set delta_phi, r_pxy
+    p_coord = SkyCoord(sc_coord.lon + delta_phi, 0*u.deg, r_pxy,
+                       frame='psporbitalframe')
+    scx = sc_coord.cartesian.x
+    scy = sc_coord.cartesian.y
+    scvx = sc_coord.cartesian.differentials['s'].d_x
+    scvy = sc_coord.cartesian.differentials['s'].d_y
+    scv = np.sqrt(scvx**2 + scvy**2)
+    px = p_coord.cartesian.x
+    py = p_coord.cartesian.y
+
+    # Get the sc's velocity component perpendicular to the LOS we see it on
+    theta = utils.angle_between_vectors((scx-px).value, (scy-py).value,
+                                        0, -scvx.value, -scvy.value, 0)
+    vperp = scv * np.sin(theta)
+    vp_perp = vperp
+
+    # Find a parcel velocity with that same component
+    phic = utils.angle_between_vectors((scx-px).value, (scy-py).value, 0,
+                                       px.value, py.value, 0) * u.rad
+    phi = 90*u.deg - phic
+    vp_xy = vp_perp / np.cos(phi)
+    vp = vp_xy / np.cos(launch_theta)
+
+    # Now position a parcel with that speed in 3D
+    p_coord = SkyCoord(sc_coord.lon + delta_phi, launch_theta, r_pxy,
+                       frame='psporbitalframe',
+                       obstime=utils.from_timestamp(t0)
+                       ).transform_to('heliocentricinertial').cartesian
+    x = p_coord.x
+    y = p_coord.y
+    z = p_coord.z
+    r = np.sqrt(x**2 + y**2 + z**2)
+    simdat.parcels.append(LinearThing(x=x, y=y, z=z,
+                                      vx=vp*x/r, vy=vp*y/r, vz=vp*z/r, t=t0))
+
+
 def rotate_parcels_into_orbital_plane(simdat):
     """Rotates all parcels so that any parcel that was in the HCI equatorial
     plane is now in the PSP orbital plane
@@ -1825,7 +1869,7 @@ def rotate_parcels_into_orbital_plane(simdat):
     obstime = utils.from_timestamp(simdat.t[0])
     for parcel in simdat.parcels:
         if isinstance(parcel, LinearThing):
-            c = astropy.coordinates.SkyCoord(
+            c = SkyCoord(
                 x=parcel.x_t0, y=parcel.y_t0, z=parcel.z_t0,
                 v_x=parcel.vx_t0, v_y=parcel.vy_t0, v_z=parcel.vz_t0,
                 obstime=obstime, frame='psporbitalframe',
@@ -1838,7 +1882,7 @@ def rotate_parcels_into_orbital_plane(simdat):
             parcel.vy_t0 = c.differentials['s'].d_y
             parcel.vz_t0 = c.differentials['s'].d_z
         elif isinstance(parcel, ArrayThing):
-            c = astropy.coordinates.SkyCoord(
+            c = SkyCoord(
                 x=parcel.xlist, y=parcel.ylist, z=parcel.zlist,
                 obstime=obstime, frame='psporbitalframe',
                 representation_type='cartesian')
