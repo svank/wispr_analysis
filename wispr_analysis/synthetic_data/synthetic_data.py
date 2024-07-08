@@ -1821,7 +1821,8 @@ def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy):
         representation_type='cartesian', frame='heliocentricinertial',
         obstime=utils.from_timestamp(t0)).transform_to('psporbitalframe')
     # Create an in-plane parcel at the set delta_phi, r_pxy
-    p_coord = SkyCoord(sc_coord.lon + delta_phi, 0*u.deg, r_pxy,
+    p_coord = SkyCoord(sc_coord.lon + delta_phi, 0*u.deg,
+                       r_pxy * np.cos(launch_theta),
                        frame='psporbitalframe')
     scx = sc_coord.cartesian.x
     scy = sc_coord.cartesian.y
