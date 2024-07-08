@@ -1558,11 +1558,13 @@ class SimulationData:
             lon.set_major_formatter('dd')
             if synth_celest_wcs:
                 ax_syn.set_xlabel("Fixed Longitude")
+                ax_syn.set_ylabel("Fixed Latitude")
             elif wcs.wcs.ctype[0].startswith("HP"):
-                ax_syn.set_xlabel("HP Longitude")
+                ax_syn.set_xlabel("Helioprojective Longitude")
+                ax_syn.set_ylabel("Helioprojective Latitude")
             elif wcs.wcs.ctype[0].startswith("PS"):
                 ax_syn.set_xlabel("PSP Frame Longitude")
-            ax_syn.set_ylabel(" ")
+                ax_syn.set_ylabel("PSP Frame Latitude")
             ax_syn.coords.grid(color='white', alpha=0.1)
             
             if synth_colorbar:
