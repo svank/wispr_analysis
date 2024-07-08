@@ -450,7 +450,7 @@ class AutoClicker(InteractiveClicker):
         
         self.clicked_alphas = []
         self.clicked_lons = []
-        self.clicked_times = times * u.s
+        self.clicked_times = times
         
         for i in range(len(frames)):
             y, x = np.unravel_index(np.nanargmax(frames[i]), frames[i].shape)
