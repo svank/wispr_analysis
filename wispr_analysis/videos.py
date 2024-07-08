@@ -551,7 +551,8 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         n = np.inf
         have_iterable = False
         for arg in arg_list:
-            if hasattr(arg, "__iter__") and not isinstance(arg, (str, dict)):
+            if hasattr(arg, "__iter__") and not isinstance(
+                    arg, (str, dict, WCS)):
                 have_iterable = True
                 ready_arg_list.append(arg)
                 try:
