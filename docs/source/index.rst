@@ -11,6 +11,9 @@ Welcome to ``wispr_analysis``
    :maxdepth: 2
    :caption: Contents:
 
+   installing
+   synthesizing_images
+
 Indices and tables
 ==================
 
