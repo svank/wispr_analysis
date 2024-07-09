@@ -720,7 +720,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         Width of each plasma blob, in R_sun
     image_wcs : ``WCS``, optional
         The WCS to use for the output image. If not provided, a WISPR-like WCS
-        is generated
+        is generated. Note that if this is provided, you may want to adjust
+        ``output_size_x`` and ``output_size_y`` to appropriate values.
     celestial_wcs : ``bool``, optional
         Whether to convert the output WCS to RA/Dec
     output_quantity : ``str``
