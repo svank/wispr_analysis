@@ -80,8 +80,8 @@ class Thing:
         """
         return np.all(self.t == other.t)
 
-    @u.quantity_input
-    def at(self, t: u.s):
+    @u.quantity_input(t=u.s)
+    def at(self, t):
         """ Returns a copy of this object at time ``t``. """
         t = np.atleast_1d(t)
         out = self.copy()
@@ -89,8 +89,8 @@ class Thing:
         return out
     
     @contextmanager
-    @u.quantity_input
-    def at_temp(self, t: (u.s, None)):
+    @u.quantity_input(t=(u.s, None))
+    def at_temp(self, t):
         """Temporarily sets this objects time to ``t``, without copying"""
         if t is None:
             yield self
@@ -100,8 +100,8 @@ class Thing:
         yield self
         self.t = old_t
 
-    @u.quantity_input
-    def set_t(self, t: u.s):
+    @u.quantity_input(t=u.s)
+    def set_t(self, t):
         """ Sets the object's time to ``t``. """
         t = np.atleast_1d(t)
         self.t = t
@@ -189,8 +189,8 @@ class LinearThing(Thing):
     density_r2: bool = False
 
     @u.quantity_input(x=u.m, y=u.m, z=u.m,
-                 vx=u.m/u.s, vy=u.m/u.s, vz=u.m/u.s,
-                 t=u.s, t_min=(u.s, None), t_max=(u.s, None))
+                      vx=u.m/u.s, vy=u.m/u.s, vz=u.m/u.s,
+                      t=u.s, t_min=(u.s, None), t_max=(u.s, None))
     def __init__(self, x=0*u.m, y=0*u.m, z=0*u.m,
                  vx=0*u.m/u.s, vy=0*u.m/u.s, vz=0*u.m/u.s,
                  t=0*u.s, t_min=None, t_max=None,
@@ -268,8 +268,8 @@ class LinearThing(Thing):
         return vx
     
     @vx.setter
-    @u.quantity_input
-    def vx(self, value: u.m/u.s):
+    @u.quantity_input(value=u.m/u.s)
+    def vx(self, value):
         self.vx_t0 = value
     
     @property
@@ -279,8 +279,8 @@ class LinearThing(Thing):
         return vy
     
     @vy.setter
-    @u.quantity_input
-    def vy(self, value: u.m/u.s):
+    @u.quantity_input(value=u.m/u.s)
+    def vy(self, value):
         self.vy_t0 = value
     
     @property
@@ -290,8 +290,8 @@ class LinearThing(Thing):
         return vz
     
     @vz.setter
-    @u.quantity_input
-    def vz(self, value: u.m/u.s):
+    @u.quantity_input(value=u.m/u.s)
+    def vz(self, value):
         self.vz_t0 = value
     
     @property
@@ -327,8 +327,8 @@ class LinearThing(Thing):
     def rho(self, value):
         self.rho0 = value
 
-    @u.quantity_input
-    def offset_by_time(self, dt: u.s):
+    @u.quantity_input(dt=u.s)
+    def offset_by_time(self, dt):
         """
         Creates a copy of this object that represents, at the current time,
         where this object will be ``dt`` into the future
@@ -372,7 +372,7 @@ class ArrayThing(Thing):
     scale_rho_r2: bool = False
 
     @u.quantity_input(tlist=u.s, xlist=u.m, ylist=u.m, zlist=u.m,
-                 t=0*u.s, t_min=(u.s, None), t_max=(u.s, None))
+                      t=0*u.s, t_min=(u.s, None), t_max=(u.s, None))
     def __init__(self, tlist, xlist=0*u.m, ylist=0*u.m, zlist=0*u.m,
             t=0*u.s, t_min=None, t_max=None, rperplist=1, rparlist=1,
             rholist=1, default_density_r2=False):
