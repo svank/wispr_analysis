@@ -243,7 +243,7 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
                  color='white', fontsize=10*inset_scale)
         ax.text(550 / image_scale * inset_scale,
                 185 / image_scale * inset_scale,
-                 f"R$_\odot$",
+                 r"R$_\odot$",
                  color='white', fontsize=10*inset_scale)
         ax.text(360 / image_scale * inset_scale,
                 135 / image_scale * inset_scale,
@@ -251,11 +251,11 @@ def _draw_WISPR_video_frame(out_file, t, ifile, ofile, wcs, planet_poses,
                  color='white', fontsize=10*inset_scale)
         ax.text(550 / image_scale * inset_scale,
                 135 / image_scale * inset_scale,
-                 f"AU",
+                 "AU",
                  color='white', fontsize=10*inset_scale)
         ax.text(360 / image_scale * inset_scale,
                 80 / image_scale * inset_scale,
-                 f"$\\theta$ = {theta:.1f} $^\ocirc$",
+                 fr"$\theta$ = {theta:.1f} $^\ocirc$",
                  color='white', fontsize=10*inset_scale)
         
         if extra_plot_fcn is not None:
