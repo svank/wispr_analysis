@@ -199,7 +199,7 @@ def find_collective_bounds(hdrs, wcs_target, trim=(0, 0, 0, 0), key=' '):
         (left, right, bottom, top). If ``hdrs`` is a list of lists of Headers,
         this can be (but does not have to be) be a list of tuples of trim
         values, one for each list of Headers.
-    hdr_key : str
+    key : str
         The key argument passed to WCS, to select which of a header's
         coordinate systems to use.
     
