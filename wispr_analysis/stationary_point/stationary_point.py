@@ -367,56 +367,75 @@ class InteractiveClicker:
         self.frames = frames
         self.wcs = wcs
         self.plot_opts = plot_opts
-        self.times = times
+        self.times = utils.to_timestamp(times) << u.s
         
-        self.clicked_alphas = []
-        self.clicked_lons = []
+        self.clicked_alphas = {}
+        self.clicked_lons = {}
         self.clicked_times = []
     
     def show(self):
         def draw_frame(i):
             plt.close('all')
+            t = self.times[i]
             def onclick(event):
                 try:
                     x = event.xdata
                     y = event.ydata
-                    marker.set_data(x, y)
-                    t = utils.to_timestamp(self.times[i]) * u.s
-                    if t in self.clicked_times:
-                        j = self.clicked_times.index(t)
-                        self.clicked_alphas.pop(j)
-                        self.clicked_lons.pop(j)
-                        self.clicked_times.pop(j)
+                    marker.set_data([x], [y])
                     clicked_coord = self.wcs.pixel_to_world(x, y)
-                    self.clicked_alphas.append(clicked_coord.lat)
-                    self.clicked_lons.append(clicked_coord.lon)
-                    self.clicked_times.append(t)
+                    self.clicked_alphas[t] = clicked_coord.lat
+                    self.clicked_lons[t] = clicked_coord.lon
+                    if t not in self.clicked_times:
+                        self.clicked_times.append(t)
                 except Exception as e:
                     plt.title(e)
-            fig = plt.figure(figsize=(13, 13))
+            fig = plt.figure(figsize=(13, 12))
             plot_utils.plot_WISPR(
                 self.frames[i], wcs=self.wcs, **self.plot_opts)
-            plt.title(utils.to_timestamp(self.times[i], as_datetime=True)
-                      .strftime('%Y %b %d, %H:%M'))
+            plt.title(utils.from_timestamp(t))
             marker_x, marker_y = np.nan, np.nan
-            t = utils.to_timestamp(self.times[i]) * u.s
             if t in self.clicked_times:
-                j = self.clicked_times.index(t)
                 marker_x, marker_y = self.wcs.world_to_pixel_values(
-                    self.clicked_lons[j], self.clicked_alphas[j])
+                    self.clicked_lons[t], self.clicked_alphas[t])
             marker, = plt.plot(marker_x, marker_y, '+', color='C1')
+            befores = []
+            afters = []
+            for time in self.clicked_times:
+                if time < t:
+                    befores.append(u.Quantity((self.clicked_lons[time], self.clicked_alphas[time])))
+                elif time > t:
+                    afters.append(u.Quantity((self.clicked_lons[time], self.clicked_alphas[time])))
+            if len(befores):
+                x, y = self.wcs.world_to_pixel_values(*u.Quantity(befores).T)
+                plt.scatter(x, y, marker='+', color='C0')
+            if len(afters):
+                x, y = self.wcs.world_to_pixel_values(*u.Quantity(afters).T)
+                plt.scatter(x, y, marker='+', color='C2')
+            
             fig.canvas.mpl_connect('button_press_event', onclick)
+            
+            def onpress(event):
+                try:
+                    if event.key == '[':
+                        if widgets.children[0].value > 0:
+                            widgets.children[0].value -= 1
+                    elif event.key == ']':
+                        if widgets.children[0].value < len(self.times) - 1:
+                            widgets.children[0].value += 1
+                except Exception as e:
+                    plt.title(e)
+            fig.canvas.mpl_connect('key_press_event', onpress)
             plt.show()
-        return interactive(draw_frame, i=(0, len(self.frames)))
+        widgets = interactive(draw_frame, i=(0, len(self.frames)))
+        return widgets
     
     def conclude(self):
-        observed_stationary_point = np.mean(u.Quantity(self.clicked_lons))
+        observed_stationary_point = np.mean(u.Quantity(
+            list(self.clicked_lons.values())))
         
-        alphas = u.Quantity(self.clicked_alphas)
         times = u.Quantity(self.clicked_times)
-        sort = np.argsort(times)
-        times = times[sort]
-        alphas = alphas[sort]
+        times = np.sort(times)
+        alphas = u.Quantity([self.clicked_alphas[t] for t in times])
         
         fit = np.polyfit(times.value, alphas.value, 1)
         dalpha_dt = fit[0] * alphas.unit / times.unit
@@ -446,17 +465,17 @@ class AutoClicker(InteractiveClicker):
         self.frames = frames
         self.wcs = wcs
         self.plot_opts = plot_opts
-        self.times = times
+        self.times = utils.to_timestamp(times) << u.s
         
-        self.clicked_alphas = []
-        self.clicked_lons = []
+        self.clicked_alphas = {}
+        self.clicked_lons = {}
         self.clicked_times = times
         
         for i in range(len(frames)):
             y, x = np.unravel_index(np.nanargmax(frames[i]), frames[i].shape)
             clicked_coord = wcs.pixel_to_world(x, y)
-            self.clicked_alphas.append(clicked_coord.lat)
-            self.clicked_lons.append(clicked_coord.lon)
+            self.clicked_alphas[self.times[i]] = clicked_coord.lat
+            self.clicked_lons[self.times[i]] =clicked_coord.lon
     
     def show(self):
         raise NotImplementedError(
