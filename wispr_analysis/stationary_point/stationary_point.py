@@ -430,24 +430,31 @@ class InteractiveClicker:
         return widgets
     
     def conclude(self):
-        observed_stationary_point = np.mean(u.Quantity(
-            list(self.clicked_lons.values())))
+        observed_stationary_point = np.mean(
+            u.Quantity(list(self.clicked_lons.values())))
+        observed_stationary_point_sigma = np.std(
+            u.Quantity(list(self.clicked_lons.values())))
         
         times = u.Quantity(self.clicked_times)
         times = np.sort(times)
         alphas = u.Quantity([self.clicked_alphas[t] for t in times])
-        
-        fit = np.polyfit(times.value, alphas.value, 1)
-        dalpha_dt = fit[0] * alphas.unit / times.unit
         t0 = (times[0] + times[-1]) / 2
+        times -= t0
+        
+        (dalpha_dt, alpha), cov = np.polyfit(
+            times.value, alphas.value, 1, cov=True)
+        dalpha_dt <<= (alphas.unit / times.unit)
+        alpha <<= alphas.unit
+        
         tstart = times[0]
         tstop = times[-1]
-        alpha = np.interp(t0, times, alphas)
         
         result = MeasuredAngles(
             stationary_point=observed_stationary_point,
+            stationary_point_std=observed_stationary_point_sigma,
             alpha=alpha,
             dalpha_dt=dalpha_dt,
+            alpha_cov_matrix=cov,
             t0=t0,
             tstart=tstart,
             tstop=tstop)
@@ -485,20 +492,27 @@ class AutoClicker(InteractiveClicker):
 @dataclass
 class MeasuredAngles:
     stationary_point: u.Quantity
+    stationary_point_std: u.Quantity
     alpha: u.Quantity
     dalpha_dt: u.Quantity
+    alpha_cov_matrix: np.ndarray
     t0: u.Quantity
     tstart: u.Quantity
     tstop: u.Quantity
     
     def __str__(self):
-        return (f"MeasuredAngles(\n\tstationary_point="
+        return (f"MeasuredAngles(\n\t"
+                f"stationary_point="
                 f"{self.stationary_point.value:.3f} "
                 f"* u.Unit('{str(self.stationary_point.unit)}'),\n\t"
+                f"stationary_point_std="
+                f"{self.stationary_point_std.value:.3f} "
+                f"* u.Unit('{str(self.stationary_point_std.unit)}'),\n\t"
                 f"alpha={self.alpha.value:.3f} "
                 f"* u.Unit('{str(self.alpha.unit)}'),\n\t"
                 f"dalpha_dt={self.dalpha_dt.value:.4e} "
                 f"* u.Unit('{str(self.dalpha_dt.unit)}'),\n\t"
+                f"alpha_cov_matrix=np.{repr(self.alpha_cov_matrix)},\n\t"
                 f"t0={self.t0.value:.0f} "
                 f"* u.Unit('{str(self.t0.unit)}'),\n\t"
                 f"tstart={self.tstart.value:.0f} "
