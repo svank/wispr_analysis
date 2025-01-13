@@ -7,6 +7,7 @@ from ipywidgets import interactive
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.optimize
+from tqdm.auto import tqdm
 
 from .. import orbital_frame, planets, plot_utils, utils
 
@@ -519,3 +520,50 @@ class MeasuredAngles:
                 f"* u.Unit('{str(self.tstart.unit)}'),\n\t"
                 f"tstop={self.tstop.value:.0f} "
                 f"* u.Unit('{str(self.tstop.unit)}'))")
+
+
+@dataclass
+class InferredValues:
+    vp: u.Quantity
+    vpxy: u.Quantity
+    delta_phi: u.Quantity
+    rp: u.Quantity
+    theta: u.Quantity
+
+
+def find_uncertainty(measured_angles, n_samples=1000, progress_bar=True):
+    vps = []
+    vpxys = []
+    delta_phis = []
+    rps = []
+    thetas = []
+    iterations = range(n_samples)
+    if progress_bar:
+        iterations = tqdm(iterations)
+    for _ in iterations:
+        ma_sample = copy.deepcopy(measured_angles)
+        ma_sample.stationary_point = np.random.normal(
+            ma_sample.stationary_point.value,
+            ma_sample.stationary_point_std.value) << ma_sample.stationary_point.unit
+        dalpha_dt, alpha = np.random.multivariate_normal(
+            [ma_sample.dalpha_dt.value, ma_sample.alpha.value],
+            ma_sample.alpha_cov_matrix)
+        ma_sample.dalpha_dt = dalpha_dt << ma_sample.dalpha_dt.unit
+        ma_sample.alpha = alpha << ma_sample.alpha.unit
+        
+        res = calc_constraints(ma_sample)
+        intersect = res.get_intersect_vxy()
+        
+        vps.append(intersect.v_p)
+        vpxys.append(intersect.v_pxy)
+        delta_phis.append(intersect.delta_phi)
+        thetas.append(intersect.theta)
+        rps.append(intersect.r_p)
+    vps = u.Quantity(vps)
+    vpxys = u.Quantity(vpxys)
+    delta_phis = u.Quantity(delta_phis)
+    rps = u.Quantity(rps)
+    thetas = u.Quantity(thetas)
+
+    return InferredValues(
+        vp=vps, vpxy=vpxys, delta_phi=delta_phis, rp=rps, theta=thetas)
