@@ -350,6 +350,229 @@ class LinearThing(Thing):
 
 
 @dataclasses.dataclass
+class AzimuthalThing(Thing):
+    """ Represents an object with constant velocity in spherical coords """
+    r_t0: u.Quantity
+    """The r position at t=0"""
+    phi_t0: u.Quantity
+    """The phi position at t=0"""
+    theta_t0: u.Quantity
+    """The theta position at t=0"""
+    vr_t0: u.Quantity
+    """The constant r velocity"""
+    vphi_t0: u.Quantity
+    """The constant phi velocity"""
+    vtheta_t0: u.Quantity
+    """The constant theta velocity"""
+    rperp0: float = 1
+    rpar0: float = 1
+    rho0: float = 1
+    rperp_r2: bool = False
+    density_r2: bool = False
+    
+    @u.quantity_input(x=u.m, y=u.m, z=u.m,
+                      vr=u.m / u.s, vphi=(u.deg / u.s, u.m / u.s),
+                      vtheta=(u.deg / u.s, u.m / u.s),
+                      t=u.s, t_min=(u.s, None), t_max=(u.s, None))
+    def __init__(self, x=0 * u.m, y=0 * u.m, z=0 * u.m,
+                 vr=0 * u.m / u.s, vphi=0 * u.deg / u.s, vtheta=0 * u.deg / u.s,
+                 t=0 * u.s, t_min=None, t_max=None,
+                 rperp=1, rpar=1, rho=1, density_r2=False, rperp_r2=False):
+        """
+        Accepts physical parameters, as well as the corresponding time
+
+        Parameters
+        ----------
+        x, y, z : ``float`` or ``Quantity``
+            The position of the object at the reference time
+        vr, vphi, vtheta : ``float`` or ``Quantity``
+            The velocity of the object at the reference time
+        t : ``float`` or ``Quantity``
+            The reference time
+        t_min, t_max : ``float`` or ``Quantity``
+            Can be set to limit the time range over which this parcel is valid.
+            For times outside this range, positions and velocities will be
+            computed as ``nan``
+        rperp, rpar : ``float`` or ``Quantity``
+            The radius of the parcel at the reference time measured
+            perpendicular to and parallel to the parcel--Sun line.
+        rho : ``float`` or ``Quantity``
+            The density of the parcel at the reference time
+        density_r2 : ``bool``
+            Whether ``rho`` should be scaled by 1/r^2, with r being the object's
+            distance from the Sun
+        rperp_r2 : ``bool``
+            Whether ``rperp`` should be scaled by 1/r^2, with r being the object's
+            distance from the Sun
+        """
+        # Convert the initial coord to spherical
+        r = np.sqrt(x**2 + y**2 + z**2)
+        theta = np.arccos(z / r)
+        phi = np.arctan2(y, x)
+        
+        # Turn velocities into angular velocities if needed
+        if vphi.unit.is_equivalent(u.m / u.s):
+            vphi = vphi * u.rad / (r * np.sin(theta))
+        if vtheta.unit.is_equivalent(u.m / u.s):
+            vtheta = vtheta * u.rad / r
+        
+        self.vr_t0 = vr
+        self.vphi_t0 = vphi
+        self.vtheta_t0 = vtheta
+        self.t = t
+        
+        # Roll the position back to t=0
+        self.r_t0 = r - vr * t
+        self.theta_t0 = theta - vtheta * t
+        self.phi_t0 = phi - vphi * t
+        
+        self.t_min = t_min
+        self.t_max = t_max
+        
+        self.rperp0 = rperp
+        self.rpar0 = rpar
+        self.rho0 = rho
+        self.rperp_r2 = rperp_r2
+        self.density_r2 = density_r2
+    
+    @property
+    def r(self):
+        r = self.r_t0 + self.vr_t0 * self.t
+        r = self.process_t_bounds(r)
+        return r
+    
+    @property
+    def phi(self):
+        phi = self.phi_t0 + self.vphi_t0 * self.t
+        phi = self.process_t_bounds(phi)
+        return phi
+
+    @property
+    def theta(self):
+        theta = self.theta_t0 + self.vtheta_t0 * self.t
+        theta = self.process_t_bounds(theta)
+        return theta
+    
+    @property
+    def x(self):
+        """ The object's ``x`` position at the currently-set time"""
+        return self.r * np.cos(self.phi) * np.sin(self.theta)
+    
+    @property
+    def y(self):
+        """ The object's ``y`` position at the currently-set time"""
+        return self.r * np.sin(self.phi) * np.sin(self.theta)
+    
+    @property
+    def z(self):
+        """ The object's ``z`` position at the currently-set time"""
+        return self.r * np.cos(self.theta)
+    
+    @property
+    def vr(self):
+        return self.process_t_bounds(self.vr_t0)
+    
+    @vr.setter
+    @u.quantity_input(value=u.m / u.s)
+    def vr(self, value):
+        self.vr_t0 = value
+    
+    @property
+    def vphi(self):
+        """ The object's ``phi`` velocity, which is constant"""
+        return self.process_t_bounds(self.vphi_t0)
+    
+    @vphi.setter
+    @u.quantity_input(value=u.deg / u.s)
+    def vphi(self, value):
+        self.vphi_t0 = value
+    
+    @property
+    def vtheta(self):
+        """ The object's ``theta`` velocity, which is constant"""
+        return self.process_t_bounds(self.vtheta_t0)
+    
+    @vtheta.setter
+    @u.quantity_input(value=u.deg / u.s)
+    def vtheta(self, value):
+        self.vtheta_t0 = value
+    
+    @property
+    def v(self):
+        with u.set_enabled_equivalencies(u.dimensionless_angles()):
+            vr = self.vr
+            vphi = self.r * self.vphi * np.sin(self.theta)
+            vtheta = self.r * self.vtheta
+            return np.sqrt(vr**2 + vphi**2 + vtheta**2)
+    
+    @property
+    def vxy(self):
+        with u.set_enabled_equivalencies(u.dimensionless_angles()):
+            vr = self.vr
+            vphi = self.r * self.vphi * np.sin(self.theta)
+            vtheta = self.r * self.vtheta
+            
+            # Project into plane
+            vr = vr * np.sin(self.theta)
+            vtheta = vtheta * np.cos(self.theta)
+            return np.sqrt(vr**2 + vphi**2 + vtheta**2)
+    
+    @property
+    def rperp(self):
+        rperp = self.rperp0
+        if self.rperp_r2:
+            scale = 1 / self.r ** 2
+            rperp *= scale.si.value
+        return rperp
+    
+    @rperp.setter
+    def rperp(self, value):
+        self.rperp = value
+    
+    @property
+    def rpar(self):
+        rpar = self.rpar0
+        return rpar
+    
+    @rpar.setter
+    def rpar(self, value):
+        self.rpar = value
+    
+    @property
+    def rho(self):
+        rho = self.rho0
+        if self.density_r2:
+            scale = 1 / self.r ** 2
+            rho *= scale.si.value
+        return rho
+    
+    @rho.setter
+    def rho(self, value):
+        self.rho0 = value
+    
+    @u.quantity_input(dt=u.s)
+    def offset_by_time(self, dt):
+        """
+        Creates a copy of this object that represents, at the current time,
+        where this object will be ``dt`` into the future
+        """
+        out = self.copy()
+        out.r_t0 += out.vr_t0 * dt
+        out.phi_t0 += out.vphi_t0 * dt
+        out.theta_t0 += out.vtheta_t0 * dt
+        return out
+    
+    def strip_units(self):
+        out = super().strip_units()
+        for attr in ('r_t0', 'theta_t0', 'phi_t0', 'vr_t0', 'vtheta_t0', 'vphi_t0',
+                     'rperp0', 'rpar0', 'rho0'):
+            value = getattr(out, attr)
+            if isinstance(value, u.Quantity):
+                setattr(out, attr, value.si.value)
+        return out
+
+
+@dataclasses.dataclass
 class ArrayThing(Thing):
     """
     Represents an object whose position over time is specified numerically.
