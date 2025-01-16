@@ -2039,7 +2039,8 @@ def add_regular_near_impacts_rad_grad(simdat, V0=325*u.km/u.s, alpha=0.2,
                 t_min=these_ts[0], t_max=these_ts[-1]))
 
 
-def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy):
+def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy,
+                                   v_pphi=0*u.m/u.s):
     sct = simdat.sc.at(t0)
     sc_coord = SkyCoord(
         sct.x, sct.y, sct.z,
@@ -2060,16 +2061,17 @@ def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy):
 
     # Get the sc's velocity component perpendicular to the LOS we see it on
     theta = utils.angle_between_vectors((scx-px).value, (scy-py).value,
-                                        0, -scvx.value, -scvy.value, 0)
+                                        0, scvx.value, scvy.value, 0)
     vperp = scv * np.sin(theta)
     vp_perp = vperp
 
     # Find a parcel velocity with that same component
-    phic = utils.angle_between_vectors((scx-px).value, (scy-py).value, 0,
+    phi = utils.angle_between_vectors((scx-px).value, (scy-py).value, 0,
                                        px.value, py.value, 0) * u.rad
-    phi = 90*u.deg - phic
-    vp_xy = vp_perp / np.cos(phi)
-    vp = vp_xy / np.cos(launch_theta)
+    vphi_perp = v_pphi * np.sin(90*u.deg + phi)
+    vr_perp = vp_perp - vphi_perp
+    vr_inplane = vr_perp / np.sin(phi)
+    vr = vr_inplane / np.cos(launch_theta)
 
     # Now position a parcel with that speed in 3D
     p_coord = SkyCoord(sc_coord.lon + delta_phi, launch_theta, r_pxy,
@@ -2079,9 +2081,8 @@ def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy):
     x = p_coord.x
     y = p_coord.y
     z = p_coord.z
-    r = np.sqrt(x**2 + y**2 + z**2)
-    simdat.parcels.append(LinearThing(x=x, y=y, z=z,
-                                      vx=vp*x/r, vy=vp*y/r, vz=vp*z/r, t=t0))
+    simdat.parcels.append(AzimuthalThing(x=x, y=y, z=z,
+                                         vr=vr, vphi=v_pphi, t=t0))
 
 
 def rotate_parcels_into_orbital_plane(simdat):
