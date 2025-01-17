@@ -152,39 +152,19 @@ class ConstraintsResult:
             np.concatenate((self.v_pxy_c2, self.v_pxy_c3)),
             self.delta_phi_c1, self.v_pxy_c1,
             self.con_state, self.div_state)
-        # We'll take the intersection on our grid as a starting point to
-        # iteratively find the "true" intersection.
         if len(intersects) == 0:
             return None
         # Sometimes you get duplicates at a single "real" intersection if
         # the line from the numerical grid is a bit jittery, so let's just
         # take the mean as our starting point.
-        start_dphi = np.mean(
+        dphi = np.mean(
             u.Quantity([intersect.delta_phi for intersect in intersects]))
-        con_state = self.con_state.copy()
-        div_state = self.div_state.copy()
-        def calc_resid(delta_phi):
-            delta_phi = delta_phi * u.deg
-            if delta_phi < con_state.kappa:
-                state = con_state
-            else:
-                state = div_state
-            state.delta_phi = delta_phi
-            state.v_pxy = state.v_pxy_constr1
-            return (state.dalpha_dt - self.measured_angles.dalpha_dt).value
-        start = start_dphi.to_value(u.deg)
-        try:
-            root = scipy.optimize.root_scalar(
-                calc_resid, bracket=[0, 130],x0=start)
-        except ValueError:
-            # If there's a discontinuity in the first constraint, minimizing
-            # over the whole range will fail
-            root = scipy.optimize.root_scalar(
-                calc_resid, bracket=[start - 2, start + 2], x0=start)
+        vpxy = np.mean(
+            u.Quantity([intersect.v_pxy for intersect in intersects]))
         
         intersect = intersects[0]
-        intersect.delta_phi = root.root * u.deg
-        intersect.v_pxy = intersect.v_pxy_constr1
+        intersect.delta_phi = dphi
+        intersect.v_pxy = vpxy
         
         return intersect
     
@@ -279,7 +259,7 @@ class ConstraintsResult:
         return self.vxy2vp(self.v_pxy_c3, self.delta_phi_c3)
 
 
-def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
+def calc_constraints(measured_angles, cutoff_c2_variants=True):
     forward_elongation = planets.get_psp_forward_as_elongation(
         measured_angles.t0)
     forward = forward_elongation.transform_to('pspframe').lon
@@ -293,7 +273,7 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
     psp = planets.locate_psp(measured_angles.t0)
     r_sc = psp.cartesian.norm()
     v_sc = psp.cartesian.differentials['s'].norm()
-
+    
     con_state = StationaryPointState(
         epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
         alpha=measured_angles.alpha)
@@ -301,77 +281,78 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
         epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
         alpha=measured_angles.alpha)
     
-    delta_phis = [np.arange(0, 130, 1) * u.deg]
-    con_state.delta_phi = delta_phis[0]
-    v_pxys = [con_state.v_pxy_constr1]
+    dphis = np.linspace(2, 130, 300) * u.deg
+    vpxys = np.linspace(0, 450, 600) * u.km/u.s
+    dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
+    
+    con_state.delta_phi = dphi_grid
+    con_state.v_pxy = vpxy_grid
+    
+    vpxy_c1 = _solve_on_grid(con_state.v_pxy_constr1, vpxy_grid, vpxys)
+    
+    delta_phis = [dphis]
+    v_pxys = [vpxy_c1]
     
     for state in (con_state, div_state):
         # TODO: Sometimes, the curve we compute from the grid points will have
         # little jitters that cause one intersect to actually be multiple
         # intersects. Those could be deduplicated somehow---maybe use them as
         # seeds to iteratively find the "true" intersect?
-        dphis = np.linspace(2, 130, 300) * u.deg
         if cutoff_c2_variants:
             if state is con_state:
-                dphis = dphis[dphis <= state.kappa]
-                dphis = np.append(dphis, state.kappa)
+                dphis_cropped = dphis[dphis <= state.kappa]
+                dphis_cropped = np.append(dphis_cropped, state.kappa)
             else:
-                dphis = dphis[dphis > state.kappa]
-                dphis = np.insert(dphis, 0, state.kappa)
-        vpxys = np.linspace(0, 450, 600) * u.km/u.s
-        dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
+                dphis_cropped = dphis[dphis > state.kappa]
+                dphis_cropped = np.insert(dphis_cropped, 0, state.kappa)
+            dphi_grid, vpxy_grid = np.meshgrid(dphis_cropped, vpxys)
         state.delta_phi = dphi_grid
         state.v_pxy = vpxy_grid
         dalpha_dt_grid = state.dalpha_dt
         
-        dalpha_dt_err = dalpha_dt_grid - measured_angles.dalpha_dt
-        err_range = np.ptp(np.abs(dalpha_dt_err))
+        vbest = _solve_on_grid(dalpha_dt_grid, measured_angles.dalpha_dt, vpxys)
         
-        # phibest = []
-        # for i in range(len(vpxys)):
-        #     strip = np.abs(dalpha_dt_err[i])
-        #     j = np.argmin(strip)
-        #     if j == 0 or j == len(strip) - 1 or strip[j] > 0.01 * err_range:
-        #         phibest.append(np.nan * u.deg)
-        #     else:
-        #         phibest.append(dphis[j])
-        
-        # phibest = u.Quantity(phibest)
-        # delta_phi_c2 = phibest
-        # v_pxy_c2 = vpxys
-        
-        vbest = []
-        for i in range(len(dphis)):
-            strip = np.abs(dalpha_dt_err[:, i])
-            j = np.argmin(strip)
-            if j == 0 or j == len(strip) - 1 or strip[j] > 0.01 * err_range:
-                vbest.append(np.nan * u.m/u.s)
-            else:
-                vbest.append(vpxys[j])
-        
-        vbest = u.Quantity(vbest)
-        delta_phis.append(dphis)
+        delta_phis.append(dphi_grid[0])
         v_pxys.append(vbest)
-
+    
     def vxy2vp(vxy, dphi):
         # con_state and div_state will produce the same results here
         s = con_state.copy()
         s.delta_phi = dphi
-        vp = vxy / np.cos(s.theta)
-        return vp
+        s.v_pxy = vxy
+        return s.v_p
+    
     def vp2vxy(vp, dphi):
         # con_state and div_state will produce the same results here
         s = con_state.copy()
         s.delta_phi = dphi
-        vxy = vp * np.cos(s.theta)
+        vr = np.sqrt(vp**2 - s.v_pphi**2)
+        vr_xy = vr * np.cos(s.theta)
+        vxy = np.sqrt(vr_xy**2 + s.v_pphi**2)
         return vxy
-
+    
     return ConstraintsResult(
         delta_phi_c1=delta_phis[0], v_pxy_c1=v_pxys[0],
         delta_phi_c2=delta_phis[1], v_pxy_c2=v_pxys[1],
         delta_phi_c3=delta_phis[2], v_pxy_c3=v_pxys[2],
         vxy2vp=vxy2vp, vp2vxy=vp2vxy, dphi_grid=dphis, vpxy_grid=vpxys,
-        dalpha_dt_err=dalpha_dt_err, con_state=con_state, div_state=div_state, measured_angles=measured_angles)
+        dalpha_dt_err=None, con_state=con_state, div_state=div_state,
+        measured_angles=measured_angles)
+
+
+def _solve_on_grid(grid_of_values, target_value, y_values):
+    errors = grid_of_values - target_value
+    err_range = np.ptp(np.abs(errors[np.isfinite(errors)]))
+    result = []
+    for i in range(grid_of_values.shape[1]):
+        strip = np.abs(errors[:, i])
+        j = np.nanargmin(strip)
+        if (j == 0 or j == len(strip) - 1 or np.abs(strip[j]) > 0.01 * err_range
+            or any(np.isnan(strip[j-1:j+2]))):
+            result.append(np.nan * y_values.unit)
+        else:
+            result.append(y_values[j])
+    return u.Quantity(result)
 
 
 class InteractiveClicker:
