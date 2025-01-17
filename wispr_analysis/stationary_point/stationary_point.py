@@ -29,9 +29,13 @@ class StationaryPointState:
 
     @property
     def v_a(self):
-        return np.sqrt(self.v_sc**2 + self.v_pxy**2
+        return self._v_a(1)
+    
+    def _v_a(self, factor):
+        return (factor * np.sqrt(self.v_sc**2 + self.v_pxy**2
                        - 2 * self.v_sc * self.v_pxy
-                         * np.cos(180*u.deg - self.beta - self.gamma))
+                         * np.cos(self.delta))
+                )
     
     @property
     def v_p(self):
@@ -81,6 +85,10 @@ class StationaryPointState:
     @property
     def kappa(self):
         return 180 * u.deg - self.beta - self.epsilon
+    
+    @property
+    def delta(self):
+        return 180 * u.deg - self.beta - self.gamma
 
     def copy(self):
         return copy.deepcopy(self)
@@ -98,9 +106,7 @@ class DivergingStationaryPointState(StationaryPointState):
     
     @property
     def v_a(self):
-        return (-np.sqrt(self.v_sc**2 + self.v_pxy**2
-                         - 2 * self.v_sc* self.v_pxy
-                           * np.cos(180*u.deg - self.beta_prime - self.gamma)))
+        return self._v_a(-1)
     
     @property
     def r_pxy(self):
@@ -117,6 +123,10 @@ class DivergingStationaryPointState(StationaryPointState):
     @property
     def beta_prime(self):
         return 180*u.deg - self.beta
+    
+    @property
+    def delta(self):
+        return 180 * u.deg - self.beta_prime - self.gamma
 
 
 @dataclass
