@@ -108,7 +108,7 @@ class DivergingStationaryPointState(StationaryPointState):
     
     @property
     def gamma_prime(self):
-        return None
+        raise NotImplementedError()
 
     @property
     def gamma(self):
@@ -218,7 +218,7 @@ class ConstraintsResult:
             state.v_pxy = yint
             intersects.append(state)
         return intersects
-
+    
     def plot(self, vel_in_plane=True, mark_intersect=True, ax=None,
              show_full_c2=False):
         if ax is None:
@@ -242,7 +242,7 @@ class ConstraintsResult:
                 states = [self.div_state, self.con_state]
             else:
                 states = ([self.con_state] if show_full_c2 == 'con' else
-                         [self.div_state])
+                          [self.div_state])
             for state in states:
                 ax.pcolormesh(state.delta_phi,
                               state.v_pxy if vel_in_plane else state.v_p,
@@ -255,7 +255,7 @@ class ConstraintsResult:
                 ax.scatter(intersect.delta_phi,
                            intersect.v_pxy if vel_in_plane else intersect.v_p,
                            color='C3')
-
+    
     @property
     def v_p_c1(self):
         return self.vxy2vp(self.v_pxy_c1, self.delta_phi_c1)
@@ -267,8 +267,9 @@ class ConstraintsResult:
     @property
     def v_p_c3(self):
         return self.vxy2vp(self.v_pxy_c3, self.delta_phi_c3)
-    
-def calc_constraints(measured_angles, cutoff_c2_variants=True):
+
+
+def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
     forward_elongation = planets.get_psp_forward_as_elongation(
         measured_angles.t0)
     forward = forward_elongation.transform_to('pspframe').lon
@@ -378,6 +379,7 @@ class InteractiveClicker:
         def draw_frame(i):
             plt.close('all')
             t = self.times[i]
+            
             def onclick(event):
                 try:
                     x = event.xdata
@@ -390,6 +392,7 @@ class InteractiveClicker:
                         self.clicked_times.append(t)
                 except Exception as e:
                     plt.title(e)
+            
             fig = plt.figure(figsize=(13, 12))
             plot_utils.plot_WISPR(
                 self.frames[i], wcs=self.wcs, **self.plot_opts)
@@ -403,9 +406,11 @@ class InteractiveClicker:
             afters = []
             for time in self.clicked_times:
                 if time < t:
-                    befores.append(u.Quantity((self.clicked_lons[time], self.clicked_alphas[time])))
+                    befores.append(u.Quantity(
+                        (self.clicked_lons[time], self.clicked_alphas[time])))
                 elif time > t:
-                    afters.append(u.Quantity((self.clicked_lons[time], self.clicked_alphas[time])))
+                    afters.append(u.Quantity(
+                        (self.clicked_lons[time], self.clicked_alphas[time])))
             if len(befores):
                 x, y = self.wcs.world_to_pixel_values(*u.Quantity(befores).T)
                 plt.scatter(x, y, marker='+', color='C0')
@@ -425,8 +430,10 @@ class InteractiveClicker:
                             widgets.children[0].value += 1
                 except Exception as e:
                     plt.title(e)
+            
             fig.canvas.mpl_connect('key_press_event', onpress)
             plt.show()
+        
         widgets = interactive(draw_frame, i=(0, len(self.frames)))
         return widgets
     
@@ -469,6 +476,7 @@ class AutoClicker(InteractiveClicker):
     
     Results can be collected with ``conclude``.
     """
+    
     def __init__(self, frames, wcs, times, plot_opts={}):
         self.frames = frames
         self.wcs = wcs
@@ -483,7 +491,7 @@ class AutoClicker(InteractiveClicker):
             y, x = np.unravel_index(np.nanargmax(frames[i]), frames[i].shape)
             clicked_coord = wcs.pixel_to_world(x, y)
             self.clicked_alphas[self.times[i]] = clicked_coord.lat
-            self.clicked_lons[self.times[i]] =clicked_coord.lon
+            self.clicked_lons[self.times[i]] = clicked_coord.lon
     
     def show(self):
         raise NotImplementedError(
@@ -564,6 +572,6 @@ def find_uncertainty(measured_angles, n_samples=1000, progress_bar=True):
     delta_phis = u.Quantity(delta_phis)
     rps = u.Quantity(rps)
     thetas = u.Quantity(thetas)
-
+    
     return InferredValues(
         vp=vps, vpxy=vpxys, delta_phi=delta_phis, rp=rps, theta=thetas)
