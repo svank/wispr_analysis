@@ -462,4 +462,6 @@ def censor_wcs(wcs, obstime=True, observer=True):
     if obstime:
         wcs.wcs.dateobs = ''
         wcs.wcs.dateavg = ''
+        wcs.wcs.datebeg = ''
+        wcs.wcs.dateend = ''
     return wcs
