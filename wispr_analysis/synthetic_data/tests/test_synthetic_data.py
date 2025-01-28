@@ -89,7 +89,7 @@ def test_synthesize_image_quantity_distance():
     
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1, projection=wcs)
-    ax.imshow(image, origin='lower', cmap='viridis')
+    ax.imshow(image, origin='lower', cmap='viridis', interpolation_stage='data')
     
     for coord in ax.coords:
         coord.set_major_formatter('dd')
@@ -112,7 +112,7 @@ def test_synthesize_image_quantity_rsun():
     
     fig = plt.gcf()
     ax = fig.add_subplot(1, 1, 1, projection=wcs)
-    ax.imshow(image, origin='lower', cmap='viridis')
+    ax.imshow(image, origin='lower', cmap='viridis', interpolation_stage='data')
     
     for coord in ax.coords:
         coord.set_major_formatter('dd')

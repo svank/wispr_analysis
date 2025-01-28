@@ -186,6 +186,8 @@ def _plot_internal(data, wcs, ax=None, draw_constellations=False,
     
     if 'origin' not in imshow_kwargs:
         imshow_kwargs['origin'] = 'lower'
+    if 'interpolation_stage' not in imshow_kwargs:
+        imshow_kwargs['interpolation_stage'] = 'data'
     im = ax.imshow(data,
             norm=matplotlib.colors.PowerNorm(
                 gamma=gamma, vmin=vmin, vmax=vmax),

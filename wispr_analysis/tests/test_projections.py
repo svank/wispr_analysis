@@ -211,7 +211,7 @@ def test_reproject_to_radial():
             data, wcs_in, out_shape=(433, 500), delongation=.39,
             ref_elongation=0, ref_x=250, ref_pa=0, dpa=.84, ref_y=217)
     
-    plt.imshow(out, cmap='viridis', vmin=0)
+    plt.imshow(out, cmap='viridis', vmin=0, interpolation_stage='data')
     
     projections.label_radial_axes(trans)
     
@@ -247,7 +247,7 @@ def test_reproject_from_radial():
             out_shape=data.shape, delongation=.39, ref_elongation=0,
             ref_x=250, ref_pa=0, dpa=.84, ref_y=217)
     
-    plt.imshow(out, cmap='viridis', vmin=0)
+    plt.imshow(out, cmap='viridis', vmin=0, interpolation_stage='data')
     
     return plt.gcf()
 
