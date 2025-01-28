@@ -191,10 +191,11 @@ def convert_to_compressed_hdul(hdul_in):
     hdul_out.append(fits.PrimaryHDU())
     
     data = hdul_in[0].data.copy()
-    data[np.isnan(data)] = 0
     
     # Compress the data---the defaults seem good
-    chdu = fits.CompImageHDU(data, hdul_in[0].header.copy())
+    hdr = hdul_in[0].header.copy()
+    del hdr['blank']
+    chdu = fits.CompImageHDU(data, hdr)
     hdul_out.append(chdu)
     # Append any other HDUs (e.g. distortion lookup tables)
     for hdu in hdul_in[1:]:

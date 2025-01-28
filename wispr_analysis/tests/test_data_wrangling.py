@@ -27,7 +27,6 @@ def test_convert_to_compressed_hdul(tmp_path):
     assert isinstance(hdul_compressed_loaded[0], fits.PrimaryHDU)
     
     orig_data = hdul_orig[0].data
-    orig_data[np.isnan(orig_data)] = 0
     np.testing.assert_allclose(
             orig_data, hdul_compressed_loaded[1].data, atol=3e-15)
     
