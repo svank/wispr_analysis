@@ -919,7 +919,9 @@ def hpc_to_elpa(Tx, Ty):
 
 def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         output_size_x=200, output_size_y=200, parcel_width=1, image_wcs=None,
-        celestial_wcs=False, fixed_fov_range=None, output_quantity='flux',
+        celestial_wcs=False,
+        spatial_frame='heliocentricinertial',
+        fixed_fov_range=None, output_quantity='flux',
         point_forward=False, dmin=None, dmax=None, dsunmin=None, dsunmax=None,
         only_side_of_sun=False, antialias=True,
         thomson=True, use_density=True, expansion=True, scale_sun_dist=True):
@@ -947,6 +949,8 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         ``output_size_x`` and ``output_size_y`` to appropriate values.
     celestial_wcs : ``bool``, optional
         Whether to convert the output WCS to RA/Dec
+    spatial_frame : ``str``, optional
+        The coordinate frame of ``sc`` and ``parcels``
     output_quantity : ``str``
         The quantity to show in the output image. Allowed values are 'flux' and
         'distance'.
@@ -1020,10 +1024,10 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
             xp, yp, zp = sc_soon.x, sc_soon.y, sc_soon.z
             observer = SkyCoord(
                 x, y, z, representation_type='cartesian', obstime=date,
-                frame='heliocentricinertial', unit='m')
+                frame=spatial_frame, unit='m')
             forward = SkyCoord(
                 xp, yp, zp, representation_type='cartesian', obstime=date,
-                frame='heliocentricinertial', unit='m', observer=observer)
+                frame=spatial_frame, unit='m', observer=observer)
             forward = forward.transform_to('helioprojective')
             
             # Set the reference pixel coordinates as the forward-direction
@@ -1091,11 +1095,11 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
     # (x,y,z) points
     obstime = date
     sc_coord = SkyCoord(
-        sc.x, sc.y, sc.z, frame='heliocentricinertial',
+        sc.x, sc.y, sc.z, frame=spatial_frame,
         representation_type='cartesian', unit='m', obstime=obstime)
     los = SkyCoord(
         Tx, Ty, 100*u.au, frame='helioprojective', observer=sc_coord)
-    los = los.transform_to('heliocentricinertial').cartesian
+    los = los.transform_to(spatial_frame).cartesian
     los = np.array(
         [los.x.to(u.m).value, los.y.to(u.m).value, los.z.to(u.m).value])
     los = np.transpose(los, axes=(1,2,0))
@@ -1136,7 +1140,7 @@ def synthesize_image(sc, parcels, t0, fov=95, projection='ARC',
         parcel_poses[i] = parcel.x[0], parcel.y[0], parcel.z[0]
     p_coord = SkyCoord(
         parcel_poses[..., 0], parcel_poses[..., 1], parcel_poses[..., 2],
-        frame='heliocentricinertial', representation_type='cartesian',
+        frame=spatial_frame, representation_type='cartesian',
         unit='m', obstime=obstime, observer=sc_coord)
     px, py = image_wcs.world_to_pixel(p_coord)
     np.nan_to_num(px, copy=False)
@@ -1487,6 +1491,7 @@ class SimulationData:
     """A list of plasma parcels"""
     encounter: int = None
     """If set, the PSP encounter this scenario models"""
+    spatial_frame: str = 'heliocentricinertial'
     
     def plot_overhead(self, t0=None, mark_epsilon=False, mark_FOV_pos=False,
                       mark_FOV=False, fov_bins=[], mark_derot_ax=False,
@@ -1740,6 +1745,7 @@ class SimulationData:
             x, y = 400, 250
         image, wcs = synthesize_image(
             self.sc, self.parcels, t0, image_wcs=synth_wcs,
+            spatial_frame=self.spatial_frame,
             output_size_x=x, output_size_y=y if synthesize else 1,
             parcel_width=parcel_width, fixed_fov_range=synth_fixed_fov,
             celestial_wcs=synth_celest_wcs, output_quantity=output_quantity,
@@ -1810,7 +1816,7 @@ class SimulationData:
         return all_axes
 
 
-def create_simdat_from_spice(E, nt=400):
+def create_simdat_from_spice(E, nt=400, spatial_frame='heliocentricinertial'):
     """Creates a `SimulationData` containing a spacecraft moving along a real
     PSP trajectory, calculated from SPICE
 
@@ -1829,12 +1835,14 @@ def create_simdat_from_spice(E, nt=400):
     """
     coords, times = planets.get_orbital_plane(
         'psp', E, npts=10000, return_times=True, expand_psp_orbit=False)
+    coords = coords.transform_to(spatial_frame)
     f = coords.represent_as('spherical').distance < 0.25 * u.au
-    coords = coords[f]
+    coords = coords[f].represent_as('cartesian')
     times = times[f]
     sc = ArrayThing(times << u.s, coords.x, coords.y, coords.z)
     t = np.linspace(times.min(), times.max(), nt) << u.s
-    simdat = SimulationData(sc=sc, t=t, parcels=[], encounter=E)
+    simdat = SimulationData(sc=sc, t=t, parcels=[], encounter=E,
+                            spatial_frame=spatial_frame)
     return simdat
 
 
@@ -2045,8 +2053,10 @@ def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy,
     sc_coord = SkyCoord(
         sct.x, sct.y, sct.z,
         v_x=sct.vx, v_y=sct.vy, v_z=sct.vz,
-        representation_type='cartesian', frame='heliocentricinertial',
-        obstime=utils.from_timestamp(t0)).transform_to('psporbitalframe')
+        representation_type='cartesian', frame=simdat.spatial_frame,
+        obstime=utils.from_timestamp(t0))
+    sc_coord = sc_coord.transform_to('psporbitalframe')
+    sc_coord.representation_type = 'spherical'
     # Create an in-plane parcel at the set delta_phi, r_pxy
     p_coord = SkyCoord(sc_coord.lon + delta_phi, 0*u.deg,
                        r_pxy * np.cos(launch_theta),
@@ -2077,7 +2087,7 @@ def add_parcel_at_stationary_point(simdat, t0, delta_phi, launch_theta, r_pxy,
     p_coord = SkyCoord(sc_coord.lon + delta_phi, launch_theta, r_pxy,
                        frame='psporbitalframe',
                        obstime=utils.from_timestamp(t0)
-                       ).transform_to('heliocentricinertial').cartesian
+                       ).transform_to(simdat.spatial_frame).cartesian
     x = p_coord.x
     y = p_coord.y
     z = p_coord.z
