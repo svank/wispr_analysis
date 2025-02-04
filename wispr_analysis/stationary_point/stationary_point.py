@@ -21,12 +21,12 @@ class StationaryPointState:
     v_pxy: u.Quantity = np.nan
     r_sc: u.Quantity = np.nan
     alpha: u.Quantity = np.nan
+    v_pphi: u.Quantity = 0 * u.km / u.s
 
     @property
     def v_pxy_constr1(self):
-        return (self.v_sc * np.sin(self.beta)
-                / np.sin(self.epsilon + self.delta_phi))
-
+        return (np.sin(self.beta) * self.v_sc) / np.sin(self.gamma + self.psi)
+    
     @property
     def v_a(self):
         return self._v_a(1)
@@ -39,7 +39,19 @@ class StationaryPointState:
     
     @property
     def v_p(self):
-        return self.v_pxy / np.cos(self.theta)
+        return np.sqrt(self.v_pr**2 + self.v_pphi**2)
+    
+    @property
+    def v_prxy(self):
+        return np.sqrt(self.v_pxy**2 - self.v_pphi**2)
+    
+    @property
+    def v_pr(self):
+        return self.v_prxy / np.cos(self.theta)
+
+    @property
+    def v_z(self):
+        return self.v_pr * np.sin(self.theta)
 
     @property
     def d_xy(self):
@@ -68,18 +80,18 @@ class StationaryPointState:
     @property
     def gamma(self):
         return 180*u.deg - self.gamma_prime
+    
+    @property
+    def psi(self):
+        return np.arcsin(self.v_pphi / self.v_pxy)
 
     @property
     def theta(self):
         return np.arctan(self.d_z / self.r_pxy).to(u.deg)
 
     @property
-    def v_z(self):
-        return self.v_pxy * np.tan(self.theta)
-
-    @property
     def dalpha_dt(self):
-        return ((self.v_a * np.tan(self.alpha) + self.v_pxy * np.tan(self.theta))
+        return ((self.v_a * np.tan(self.alpha) + self.v_prxy * np.tan(self.theta))
                 / (self.d_xy * (1 + np.tan(self.alpha)**2)) * u.rad)
     
     @property
@@ -88,7 +100,7 @@ class StationaryPointState:
     
     @property
     def delta(self):
-        return 180 * u.deg - self.beta - self.gamma
+        return 180 * u.deg - self.beta - self.gamma - self.psi
 
     def copy(self):
         return copy.deepcopy(self)
@@ -98,7 +110,7 @@ class DivergingStationaryPointState(StationaryPointState):
     @property
     def v_pxy_constr1(self):
         return (self.v_sc * np.sin(self.beta_prime)
-                / np.sin(self.epsilon + self.delta_phi))
+                / np.sin(self.gamma - self.psi))
 
     @property
     def d_xy(self):
@@ -126,7 +138,7 @@ class DivergingStationaryPointState(StationaryPointState):
     
     @property
     def delta(self):
-        return 180 * u.deg - self.beta_prime - self.gamma
+        return 180 * u.deg - self.beta_prime - self.gamma + self.psi
 
 
 @dataclass
@@ -261,7 +273,7 @@ class ConstraintsResult:
         return self.vxy2vp(self.v_pxy_c3, self.delta_phi_c3)
 
 
-def calc_constraints(measured_angles, cutoff_c2_variants=True):
+def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
     forward_elongation = planets.get_psp_forward_as_elongation(
         measured_angles.t0)
     forward = forward_elongation.transform_to('pspframe').lon
@@ -278,10 +290,10 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True):
     
     con_state = StationaryPointState(
         epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
-        alpha=measured_angles.alpha)
+        alpha=measured_angles.alpha, v_pphi=vphi)
     div_state = DivergingStationaryPointState(
         epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
-        alpha=measured_angles.alpha)
+        alpha=measured_angles.alpha, v_pphi=vphi)
     
     dphis = np.linspace(2, 130, 300) * u.deg
     vpxys = np.linspace(0, 450, 600) * u.km/u.s
@@ -300,21 +312,26 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True):
         # little jitters that cause one intersect to actually be multiple
         # intersects. Those could be deduplicated somehow---maybe use them as
         # seeds to iteratively find the "true" intersect?
-        if cutoff_c2_variants:
-            if state is con_state:
-                dphis_cropped = dphis[dphis <= state.kappa]
-                dphis_cropped = np.append(dphis_cropped, state.kappa)
-            else:
-                dphis_cropped = dphis[dphis > state.kappa]
-                dphis_cropped = np.insert(dphis_cropped, 0, state.kappa)
-            dphi_grid, vpxy_grid = np.meshgrid(dphis_cropped, vpxys)
         state.delta_phi = dphi_grid
         state.v_pxy = vpxy_grid
+        
         dalpha_dt_grid = state.dalpha_dt
         
         vbest = _solve_on_grid(dalpha_dt_grid, measured_angles.dalpha_dt, vpxys)
+        dphis = dphi_grid[0]
         
-        delta_phis.append(dphi_grid[0])
+        if cutoff_c2_variants:
+            s = state.copy()
+            s.delta_phi = dphis
+            s.v_pxy = vbest
+            if state is con_state:
+                good = dphis + s.psi <= state.kappa
+            else:
+                good = dphis + s.psi > state.kappa
+            vbest = vbest[good]
+            dphis = dphis[good]
+        
+        delta_phis.append(dphis)
         v_pxys.append(vbest)
     
     def vxy2vp(vxy, dphi):
