@@ -146,7 +146,7 @@ class ConstraintsResult:
     div_state: StationaryPointState
     measured_angles: "MeasuredAngles"
     
-    def get_intersect_vxy(self):
+    def get_intersect_vxy(self, return_all=False):
         intersects = self._get_intersects_vxy(
             np.concatenate((self.delta_phi_c2, self.delta_phi_c3)),
             np.concatenate((self.v_pxy_c2, self.v_pxy_c3)),
@@ -154,6 +154,8 @@ class ConstraintsResult:
             self.con_state, self.div_state)
         if len(intersects) == 0:
             return None
+        if return_all:
+            return intersects
         # Sometimes you get duplicates at a single "real" intersection if
         # the line from the numerical grid is a bit jittery, so let's just
         # take the mean as our starting point.
