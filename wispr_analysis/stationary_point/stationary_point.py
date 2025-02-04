@@ -6,7 +6,6 @@ import astropy.units as u
 from ipywidgets import interactive
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.optimize
 from tqdm.auto import tqdm
 
 from .. import orbital_frame, planets, plot_utils, utils
