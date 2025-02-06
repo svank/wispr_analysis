@@ -227,7 +227,7 @@ def orbital_plane_wcs_frame_mapping(wcs):
         return PSPOrbitalFrame(obstime=dateobs)
     if ({'PFLN', 'PFLT'} <= ctypes):
         dateobs = wcs.wcs.dateavg or wcs.wcs.dateobs or None
-        return PSPOrbitalFrame(obstime=dateobs)
+        return PSPFrameHelioprojective(obstime=dateobs)
     return None
 
 
