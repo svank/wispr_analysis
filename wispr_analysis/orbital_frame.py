@@ -157,7 +157,7 @@ class PSPFrameHelioprojective(astropy.coordinates.BaseCoordinateFrame):
     This is a time-varying frame, as PSP's orbital plane changes with every
     Venus encounter.
     
-    This frame is registered under the WCS keys PSLN and PSLT.
+    This frame is registered under the WCS keys PFLN and PFLT.
 
     Parameters
     ----------
