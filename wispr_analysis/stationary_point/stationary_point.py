@@ -11,16 +11,20 @@ from tqdm.auto import tqdm
 from .. import orbital_frame, planets, plot_utils, utils
 
 
-@dataclass
 class StationaryPointState:
-    epsilon: u.Quantity = np.nan
-    delta_phi: u.Quantity = np.nan
-    beta: u.Quantity = np.nan
-    v_sc: u.Quantity = np.nan
-    v_pxy: u.Quantity = np.nan
-    r_sc: u.Quantity = np.nan
-    alpha: u.Quantity = np.nan
-    v_pphi: u.Quantity = 0 * u.km / u.s
+
+    def __init__(self, epsilon=np.nan, delta_phi=np.nan, beta=np.nan,
+                 v_sc=np.nan, v_pxy=np.nan, r_sc=np.nan, alpha=np.nan,
+                 theta=np.nan, v_pphi=0*u.m/u.s):
+        self.epsilon = epsilon
+        self.delta_phi = delta_phi
+        self.beta = beta
+        self.v_sc = v_sc
+        self.v_pxy = v_pxy
+        self.r_sc = r_sc
+        self._alpha = alpha
+        self._theta = theta
+        self.v_pphi = v_pphi
 
     @property
     def v_pxy_constr1(self):
@@ -70,7 +74,31 @@ class StationaryPointState:
 
     @property
     def d_z(self):
+        if self._alpha is np.nan:
+            return np.tan(self.theta) * self.r_pxy
         return self.d_xy * np.tan(self.alpha)
+    
+    @property
+    def alpha(self):
+        if self._alpha is np.nan:
+            return np.arctan2(self.d_z, self.d_xy).to(u.deg)
+        return self._alpha
+    
+    @alpha.setter
+    def alpha(self, value):
+        self._alpha = value
+        self._theta = np.nan
+
+    @property
+    def theta(self):
+        if self._theta is np.nan:
+            return np.arctan(self.d_z / self.r_pxy).to(u.deg)
+        return self._theta
+    
+    @theta.setter
+    def theta(self, value):
+        self._theta = value
+        self._alpha = np.nan
 
     @property
     def gamma_prime(self):
@@ -83,10 +111,6 @@ class StationaryPointState:
     @property
     def psi(self):
         return np.arcsin(self.v_pphi / self.v_pxy)
-
-    @property
-    def theta(self):
-        return np.arctan(self.d_z / self.r_pxy).to(u.deg)
 
     @property
     def dalpha_dt(self):
