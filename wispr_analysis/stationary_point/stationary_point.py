@@ -164,55 +164,15 @@ class DivergingStationaryPointState(StationaryPointState):
         return 180 * u.deg - self.beta_prime - self.gamma + self.psi
 
 
-@dataclass
-class ConstraintsResult:
-    delta_phi_c1: u.Quantity
-    v_pxy_c1: u.Quantity
-    delta_phi_c2: u.Quantity
-    v_pxy_c2: u.Quantity
-    delta_phi_c3: u.Quantity
-    v_pxy_c3: u.Quantity
-    vxy2vp: None
-    vp2vxy: None
-    dphi_grid: u.Quantity
-    vpxy_grid: u.Quantity
-    dalpha_dt_err: u.Quantity
-    con_state: StationaryPointState
-    div_state: StationaryPointState
-    measured_angles: "MeasuredAngles"
-    
-    def get_intersect_vxy(self, return_all=False):
-        intersects = self._get_intersects_vxy(
-            np.concatenate((self.delta_phi_c2, self.delta_phi_c3)),
-            np.concatenate((self.v_pxy_c2, self.v_pxy_c3)),
-            self.delta_phi_c1, self.v_pxy_c1,
-            self.con_state, self.div_state)
-        if len(intersects) == 0:
-            return None
-        if return_all:
-            return intersects
-        # Sometimes you get duplicates at a single "real" intersection if
-        # the line from the numerical grid is a bit jittery, so let's just
-        # take the mean as our starting point.
-        dphi = np.mean(
-            u.Quantity([intersect.delta_phi for intersect in intersects]))
-        vpxy = np.mean(
-            u.Quantity([intersect.v_pxy for intersect in intersects]))
-        
-        intersect = intersects[0]
-        intersect.delta_phi = dphi
-        intersect.v_pxy = vpxy
-        
-        return intersect
-    
+class ConstraintsResultBase:
     @classmethod
-    def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, con_state, div_state):
+    def _get_intersects(cls, xs1, ys1, xs2, ys2):
         intersects = []
-        for i in range(len(xs1)-1):
+        for i in range(len(xs1) - 1):
             x1 = xs1[i]
-            x2 = xs1[i+1]
+            x2 = xs1[i + 1]
             y1 = ys1[i]
-            y2 = ys1[i+1]
+            y2 = ys1[i + 1]
             x3, x4 = x1, x2
             y3 = np.interp(x3, xs2, ys2, left=np.nan, right=np.nan)
             y4 = np.interp(x4, xs2, ys2, left=np.nan, right=np.nan)
@@ -239,12 +199,68 @@ class ConstraintsResult:
             yint = ((a1 * c2) - (a2 * c1)) / det
             if xint < x1 or xint > x2:
                 continue
-            state = con_state if xint < con_state.kappa else div_state
-            state = state.copy()
-            state.delta_phi = xint
-            state.v_pxy = yint
-            intersects.append(state)
+            intersects.append((xint, yint))
         return intersects
+
+
+@dataclass
+class ConstraintsResult(ConstraintsResultBase):
+    delta_phi_c1: u.Quantity
+    v_pxy_c1: u.Quantity
+    delta_phi_c2: u.Quantity
+    v_pxy_c2: u.Quantity
+    delta_phi_c3: u.Quantity
+    v_pxy_c3: u.Quantity
+    vxy2vp: None
+    vp2vxy: None
+    dphi_grid: u.Quantity
+    vpxy_grid: u.Quantity
+    dalpha_dt_err: u.Quantity
+    con_state: StationaryPointState
+    div_state: StationaryPointState
+    measured_angles: "MeasuredAngles"
+    
+    @classmethod
+    def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, con_state, div_state):
+        intersects = cls._get_intersects(xs1, ys1, xs2, ys2)
+        states = []
+        for dphi_int, vpxy_int in intersects:
+            # We just need a value for psi
+            state = con_state.copy()
+            state.delta_phi = dphi_int
+            state.v_pxy = vpxy_int
+            psi = state.psi
+            # To find which state to copy
+            state = con_state if dphi_int + psi < state.kappa else div_state
+            state = state.copy()
+            state.delta_phi = dphi_int
+            state.v_pxy = vpxy_int
+            states.append(state)
+        return states
+    
+    def get_intersect_vxy(self, return_all=False):
+        intersects = self._get_intersects_vxy(
+            np.concatenate((self.delta_phi_c2, self.delta_phi_c3)),
+            np.concatenate((self.v_pxy_c2, self.v_pxy_c3)),
+            self.delta_phi_c1, self.v_pxy_c1,
+            self.con_state, self.div_state)
+        if len(intersects) == 0:
+            return None
+        if return_all:
+            return intersects
+        # Sometimes you get duplicates at a single "real" intersection if
+        # the line from the numerical grid is a bit jittery, so let's just
+        # take the mean as our starting point.
+        dphi = np.mean(
+            u.Quantity([intersect.delta_phi for intersect in intersects]))
+        vpxy = np.mean(
+            u.Quantity([intersect.v_pxy for intersect in intersects]))
+        
+        intersect = intersects[0]
+        intersect.delta_phi = dphi
+        intersect.v_pxy = vpxy
+        
+        return intersect
     
     def plot(self, vel_in_plane=True, mark_intersect=True, ax=None,
              show_full_c2=False):
@@ -296,11 +312,93 @@ class ConstraintsResult:
         return self.vxy2vp(self.v_pxy_c3, self.delta_phi_c3)
 
 
-def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
+@dataclass
+class ThreeConstraintsResult(ConstraintsResultBase):
+    delta_phi_c1: u.Quantity
+    theta_c1: u.Quantity
+    delta_phi_c2: u.Quantity
+    theta_c2: u.Quantity
+    dphi_grid: u.Quantity
+    theta_grid: u.Quantity
+    alpha_grid: u.Quantity
+    dalpha_dt_grid: u.Quantity
+    con_state: StationaryPointState
+    div_state: StationaryPointState
+    measured_angles: "MeasuredAngles"
+    
+    @classmethod
+    def _get_intersects_theta(cls, xs1, ys1, xs2, ys2, con_state, div_state):
+        intersects = cls._get_intersects(xs1, ys1, xs2, ys2)
+        states = []
+        for dphi_int, theta_int in intersects:
+            # We just need a value for psi
+            state = con_state.copy()
+            state.delta_phi = dphi_int
+            state.theta = theta_int
+            psi = state.psi
+            # To find which state to copy
+            state = con_state if dphi_int + psi < state.kappa else div_state
+            state = state.copy()
+            state.delta_phi = dphi_int
+            state.theta = theta_int
+            states.append(state)
+        return states
+    
+    def get_intersect(self, return_all=False):
+        intersects = self._get_intersects_theta(
+            self.delta_phi_c2,
+            self.theta_c2,
+            self.delta_phi_c1, self.theta_c1,
+            self.con_state, self.div_state)
+        if len(intersects) == 0:
+            return None
+        if return_all:
+            return intersects
+        # Sometimes you get duplicates at a single "real" intersection if
+        # the line from the numerical grid is a bit jittery, so let's just
+        # take the mean as our starting point.
+        dphi = np.mean(
+            u.Quantity([intersect.delta_phi for intersect in intersects]))
+        theta = np.mean(
+            u.Quantity([intersect.theta for intersect in intersects]))
+        
+        intersect = intersects[0]
+        intersect.delta_phi = dphi
+        intersect.theta = theta
+        
+        return intersect
+    
+    def plot(self, mark_intersect=True, ax=None, show_alpha_grid=False,
+             show_dalpha_dt_grid=False):
+        if ax is None:
+            ax = plt.gca()
+        ax.plot(self.delta_phi_c1, self.theta_c1)
+        ax.plot(self.delta_phi_c2, self.theta_c2)
+        ax.set_xlabel("Assumed separation in heliographic longitude")
+        ax.set_ylabel("Assumed plasma launch latitude")
+        if show_alpha_grid:
+            ax.pcolormesh(self.dphi_grid,
+                          self.theta_grid,
+                          (self.alpha_grid -
+                           self.measured_angles.alpha).value,
+                          cmap='bwr', vmin=-30, vmax=30, zorder=-20)
+        if show_dalpha_dt_grid:
+            ax.pcolormesh(self.dphi_grid,
+                          self.theta_grid,
+                          (self.dalpha_dt_grid -
+                           self.measured_angles.dalpha_dt).value,
+                          cmap='bwr', vmin=-1e-3, vmax=1e-3, zorder=-20)
+        if mark_intersect:
+            intersect = self.get_intersect()
+            if intersect:
+                ax.scatter(intersect.delta_phi, intersect.theta, color='C3')
+    
+
+def measurements_to_states(measured_angles, vphi=0*u.km/u.s):
     forward_elongation = planets.get_psp_forward_as_elongation(
         measured_angles.t0)
     forward = forward_elongation.transform_to('pspframe').lon
-    sun = SkyCoord(0*u.deg, 0*u.deg, frame='helioprojective',
+    sun = SkyCoord(0 * u.deg, 0 * u.deg, frame='helioprojective',
                    observer=forward_elongation.observer,
                    obstime=forward_elongation.obstime)
     to_sun = sun.transform_to('pspframe').lon
@@ -318,8 +416,15 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
         epsilon=epsilon, beta=beta, v_sc=v_sc, r_sc=r_sc,
         alpha=measured_angles.alpha, v_pphi=vphi)
     
+    return con_state, div_state
+
+
+def calc_constraints(measured_angles, cutoff_c2_variants=True,
+                     vphi=0 * u.km / u.s):
+    con_state, div_state = measurements_to_states(measured_angles, vphi)
+    
     dphis = np.linspace(2, 130, 300) * u.deg
-    vpxys = np.linspace(0, 450, 600) * u.km/u.s
+    vpxys = np.linspace(0, 450, 600) * u.km / u.s
     dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
     
     con_state.delta_phi = dphi_grid
@@ -382,19 +487,140 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True, vphi=0*u.km/u.s):
         measured_angles=measured_angles)
 
 
+def calc_three_constraints(measured_angles, vphi=0 * u.km / u.s):
+    con_state, div_state = measurements_to_states(
+        measured_angles, vphi)
+    
+    dphis = np.linspace(2, 130, 500) * u.deg
+    vpxys = np.linspace(0, 450, 600) * u.km / u.s
+    dphi_grid, vpxy_grid = np.meshgrid(dphis, vpxys)
+    
+    con_state.delta_phi = dphi_grid
+    con_state.v_pxy = vpxy_grid
+    
+    x, vpxy_c1 = _solve_on_grid_flexibly(
+        con_state.v_pxy_constr1, vpxy_grid, dphis, vpxys)
+    vpxy_c1 = np.concatenate((
+        [np.nan] * np.sum(dphis < x[0]),
+        vpxy_c1,
+        [np.nan] * np.sum(dphis > x[-1])
+    ))
+    
+    thetas = np.linspace(0, 90, 500) * u.deg
+    dphi_grid, theta_grid = np.meshgrid(dphis, thetas)
+    con_state.delta_phi = dphi_grid
+    con_state.v_pxy = vpxy_c1
+    con_state.theta = theta_grid
+    div_state.delta_phi = dphi_grid
+    div_state.v_pxy = vpxy_c1
+    div_state.theta = theta_grid
+    
+    is_converging = dphi_grid + con_state.psi <= con_state.kappa
+    
+    alpha = np.where(is_converging, con_state.alpha, div_state.alpha)
+    dalpha_dt = np.where(is_converging, con_state.dalpha_dt,
+                         div_state.dalpha_dt)
+    
+    dphi_c1, theta_c1 = _solve_on_grid_flexibly(alpha, measured_angles.alpha,
+                                   dphis, thetas)
+    dphi_c2, theta_c2 = _solve_on_grid_flexibly(dalpha_dt, measured_angles.dalpha_dt,
+                                     dphis, thetas)
+    
+    return ThreeConstraintsResult(
+        delta_phi_c1=dphi_c1, theta_c1=theta_c1,
+        delta_phi_c2=dphi_c2, theta_c2=theta_c2,
+        dphi_grid=dphi_grid, theta_grid=theta_grid,
+        con_state=con_state, div_state=div_state,
+        alpha_grid=alpha, dalpha_dt_grid=dalpha_dt,
+        measured_angles=measured_angles)
+
+
 def _solve_on_grid(grid_of_values, target_value, y_values):
     errors = grid_of_values - target_value
     err_range = np.ptp(np.abs(errors[np.isfinite(errors)]))
     result = []
     for i in range(grid_of_values.shape[1]):
         strip = np.abs(errors[:, i])
-        j = np.nanargmin(strip)
-        if (j == 0 or j == len(strip) - 1 or np.abs(strip[j]) > 0.01 * err_range
-            or any(np.isnan(strip[j-1:j+2]))):
+        if np.all(np.isnan(strip)):
             result.append(np.nan * y_values.unit)
         else:
-            result.append(y_values[j])
+            j = np.nanargmin(strip)
+            if (j == 0 or j == len(strip) - 1 or np.abs(strip[j]) > 0.01 * err_range
+                or any(np.isnan(strip[j-1:j+2]))):
+                result.append(np.nan * y_values.unit)
+            else:
+                result.append(y_values[j])
     return u.Quantity(result)
+
+
+def _solve_on_grid_flexibly(grid_of_values, target_value, x_values, y_values):
+    errors = grid_of_values - target_value
+    signs = np.sign(errors)
+    points = []
+    for i in range(grid_of_values.shape[1]):
+        sign_strip = signs[:, i]
+        sign_changes = np.nonzero(sign_strip[:-1] != sign_strip[1:])[0]
+        ys = []
+        for sign_change in sign_changes:
+            region = errors[sign_change:sign_change+2, i]
+            if np.any(np.isnan(region)):
+                continue
+            if region[1] > region[0]:
+                ys.append(np.interp(0, region, [sign_change, sign_change+1]))
+            else:
+                ys.append(np.interp(0, region[::-1], [sign_change+1, sign_change]))
+        points.append(ys)
+    i = 0
+    while not len(points[i]):
+        i += 1
+    j = points[i].pop()
+    res_x = [i]
+    res_y = [j]
+    di = 1
+    while True:
+        delta_left = delta_right = delta_vert = np.inf
+        if i - di >= 0 and len(points[i-di]):
+            deltas = np.abs(np.array(points[i-di]) - j)
+            closest_left = np.argmin(deltas)
+            delta_left = deltas[closest_left]
+        if i + di < len(points) and len(points[i+di]):
+            deltas = np.abs(np.array(points[i+di]) - j)
+            closest_right = np.argmin(deltas)
+            delta_right = deltas[closest_right]
+        if di == 1 and len(points[i]):
+            deltas = np.abs(np.array(points[i]) - j)
+            closest_vert = np.argmin(deltas)
+            delta_vert = deltas[closest_vert]
+        if delta_left == np.inf and delta_right == np.inf and delta_vert == np.inf:
+            if i - di < 0 and i + di >= len(points):
+                break
+            di += 1
+            continue
+        if delta_left < delta_right and delta_left < delta_vert:
+            i = i - di
+            j = points[i].pop(closest_left)
+        elif delta_right < delta_left and delta_right < delta_vert:
+            i = i + di
+            j = points[i].pop(closest_right)
+        else:
+            j = points[i].pop(closest_vert)
+        res_x.append(i)
+        res_y.append(j)
+        di = 1
+    if any(len(p) for p in points):
+        # raise RuntimeError("Not all points connected")
+        print("Not all points connected")
+    res_x = u.Quantity([x_values[i] for i in res_x])
+    res_y = u.Quantity([_frac_index_to_value(i, y_values) for i in res_y])
+    return res_x, res_y
+
+def _frac_index_to_value(index, values):
+    if index == int(index):
+        return values[int(index)]
+    i = int(np.floor(index))
+    j = int(np.ceil(index))
+    fraction = index - i
+    return (1 - fraction) * values[i] + fraction * values[j]
 
 
 class InteractiveClicker:
