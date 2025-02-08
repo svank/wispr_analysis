@@ -5,6 +5,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 from ipywidgets import interactive
 import matplotlib.pyplot as plt
+from numba import njit
 import numpy as np
 from tqdm.auto import tqdm
 
@@ -164,21 +165,26 @@ class DivergingStationaryPointState(StationaryPointState):
         return 180 * u.deg - self.beta_prime - self.gamma + self.psi
 
 
-class ConstraintsResultBase:
-    @classmethod
-    def _get_intersects(cls, xs1, ys1, xs2, ys2):
-        intersects = []
-        for i in range(len(xs1) - 1):
-            x1 = xs1[i]
-            x2 = xs1[i + 1]
-            y1 = ys1[i]
-            y2 = ys1[i + 1]
-            x3, x4 = x1, x2
-            y3 = np.interp(x3, xs2, ys2, left=np.nan, right=np.nan)
-            y4 = np.interp(x4, xs2, ys2, left=np.nan, right=np.nan)
-            if np.any(np.isnan(u.Quantity((y1, y2, y3, y4)))):
+@njit(cache=True)
+def _get_intersects_inner(xs1, ys1, xs2, ys2):
+    intersects = []
+    for i in range(len(xs1) - 1):
+        x1 = xs1[i]
+        x2 = xs1[i + 1]
+        y1 = ys1[i]
+        y2 = ys1[i + 1]
+        if x1 > x2:
+            x1, x2 = x2, x1
+            y1, y2 = y2, y1
+        if np.any(np.isnan(np.array((x1, x2, y1, y2)))):
+            continue
+        for x3, x4, y3, y4 in zip(xs2[:-1], xs2[1:], ys2[:-1], ys2[1:]):
+            if np.any(np.isnan(np.array((x3, x4, y3, y4)))):
                 continue
-            if min(y3, y4) > max(y1, y2) or min(y1, y2) > max(y3, y4):
+            if x3 > x4:
+                x3, x4 = x4, x3
+                y3, y4 = y4, y3
+            if x2 < x3 or x1 > x4 or min(y1, y2) > max(y3, y4) or max(y1, y2) < min(y3, y4):
                 continue
             # a1x + b1y = c1
             a1 = y2 - y1
@@ -197,14 +203,30 @@ class ConstraintsResultBase:
             
             xint = ((b2 * c1) - (b1 * c2)) / det
             yint = ((a1 * c2) - (a2 * c1)) / det
-            if xint < x1 or xint > x2:
-                continue
-            intersects.append((xint, yint))
+            if x1 <= xint < x2:
+                intersects.append((xint, yint))
+    return intersects
+
+
+def _get_intersects(xs1, ys1, xs2, ys2):
+    x1v = xs1.value if isinstance(xs1, u.Quantity) else xs1
+    x2v = xs2.value if isinstance(xs2, u.Quantity) else xs2
+    y1v = ys1.value if isinstance(ys1, u.Quantity) else ys1
+    y2v = ys2.value if isinstance(ys2, u.Quantity) else ys2
+    intersects = _get_intersects_inner(xs1, ys1, xs2, ys2)
+    if not len(intersects):
         return intersects
+    xint, yint = zip(*intersects)
+    if isinstance(xs1, u.Quantity):
+        xint <<= xs1.unit
+    if isinstance(ys1, u.Quantity):
+        yint <<= ys1.unit
+    intersects = list(zip(xint, yint))
+    return intersects
 
 
 @dataclass
-class ConstraintsResult(ConstraintsResultBase):
+class ConstraintsResult:
     delta_phi_c1: u.Quantity
     v_pxy_c1: u.Quantity
     delta_phi_c2: u.Quantity
@@ -222,7 +244,7 @@ class ConstraintsResult(ConstraintsResultBase):
     
     @classmethod
     def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, con_state, div_state):
-        intersects = cls._get_intersects(xs1, ys1, xs2, ys2)
+        intersects = _get_intersects(xs1, ys1, xs2, ys2)
         states = []
         for dphi_int, vpxy_int in intersects:
             # We just need a value for psi
@@ -313,7 +335,7 @@ class ConstraintsResult(ConstraintsResultBase):
 
 
 @dataclass
-class ThreeConstraintsResult(ConstraintsResultBase):
+class ThreeConstraintsResult:
     delta_phi_c1: u.Quantity
     theta_c1: u.Quantity
     delta_phi_c2: u.Quantity
@@ -328,19 +350,25 @@ class ThreeConstraintsResult(ConstraintsResultBase):
     
     @classmethod
     def _get_intersects_theta(cls, xs1, ys1, xs2, ys2, con_state, div_state):
-        intersects = cls._get_intersects(xs1, ys1, xs2, ys2)
+        intersects = _get_intersects(xs1, ys1, xs2, ys2)
         states = []
         for dphi_int, theta_int in intersects:
             # We just need a value for psi
             state = con_state.copy()
+            vgood = np.isfinite(state.v_pxy.ravel())
+            v_pxy_int = np.interp(
+                dphi_int, state.delta_phi[0, vgood], state.v_pxy[0, vgood])
+            state.v_pxy = v_pxy_int
             state.delta_phi = dphi_int
             state.theta = theta_int
             psi = state.psi
             # To find which state to copy
+            print(dphi_int, psi, state.kappa)
             state = con_state if dphi_int + psi < state.kappa else div_state
             state = state.copy()
             state.delta_phi = dphi_int
             state.theta = theta_int
+            state.v_pxy = v_pxy_int
             states.append(state)
         return states
     
@@ -509,10 +537,10 @@ def calc_three_constraints(measured_angles, vphi=0 * u.km / u.s):
     thetas = np.linspace(0, 90, 500) * u.deg
     dphi_grid, theta_grid = np.meshgrid(dphis, thetas)
     con_state.delta_phi = dphi_grid
-    con_state.v_pxy = vpxy_c1
+    con_state.v_pxy = vpxy_c1.reshape((1, -1))
     con_state.theta = theta_grid
     div_state.delta_phi = dphi_grid
-    div_state.v_pxy = vpxy_c1
+    div_state.v_pxy = vpxy_c1.reshape((1, -1))
     div_state.theta = theta_grid
     
     is_converging = dphi_grid + con_state.psi <= con_state.kappa
