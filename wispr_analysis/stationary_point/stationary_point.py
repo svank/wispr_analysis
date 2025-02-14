@@ -580,25 +580,65 @@ def _solve_on_grid(grid_of_values, target_value, y_values):
     return u.Quantity(result)
 
 
-def _solve_on_grid_flexibly(grid_of_values, target_value, x_values, y_values):
+def _solve_on_grid_flexibly(grid_of_values, target_value, x_values, y_values,
+                            far_thresh=10):
     errors = grid_of_values - target_value
     signs = np.sign(errors)
+    sign_changed = signs[:-1] != signs[1:]
+    sign_changed = np.pad(sign_changed, ((0, 1), (0, 0)))
+    grad = np.diff(errors, axis=0)
+    grad_sign = np.sign(grad)
+    grad_sign_changed = grad_sign[:-1] != grad_sign[1:]
+    grad_sign_changed = np.pad(grad_sign_changed, ((0, 2), (0, 0)))
+    target_points = sign_changed * ~grad_sign_changed
     points = []
     for i in range(grid_of_values.shape[1]):
-        sign_strip = signs[:, i]
-        sign_changes = np.nonzero(sign_strip[:-1] != sign_strip[1:])[0]
+        targets = np.nonzero(target_points[:, i])[0]
         ys = []
-        for sign_change in sign_changes:
-            region = errors[sign_change:sign_change+2, i]
+        for target_point in targets:
+            region = errors[target_point:target_point+2, i]
             if np.any(np.isnan(region)):
                 continue
             if region[1] > region[0]:
-                ys.append(np.interp(0, region, [sign_change, sign_change+1]))
+                ys.append(np.interp(0, region, [target_point, target_point+1]))
             else:
-                ys.append(np.interp(0, region[::-1], [sign_change+1, sign_change]))
+                ys.append(np.interp(0, region[::-1], [target_point+1, target_point]))
         points.append(ys)
+    
+    res_x = []
+    res_y = []
+    while any(len(p) for p in points):
+        x, y = _solve_on_grid_flexibly_single_trace(points, far_thresh)
+        x = [x_values[i] for i in x]
+        y = [_frac_index_to_value(i, y_values) for i in y]
+        if len(res_x):
+            val = np.nan
+            if isinstance(x[0], u.Quantity):
+                val *= x[0].unit
+            res_x.append(val)
+            val = np.nan
+            if isinstance(y[0], u.Quantity):
+                val *= y[0].unit
+            res_y.append(val)
+        res_x.extend(x)
+        res_y.extend(y)
+    
+    if any(len(p) for p in points):
+        # raise RuntimeError("Not all points connected")
+        print("Not all points connected")
+    res_x = u.Quantity(res_x)
+    res_y = u.Quantity(res_y)
+    return res_x, res_y
+
+def _solve_on_grid_flexibly_single_trace(points, far_thresh):
+    # Find a start point by working in from the edges of the image
     i = 0
-    while not len(points[i]):
+    while True:
+        if points[i]:
+            break
+        if points[-i-1]:
+            i = len(points) - i - 1
+            break
         i += 1
     j = points[i].pop()
     res_x = [i]
@@ -606,39 +646,39 @@ def _solve_on_grid_flexibly(grid_of_values, target_value, x_values, y_values):
     di = 1
     while True:
         delta_left = delta_right = delta_vert = np.inf
-        if i - di >= 0 and len(points[i-di]):
-            deltas = np.abs(np.array(points[i-di]) - j)
+        if i - di >= 0 and len(points[i - di]):
+            deltas = np.abs(np.array(points[i - di]) - j)
             closest_left = np.argmin(deltas)
             delta_left = deltas[closest_left]
-        if i + di < len(points) and len(points[i+di]):
-            deltas = np.abs(np.array(points[i+di]) - j)
+        if i + di < len(points) and len(points[i + di]):
+            deltas = np.abs(np.array(points[i + di]) - j)
             closest_right = np.argmin(deltas)
             delta_right = deltas[closest_right]
         if di == 1 and len(points[i]):
             deltas = np.abs(np.array(points[i]) - j)
             closest_vert = np.argmin(deltas)
             delta_vert = deltas[closest_vert]
-        if delta_left == np.inf and delta_right == np.inf and delta_vert == np.inf:
+        
+        if (delta_left < delta_right and delta_left < delta_vert
+                and delta_left < far_thresh):
+            i = i - di
+            j = points[i].pop(closest_left)
+        elif (delta_right < delta_left and delta_right < delta_vert
+                and delta_right < far_thresh):
+            i = i + di
+            j = points[i].pop(closest_right)
+        elif delta_vert < far_thresh and delta_vert != np.inf:
+            j = points[i].pop(closest_vert)
+        else:
             if i - di < 0 and i + di >= len(points):
+                break
+            if di > far_thresh:
                 break
             di += 1
             continue
-        if delta_left < delta_right and delta_left < delta_vert:
-            i = i - di
-            j = points[i].pop(closest_left)
-        elif delta_right < delta_left and delta_right < delta_vert:
-            i = i + di
-            j = points[i].pop(closest_right)
-        else:
-            j = points[i].pop(closest_vert)
         res_x.append(i)
         res_y.append(j)
         di = 1
-    if any(len(p) for p in points):
-        # raise RuntimeError("Not all points connected")
-        print("Not all points connected")
-    res_x = u.Quantity([x_values[i] for i in res_x])
-    res_y = u.Quantity([_frac_index_to_value(i, y_values) for i in res_y])
     return res_x, res_y
 
 def _frac_index_to_value(index, values):
