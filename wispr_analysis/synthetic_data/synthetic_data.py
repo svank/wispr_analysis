@@ -482,6 +482,11 @@ class AzimuthalThing(Thing):
         """ The object's ``phi`` velocity, which is constant"""
         return self.process_t_bounds(self.vphi_t0)
     
+    @property
+    def vphi_linear(self):
+        with u.set_enabled_equivalencies(u.dimensionless_angles()):
+            return (self.r * self.vphi * np.sin(self.theta)).to(u.km/u.s)
+    
     @vphi.setter
     @u.quantity_input(value=u.deg / u.s)
     def vphi(self, value):
@@ -491,6 +496,11 @@ class AzimuthalThing(Thing):
     def vtheta(self):
         """ The object's ``theta`` velocity, which is constant"""
         return self.process_t_bounds(self.vtheta_t0)
+    
+    @property
+    def vtheta_linear(self):
+        with u.set_enabled_equivalencies(u.dimensionless_angles()):
+            return (self.r * self.vtheta).to(u.km/u.s)
     
     @vtheta.setter
     @u.quantity_input(value=u.deg / u.s)
