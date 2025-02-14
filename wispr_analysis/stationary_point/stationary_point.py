@@ -363,7 +363,6 @@ class ThreeConstraintsResult:
             state.theta = theta_int
             psi = state.psi
             # To find which state to copy
-            print(dphi_int, psi, state.kappa)
             state = con_state if dphi_int + psi < state.kappa else div_state
             state = state.copy()
             state.delta_phi = dphi_int
@@ -529,9 +528,9 @@ def calc_three_constraints(measured_angles, vphi=0 * u.km / u.s):
     x, vpxy_c1 = _solve_on_grid_flexibly(
         con_state.v_pxy_constr1, vpxy_grid, dphis, vpxys)
     vpxy_c1 = np.concatenate((
-        [np.nan] * np.sum(dphis < x[0]),
+        [np.nan] * np.sum(dphis < np.min(x)),
         vpxy_c1,
-        [np.nan] * np.sum(dphis > x[-1])
+        [np.nan] * np.sum(dphis > np.max(x))
     ))
     
     thetas = np.linspace(0, 90, 500) * u.deg
