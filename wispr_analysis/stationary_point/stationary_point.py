@@ -591,7 +591,7 @@ def _solve_on_grid(grid_of_values, target_value, y_values):
 
 
 def _solve_on_grid_flexibly(grid_of_values, target_value, x_values, y_values,
-                            far_thresh=10):
+                            far_thresh=50):
     errors = grid_of_values - target_value
     signs = np.sign(errors)
     sign_changed = signs[:-1] != signs[1:]
