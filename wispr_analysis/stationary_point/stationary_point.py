@@ -403,18 +403,28 @@ class ThreeConstraintsResult:
         ax.plot(self.delta_phi_c2, self.theta_c2)
         ax.set_xlabel("Assumed separation in heliographic longitude")
         ax.set_ylabel("Assumed plasma launch latitude")
+        dx = self.dphi_grid[0, 1] - self.dphi_grid[0, 0]
+        dy = self.theta_grid[1, 0] - self.theta_grid[0, 0]
         if show_alpha_grid:
-            ax.pcolormesh(self.dphi_grid,
-                          self.theta_grid,
-                          (self.alpha_grid -
-                           self.measured_angles.alpha).value,
-                          cmap='bwr', vmin=-30, vmax=30, zorder=-20)
+            ax.imshow((self.alpha_grid -
+                       self.measured_angles.alpha).value,
+                      cmap='bwr', vmin=-30, vmax=30, zorder=-20,
+                      origin='lower',
+                      extent=(self.dphi_grid[0, 0] - dx/2,
+                              self.dphi_grid[-1, -1] + dx/2,
+                              self.theta_grid[0, 0] - dy/2,
+                              self.theta_grid[-1, -1] + dy/2)
+                      )
         if show_dalpha_dt_grid:
-            ax.pcolormesh(self.dphi_grid,
-                          self.theta_grid,
-                          (self.dalpha_dt_grid -
-                           self.measured_angles.dalpha_dt).value,
-                          cmap='bwr', vmin=-1e-3, vmax=1e-3, zorder=-20)
+            ax.imshow((self.dalpha_dt_grid -
+                       self.measured_angles.dalpha_dt).value,
+                      cmap='bwr', vmin=-2e-5, vmax=2e-5, zorder=-20,
+                      origin='lower',
+                      extent=(self.dphi_grid[0, 0] - dx/2,
+                              self.dphi_grid[-1, -1] + dx/2,
+                              self.theta_grid[0, 0] - dy/2,
+                              self.theta_grid[-1, -1] + dy/2)
+                      )
         if mark_intersect:
             intersect = self.get_intersect()
             if intersect:
