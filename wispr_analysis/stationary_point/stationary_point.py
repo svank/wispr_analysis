@@ -241,6 +241,8 @@ class ConstraintsResult:
     con_state: StationaryPointState
     div_state: StationaryPointState
     measured_angles: "MeasuredAngles"
+    con_div_divider_x: np.ndarray
+    con_div_divider_y: np.ndarray
     
     @classmethod
     def _get_intersects_vxy(cls, xs1, ys1, xs2, ys2, con_state, div_state):
@@ -285,7 +287,7 @@ class ConstraintsResult:
         return intersect
     
     def plot(self, vel_in_plane=True, mark_intersect=True, ax=None,
-             show_full_c2=False):
+             show_full_c2=False, show_con_div_divider=False):
         if ax is None:
             ax = plt.gca()
         ax.plot(self.delta_phi_c1,
@@ -320,6 +322,10 @@ class ConstraintsResult:
                 ax.scatter(intersect.delta_phi,
                            intersect.v_pxy if vel_in_plane else intersect.v_p,
                            color='C3')
+        
+        if show_con_div_divider:
+            ax.plot(self.con_div_divider_x, self.con_div_divider_y,
+                    ls='--', color='k')
     
     @property
     def v_p_c1(self):
@@ -515,13 +521,19 @@ def calc_constraints(measured_angles, cutoff_c2_variants=True,
         vxy = np.sqrt(vr_xy**2 + s.v_pphi**2)
         return vxy
     
+    s = con_state.copy()
+    s.delta_phi = dphi_grid
+    s.v_pxy = vpxy_grid
+    con_div_divider = _solve_on_grid(dphi_grid + s.psi, s.kappa, vpxys)
+    
     return ConstraintsResult(
         delta_phi_c1=delta_phis[0], v_pxy_c1=v_pxys[0],
         delta_phi_c2=delta_phis[1], v_pxy_c2=v_pxys[1],
         delta_phi_c3=delta_phis[2], v_pxy_c3=v_pxys[2],
         vxy2vp=vxy2vp, vp2vxy=vp2vxy, dphi_grid=dphis, vpxy_grid=vpxys,
         dalpha_dt_err=None, con_state=con_state, div_state=div_state,
-        measured_angles=measured_angles)
+        measured_angles=measured_angles,
+        con_div_divider_x=dphi_grid[0], con_div_divider_y=con_div_divider)
 
 
 def calc_three_constraints(measured_angles, vphi=0 * u.km / u.s):
