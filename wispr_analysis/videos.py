@@ -503,7 +503,8 @@ def _function_caller(*args, **kwargs):
 
 
 def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
-        display_fps=None, save_to=None, display_fmt='mp4'):
+        display_fps=None, save_to=None, display_fmt='mp4',
+        file_post_processor=None):
     """
     Helper function for generating a video
     
@@ -539,6 +540,10 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
     display_fmt : str
         If ``save_to`` is ``None``, sets how the movie will be rendered in
         Jupyter. Options are ``mp4`` and ``js``.
+    file_post_processor : callable
+        A function that is called after frame generation and before video
+        generation. Given as input a list of all file names. Can be used to,
+        e.g., duplicate certain frames.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         def output_names():
@@ -572,12 +577,19 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
                 max_workers = parallel
             else:
                 max_workers = os.cpu_count()
-            process_map(
+            r = process_map(
                     _function_caller, *ready_arg_list,
                     total=n, max_workers=max_workers)
+            final_count = len(r)
         else:
+            final_count = 0
             for args in tqdm(zip(*ready_arg_list), total=n):
                 _function_caller(*args)
+                final_count += 1
+        
+        if file_post_processor is not None:
+            file_post_processor(
+                [name for name, _ in zip(output_names(), range(final_count))])
         
         if display_fmt == 'mp4' or save_to is not None:
             video_file = os.path.join(tmpdir, 'out.mp4')
