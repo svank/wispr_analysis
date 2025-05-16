@@ -579,7 +579,8 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
                 max_workers = os.cpu_count()
             r = process_map(
                     _function_caller, *ready_arg_list,
-                    total=n, max_workers=max_workers)
+                    total=n, max_workers=max_workers,
+                    chunksize=1)
             final_count = len(r)
         else:
             final_count = 0
