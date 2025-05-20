@@ -37,6 +37,8 @@ def to_timestamp(datestring, as_datetime=False, read_headers=False):
     """
     if isinstance(datestring, fits.Header):
         datestring = datestring['date-avg']
+    if isinstance(datestring, WCS):
+        datestring = datestring.wcs.dateobs
     if (isinstance(datestring, Iterable)
             and not isinstance(datestring, str)
             and (not isinstance(datestring, u.Quantity)
