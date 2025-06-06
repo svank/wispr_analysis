@@ -105,7 +105,9 @@ def load_constellation_data():
     return line_dict, coords
     
     
-def plot_constellations(wcs, ax=None):
+def plot_constellations(wcs, ax=None, text_alpha=0.7, text_color='#ffe282',
+                        line_alpha=0.7, line_width=0.4,
+                        line_color='#ffe282'):
     if ax is None:
         ax = plt.gca()
     
@@ -143,7 +145,7 @@ def plot_constellations(wcs, ax=None):
                 ax.plot(
                     [start[0], stop[0]],
                     [start[1], stop[1]],
-                    color='#ffe282', linewidth=.4, alpha=.7)
+                    color=line_color, linewidth=line_width, alpha=line_alpha)
                 n_good += 1
         if n_good > 0:
             ra = np.mean(u.Quantity(ra_all))
@@ -155,7 +157,7 @@ def plot_constellations(wcs, ax=None):
                 name,
                 # Ensure the text isn't drawn outside the axis bounds
                 clip_on=True,
-                color='#ffe282', alpha=.7)
+                color=text_color, alpha=text_alpha)
             # Don't let text that falls outside the axis bounds affect the size
             # of the whole figure
             text.set_in_layout(False)
