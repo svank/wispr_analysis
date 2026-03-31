@@ -504,7 +504,7 @@ def _function_caller(*args, **kwargs):
 
 def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         display_fps=None, save_to=None, display_fmt='mp4',
-        file_post_processor=None):
+        file_post_processor=None, crf=20):
     """
     Helper function for generating a video
     
@@ -600,6 +600,7 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
                     f"ffmpeg -loglevel error -r {fps} "
                     f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
                     "-pix_fmt yuv420p -x264-params keyint=30 "
+                    f"-crf {crf} -preset slow "
                     f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' "
                     + display_fps_insert +
                     f"{video_file}",
