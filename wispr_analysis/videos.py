@@ -545,11 +545,19 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
         generation. Given as input a list of all file names. Can be used to,
         e.g., duplicate certain frames.
     """
+    save_to_str = isinstance(save_to, str)
+    if save_to_str:
+        save_to = [save_to]
+    if not isinstance(save_to, list):
+        save_to = [0]
     with tempfile.TemporaryDirectory() as tmpdir:
         def output_names():
             i = 0
             while True:
-                yield f"{tmpdir}/{i:0>10d}.png"
+                names = [f"{tmpdir}/movie{j}_{i:0>10d}.png" for j in range(len(save_to))]
+                if save_to_str:
+                    names = names[0]
+                yield names
                 i += 1
         
         ready_arg_list = [repeat(frame_renderer), output_names()]
@@ -593,23 +601,25 @@ def generic_make_video(frame_renderer, *arg_list, parallel=True, fps=20,
                 [name for name, _ in zip(output_names(), range(final_count))])
         
         if display_fmt == 'mp4' or save_to is not None:
-            video_file = os.path.join(tmpdir, 'out.mp4')
-            display_fps_insert = (f"-filter:v fps={display_fps} "
-                                  if display_fps is not None else "")
-            subprocess.call(
-                    f"ffmpeg -loglevel error -r {fps} "
-                    f"-pattern_type glob -i '{tmpdir}/*.png' -c:v libx264 "
-                    "-pix_fmt yuv420p -x264-params keyint=30 "
-                    f"-crf {crf} -preset slow "
-                    f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' "
-                    + display_fps_insert +
-                    f"{video_file}",
-                    shell=True)
-            if save_to is None:
-                display(Video(video_file, embed=True,
-                    html_attributes="controls loop"))
-            else:
-                shutil.move(video_file, os.path.expanduser(save_to))
+
+            for j, outname in enumerate(save_to):
+                video_file = os.path.join(tmpdir, 'out.mp4')
+                display_fps_insert = (f"-filter:v fps={display_fps} "
+                                    if display_fps is not None else "")
+                subprocess.call(
+                        f"ffmpeg -loglevel error -r {fps} "
+                        f"-pattern_type glob -i '{tmpdir}/movie{j}_*.png' -c:v libx264 "
+                        "-pix_fmt yuv420p -x264-params keyint=30 "
+                        f"-crf {crf} -preset slow "
+                        f"-vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' "
+                        + display_fps_insert +
+                        f"{video_file}",
+                        shell=True)
+                if save_to is None:
+                    display(Video(video_file, embed=True,
+                        html_attributes="controls loop"))
+                else:
+                    shutil.move(video_file, os.path.expanduser(outname))
         elif display_fmt == 'js':
             # This is a very hackish effort to connect my parallel frame
             # rendering to matplotlib's nice JS output
